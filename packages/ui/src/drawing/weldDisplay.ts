@@ -53,7 +53,10 @@ export function displayDrawingWelds(document: DrawingDocument, resolution: reado
   library?: DrawingSourceLibrary): readonly DrawingGdtDisplay[] {
   return resolution.map((original) => {
     const link = original.symbol.weldId === undefined || library === undefined ? null : resolveLinkedWeld(document, library, original.symbol.weldId);
-    const resolved: ResolvedWeldSymbol = link === null ? original : { ...original, issues: [...original.issues, ...linkedWeldIssues(original, link)] };
+    const linkedIssues = linkedWeldIssues(original, link).map(({ code, reason }) => ({
+      code, message: t(`drawing.weld.linked.error.${reason}`),
+    }));
+    const resolved: ResolvedWeldSymbol = link === null ? original : { ...original, issues: [...original.issues, ...linkedIssues] };
     const linked = link?.kind === 'linked' && link.data.limitations.length > 0 ? link.data : null;
     const symbol = document.weldSymbols.find((item) => item.id === resolved.symbol.id) ?? resolved.symbol;
     const sides = weldDisplaySides(resolved);

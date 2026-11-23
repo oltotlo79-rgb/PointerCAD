@@ -20,6 +20,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import {
   HOME_ORBIT,
@@ -329,7 +330,12 @@ describe('入力の窓が避ける、選んだ面の画面の外形(M-10 ①)', 
   it('後から渡す箱(距離のつまみの外形。M-05 4-2b)は、窓が開いている時だけ持ち、閉じると消える', () => {
     const store = () => useAppStore.getState();
     store().closeNumericInput();
+    // 閉じている時は状態を変えず、購読へも知らせない(読み合わせの気づき)。
+    const listener = vi.fn();
+    const unsubscribe = useAppStore.subscribe(listener);
     store().setNumericInputAvoid(RECT);
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
     expect(store().numericInputAvoid).toBeNull();
     store().openNumericInput(createNumericInput('extrude', 'extrudeDistance'), [400, 280]);
     expect(store().numericInputAvoid).toBeNull();

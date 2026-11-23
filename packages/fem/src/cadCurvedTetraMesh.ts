@@ -24,6 +24,7 @@
 import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody } from '@pointercad/model';
 import { FemClient, type FemOptions } from './client.js';
+import { femRefusalField, type FemRefusalCode } from './femCodedError.js';
 import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
 import { bindCadBoundaryIdentity, type CadAnalysisBoundaryIdentity, type CadSavedBoundarySelection,
@@ -55,7 +56,8 @@ export type CurvedCadTetraOutcome =
       readonly regions: readonly CadTetraRegion[]; readonly labelFaces: readonly number[]; readonly bound: CurvedPlcBound;
       readonly volume: CurvedCadTetraVolume; readonly maximumChordDeviationMm: number;
       readonly exactProof: false; readonly globalCertified: false; readonly quality?: TetraMeshQuality }
-  | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly quality?: TetraMeshQuality }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly quality?: TetraMeshQuality;
+      readonly refusal?: FemRefusalCode }
   | { readonly kind: 'cancelled'; readonly reason: 'abort' | 'superseded' | 'disposed' };
 
 export type CurvedRouteRefusalCode = 'invalid-options' | 'unsupported-geometry' | 'planar-body' | 'unsupported-boundary'
@@ -233,9 +235,9 @@ export function prepareCurvedCadTetraMesh(boundary: AnalysisBoundary, context: C
   return { input, regions, labelFaces, bound, boundaryIdentity };
 }
 
-function refusalOf(error: unknown): { readonly code: string; readonly message: string } {
+function refusalOf(error: unknown): { readonly code: string; readonly message: string; readonly refusal?: FemRefusalCode } {
   if (error instanceof CurvedRouteRefusal || error instanceof CurvedPlcRefusal) return { code: error.code, message: error.message };
-  return { code: 'cad-mesh', message: error instanceof Error ? error.message : 'CAD curved mesh preparation failed' };
+  return { code: 'cad-mesh', message: error instanceof Error ? error.message : 'CAD curved mesh preparation failed', ...femRefusalField(error) };
 }
 
 /** Actual kernel boundary (native-solid validated) -> unchanged PLC/2 -> existing FEM Worker -> volume/chord limits.

@@ -109,7 +109,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     // The `math-geometry:` prefix is reserved for measured values, so a `coef` ID never names both kinds.
     if (byName.has(parameter.name) || (parameter.mathId !== undefined && (!isParameterMathId(parameter.mathId)
       || parameter.mathId.startsWith(MATH_GEOMETRY_COEFFICIENT_PREFIX) || byId.has(parameter.mathId)))) {
-      fail(parameter.name, parameter.value, plainText('係数の名前または参照先が不正・重複しています。'));
+      fail(parameter.name, parameter.value, { key: 'math.error.invalidParameterName', parameters: {} });
     }
     byName.set(parameter.name, parameter);
     if (parameter.mathId !== undefined) byId.set(parameter.mathId, parameter);
@@ -182,7 +182,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         return { ok: false, text: plainText(error instanceof Error ? error.message : '係数の原式を確認できません。') };
       }
     }
-    if (definition.source !== value.source) return { ok: false, text: plainText('保存された原式と数学定義が一致しません。') };
+    if (definition.source !== value.source) return { ok: false, text: { key: 'math.error.definitionMismatch', parameters: {} } };
     const references = collectMathCoefficients(definition.expression);
     const measured = references.filter(reference => mathGeometryDefinitionIdOf(reference.id) !== null);
     if (measured.length > 0 && coefficientName === undefined) {
@@ -206,8 +206,8 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         continue;
       }
       const parameter = byId.get(reference.id), coefficient = coefficients.get(reference.id);
-      if (parameter === undefined || parameter.name !== reference.label) problem ??= plainText(`係数の参照先を確認できません: ${reference.label}`);
-      else if (coefficient === undefined) problem ??= plainText(`参照する係数を計算できません: ${reference.label}`);
+      if (parameter === undefined || parameter.name !== reference.label) problem ??= { key: 'math.error.referenceUnverified', parameters: { label: reference.label } };
+      else if (coefficient === undefined) problem ??= { key: 'math.error.referenceUncomputable', parameters: { label: reference.label } };
       else inputs.push(coefficient);
     }
     if (problem !== undefined) return { ok: false, text: problem, ...(problemCode === undefined ? {} : { code: problemCode }) };
@@ -217,7 +217,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       source: value.source, notation: definition.inputNotation, angleUnit: definition.angleUnit, definition, coefficients: inputs }, 5_000, context.signal);
     if (completion.status !== 'result') {
       calculationUnavailable = true;
-      return { ok: false, text: plainText(`数式の計算を完了できませんでした: ${completion.status}`) };
+      return { ok: false, text: { key: 'math.error.calculationIncomplete', parameters: { status: completion.status } } };
     }
     const result = mathScalarExpression(completion.result);
     if (result.ok) bindMathCompositionNames(result.value, compositionNames);
@@ -230,7 +230,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     for (const name of circular) {
       const parameter = byName.get(name);
       if (parameter) {
-        const text = plainText('係数の参照が循環しています。');
+        const text: FailureText = { key: 'math.error.circular', parameters: {} };
         fail(name, parameter.value, text); parameterFailures.set(name, text);
       }
     }

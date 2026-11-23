@@ -1,9 +1,14 @@
 import type { prepareCadSolidAnalysis } from '@pointercad/fem';
 import { describe, expect, it } from 'vitest';
-import { cadSolidBucklingFailureCode, cadSolidBucklingInput } from './cadSolidBuckling.js';
+import { cadSolidBucklingFailureCode, cadSolidBucklingFailureSource, cadSolidBucklingInput } from './cadSolidBuckling.js';
 import { t } from '../i18n/t.js';
 
 type Prepared = ReturnType<typeof prepareCadSolidAnalysis>;
+/** 投げた誤り(投げなければ null)。 */
+function thrown(run: () => unknown): unknown {
+  try { run(); } catch (error) { return error; }
+  return null;
+}
 /** Unit corner tet, z = 0 face (nodes 0, 2, 1; area L^2 / 2 = 50 mm^2) loaded by +z traction 1 MPa: 50 N into the
  * material. The expected area and force are derived here from the geometry, not from the adapter. */
 function prepared(traction: readonly [number, number, number] = [0, 0, 1], totalForceN: readonly [number, number, number] = [0, 0, 50],
@@ -59,7 +64,8 @@ describe('cadSolidBucklingInput', () => {
     for (const { input, message } of cases) {
       const bytes = JSON.stringify(input);
       expect(() => cadSolidBucklingInput({ ...base, input }, 1)).toThrow(message);
-      expect(cadSolidBucklingFailureCode(message)).toBe('buckling-unsupported');
+      expect(cadSolidBucklingFailureCode(cadSolidBucklingFailureSource(thrown(() => cadSolidBucklingInput({ ...base, input }, 1)))))
+        .toBe('buckling-unsupported');
       expect(JSON.stringify(input)).toBe(bytes);
     }
     const zero = { ...base.input, constraints: [{ node: 3, fixed: [true, true, true] as const, prescribedMm: [0, 0, 0] as const }] };
@@ -67,18 +73,34 @@ describe('cadSolidBucklingInput', () => {
   });
 });
 
+// 0b-4: 分けは Worker の失敗の符号(code)と fem の断りの符号(refusal)で決め、文は読まない。前の表の文が運ぶ符号は fem が留める
+// (計算部の文 → 符号は packages/fem/src/femCodedError.test.ts、欄の無い返事は solidBucklingRuntime.test.ts、
+// CAD の元の変化・別の版の網は cadSolidAnalysis.test.ts)。ここは、その符号から前と同じ分けになる事を留める。
 describe('cadSolidBucklingFailureCode', () => {
   it.each([
-    ['solid-buckling-no-positive-mode: 0 positive load factor(s) for 2 requested', 'buckling-no-compression'],
-    ['solid-buckling-mechanism: reduced stiffness is not positive definite', 'buckling-mechanism'],
-    ['solid-input: unrestrained component rigid-body motion', 'buckling-mechanism'],
-    ['CAD source changed during analysis', 'buckling-stale'],
-    ['Mesh belongs to another CAD revision', 'buckling-stale'],
-    ['solid-buckling-budget: dense buckling reservation exceeds the numeric budget', 'buckling-unsupported'],
-    ['solid-buckling-native: native element initial-stress matrix differs', 'cad-solid-buckling'],
-    ['asset-missing: python_stdlib.zip (HTTP 404)', 'buckling-asset'],
-    ['asset-corrupt: oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl (SHA-256)', 'buckling-asset'],
-  ])('classifies %s', (message, code) => {
-    expect(cadSolidBucklingFailureCode(message)).toBe(code);
+    [{ code: 'solver-failed', refusal: 'no-positive-mode' }, 'buckling-no-compression'],
+    [{ code: 'solver-failed', refusal: 'mechanism' }, 'buckling-mechanism'],
+    [{ code: 'cad-solid', refusal: 'rigid-body' }, 'buckling-mechanism'],
+    [{ code: 'cad-mesh', refusal: 'stale-source' }, 'buckling-stale'],
+    [{ refusal: 'stale-source' }, 'buckling-stale'],
+    [{ code: 'solver-failed', refusal: 'budget' }, 'buckling-unsupported'],
+    [{ code: 'solver-failed', refusal: 'supports' }, 'buckling-unsupported'],
+    [{ code: 'solver-failed', refusal: 'unknown' }, 'cad-solid-buckling'],
+    [{ code: 'cad-solid', refusal: 'support-conflict' }, 'cad-solid-buckling'],
+    [{ code: 'solver-failed' }, 'cad-solid-buckling'],
+    [{ code: 'asset-missing' }, 'buckling-asset'],
+    [{ code: 'asset-corrupt' }, 'buckling-asset'],
+    [{ code: 'asset-missing', unsupportedLoad: true }, 'buckling-unsupported'],
+  ] as const)('classifies %j', (failure, code) => {
+    expect(cadSolidBucklingFailureCode(failure)).toBe(code);
+  });
+  it('classifies thrown errors by their type, never by their text', () => {
+    const value = prepared();
+    const classify = (error: unknown): string => cadSolidBucklingFailureCode(cadSolidBucklingFailureSource(error));
+    expect(classify(thrown(() => cadSolidBucklingInput({ ...value, input: { ...value.input, surfaceLoads: [] } }, 1)))).toBe('cad-solid-buckling');
+    expect(classify(new Error('solid-buckling-mechanism: a text alone is not a refusal'))).toBe('cad-solid-buckling');
+    expect(classify(new Error(t('solidAnalysis.bucklingGravityUnsupported')))).toBe('cad-solid-buckling');
+    expect(classify('not an error')).toBe('cad-solid-buckling');
+    expect(cadSolidBucklingFailureSource(new Error('x'))).toEqual({});
   });
 });

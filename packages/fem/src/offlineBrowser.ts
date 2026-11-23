@@ -3,6 +3,7 @@ import { analyzeSolidFinite } from './solidFiniteRuntime.js';
 import { translateSolidFinite, type SolidFiniteInput } from './solidFiniteTranslation.js';
 import { SOLID_FINITE_KIND, type SolidFiniteWireResult } from './solidFiniteBinding.js';
 import { sha256Hex } from './sha256.js';
+import { FemCodedError } from './femCodedError.js';
 import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
 import { analyzeSolidContact } from './solidContactRuntime.js';
 import { verifySolidContactInput, type SolidContactInput, type SolidContactResult } from './solidContactBinding.js';
@@ -70,14 +71,14 @@ async function readPinnedAsset(read: typeof fetch, url: string, file: string): P
     let response: Response;
     try { response = await read(url, { redirect: 'error', credentials: 'same-origin', cache: 'no-store' }); }
     catch (error) { await pauseBeforeReread(attempt, file, error); continue; }
-    if (!response.ok) throw new Error(`asset-missing: ${file} (HTTP ${response.status})`);
+    if (!response.ok) throw new FemCodedError('asset-missing', `asset-missing: ${file} (HTTP ${response.status})`);
     try { return await response.arrayBuffer(); }
     catch (error) { await pauseBeforeReread(attempt, file, error); }
   }
 }
 async function pauseBeforeReread(attempt: number, file: string, error: unknown): Promise<void> {
   if (attempt >= ASSET_RETRY_PAUSES_MS.length) {
-    throw new Error(`asset-missing: ${file} (network: ${error instanceof Error ? error.message : String(error)})`);
+    throw new FemCodedError('asset-missing', `asset-missing: ${file} (network: ${error instanceof Error ? error.message : String(error)})`);
   }
   await new Promise(resolve => { setTimeout(resolve, ASSET_RETRY_PAUSES_MS[attempt]); });
 }
@@ -137,15 +138,15 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
     await Promise.all(pins.slice(start, start + 4).map(async pin => {
       const url = new URL(pin.file, base).href;
       const buffer = await readPinnedAsset(originalFetch, url, pin.file);
-      if (buffer.byteLength !== pin.bytes) throw new Error(`asset-corrupt: ${pin.file} (size)`);
+      if (buffer.byteLength !== pin.bytes) throw new FemCodedError('asset-corrupt', `asset-corrupt: ${pin.file} (size)`);
       const digest = await sha256Hex(buffer);
-      if (digest !== pin.sha256) throw new Error(`asset-corrupt: ${pin.file} (SHA-256)`);
+      if (digest !== pin.sha256) throw new FemCodedError('asset-corrupt', `asset-corrupt: ${pin.file} (SHA-256)`);
       verified.set(pin.file, buffer); urls.set(url, pin.file);
     }));
   }
   const asset = (name: string): ArrayBuffer => {
     const buffer = verified.get(name);
-    if (buffer === undefined) throw new Error(`asset-missing: ${name}`);
+    if (buffer === undefined) throw new FemCodedError('asset-missing', `asset-missing: ${name}`);
     return buffer;
   };
   let denied = 0;
@@ -153,7 +154,7 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
     const url = input instanceof Request ? input.url : new URL(String(input), base).href;
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
     const file = urls.get(url);
-    if (method !== 'GET' || file === undefined) { denied += 1; throw new Error(`offline-request-denied: ${url}`); }
+    if (method !== 'GET' || file === undefined) { denied += 1; throw new FemCodedError('offline-request-denied', `offline-request-denied: ${url}`); }
     resolve(new Response(asset(file).slice(0), { status: 200, headers: {
       'Content-Type': file.endsWith('.wasm') ? 'application/wasm' : file.endsWith('.json') ? 'application/json' : 'application/octet-stream',
     } }));
@@ -162,7 +163,7 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
   const glueBlob = URL.createObjectURL(new Blob([asset('pyodide.asm.js')], { type: 'text/javascript' }));
   self.importScripts = (...scripts: string[]): void => {
     if (scripts.length !== 1 || new URL(scripts[0], base).href !== new URL('pyodide.asm.js', base).href) {
-      denied += 1; throw new Error('offline-request-denied: unexpected script');
+      denied += 1; throw new FemCodedError('offline-request-denied', 'offline-request-denied: unexpected script');
     }
     originalImportScripts(glueBlob);
   };
@@ -250,7 +251,7 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
       wheelLocation }, onPhase) : document.modal === undefined
         ? await analyzeBeam(runtime,document,{wrapper:new Uint8Array(asset('beamAnalysis.py')),wheelLocation},onPhase)
         : await analyzeBeamModal(runtime, document, { wrapper: new Uint8Array(asset('beamAnalysis.py')), wheelLocation }, onPhase);
-    if (denied !== 0) throw new Error(`offline-request-denied: ${denied} attempted fallback requests`);
+    if (denied !== 0) throw new FemCodedError('offline-request-denied', `offline-request-denied: ${denied} attempted fallback requests`);
     return result;
   } finally {
     URL.revokeObjectURL(moduleBlob); URL.revokeObjectURL(glueBlob);
@@ -368,7 +369,7 @@ export async function analyzeSolidBucklingInBrowser(input: SolidBucklingInput, o
 export async function analyzeNativeBoltPreloadInBrowser(value: unknown, onPhase: (phase: FemPhase) => void): Promise<NativeBoltPreloadOwnedResult> {
   let job: PreparedNativeBoltPreloadJob;
   try { job = await prepareNativeBoltPreloadJob(value); }
-  catch (error) { throw new Error('native-preload-input: '+(error instanceof Error ? error.message : 'invalid plan'), { cause: error }); }
+  catch (error) { throw new FemCodedError('invalid-protocol', 'native-preload-input: '+(error instanceof Error ? error.message : 'invalid plan'), { cause: error }); }
   const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, job);
   if (result.kind !== NATIVE_BOLT_KIND) throw new Error('Unexpected native preload result');
   return result;

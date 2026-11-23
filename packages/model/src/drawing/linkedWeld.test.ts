@@ -124,9 +124,9 @@ describe('a linked symbol is resolved only when it states exactly the model weld
     const irregular = linkedWeldOf(welded(), 'weld-1');
     const issues = linkedWeldIssues(resolvedSymbol([fillet([6, 20, null, null])]), irregular);
     expect(issues.map((issue) => issue.code)).toEqual(['linkedWeld', 'linkedWeld']);
-    expect(issues.map((issue) => issue.message).join(' ')).toContain('補足の一覧');
+    expect(issues.map((issue) => issue.reason)).toEqual(['irregularBeads', 'unequalLegs']);
     const missing = linkedWeldIssues(resolvedSymbol([fillet([6, 20, 30, 3])]), { kind: 'missing', reason: 'weldMissing' });
     expect(missing).toHaveLength(1);
-    expect(missing[0]?.message).toContain('見つかりません');
+    expect(missing[0]).toEqual({ code: 'linkedWeld', reason: 'weldMissing' });
   });
 });

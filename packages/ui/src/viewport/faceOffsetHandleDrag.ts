@@ -20,6 +20,7 @@ import type { DistanceHandle } from '../solid/faceOffsetHandle.js';
 import type { AppState } from '../store/appState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { ViewportScene } from './createViewportScene.js';
+import { distanceHandleScreenRect, unionScreenRect } from './distanceHandleScreenRect.js';
 import { HANDLE_PICK_RADIUS_PIXELS } from './sectionHandleDrag.js';
 
 /**
@@ -38,6 +39,8 @@ export interface FaceOffsetHandleDrag {
   readonly move: (pointer: readonly [number, number]) => void;
   /** 掴みを忘れる。欄へ入れた数はそのまま残す。 */
   readonly end: () => void;
+  /** 破棄や入力欄の置き換えでは窓の位置を更新せず、掴みだけ捨てる。 */
+  readonly discard: () => void;
   /** 掴む前の入力欄へ戻してから掴みを忘れる(掴んでいる間の Esc・OS の取消)。窓は閉じない。 */
   readonly cancel: () => void;
 }
@@ -80,6 +83,18 @@ export function createFaceOffsetHandleDrag(
     grabRevision = useAppStore.getState().numericInputRevision;
   }
 
+  /**
+   * 離した時に、今のつまみの外形を入力の窓の避ける箱へ足す。引いている間は箱を変えない(窓を跳ねさせない)。
+   * 開いた時の箱(選んだ面の外形か、開いた時のつまみの外形)は残し、伸ばした先端も窓が覆わない所へ開き直させる。
+   */
+  function regrip(): void {
+    const state = useAppStore.getState();
+    const handle = distanceHandleOf(state);
+    const rect = handle === null ? null : distanceHandleScreenRect(handle, project);
+    if (rect === null || state.numericInput === null) return;
+    state.setNumericInputAvoid(state.numericInputAvoid === null ? rect : unionScreenRect(state.numericInputAvoid, rect));
+  }
+
   return {
     active: () => grab !== null,
     ownsInput,
@@ -116,8 +131,11 @@ export function createFaceOffsetHandleDrag(
       writeDistance(handle, (parameter + delta) / handle.scale);
     },
     end: () => {
+      const released = ownsInput(useAppStore.getState());
       grab = null;
+      if (released) regrip();
     },
+    discard: () => { grab = null; },
     cancel: () => {
       const current = grab;
       // 先に忘れてから戻す(戻した更新でストアの購読が動いても、もう掴んでいない)。

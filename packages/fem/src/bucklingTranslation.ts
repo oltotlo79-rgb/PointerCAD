@@ -1,4 +1,4 @@
-import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
+import { exceedsMagnitude, InputIssue } from '@pointercad/model/beam-analysis';
 import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { BeamNodalLoad, Vector3, Vector6 } from './analysisModel.js';
@@ -90,7 +90,7 @@ export function translateBeamBuckling(value: unknown): {
     return { ...node, restrained: supportMap.get(node.id) ?? free, load };
   });
   if (!nodes.some(node => node.load.some(component => component !== 0))) {
-    throw new Error('buckling-load: zero reference load');
+    throw new InputIssue('zero-reference-load', 'referenceLoads', 'buckling-load: zero reference load');
   }
   const freeDofs = nodes.reduce((sum, node) => sum + node.restrained.filter(value => !value).length, 0);
   if (freeDofs < prepared.plan.modeCount) throw new Error('buckling-supports: insufficient free degrees of freedom');

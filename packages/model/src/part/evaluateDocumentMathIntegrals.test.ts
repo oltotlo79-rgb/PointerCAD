@@ -12,7 +12,6 @@ import { evaluateMathGeometry } from '../measure/mathGeometry.js';
 import { DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId } from '../measure/mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from '../measure/mathGeometryTypes.js';
 import { mathGeometryOperationMessage } from '../measure/mathGeometryCoefficients.js';
-import { plainText } from '../failureText.js';
 import { analyzeMathGeometryDependencies } from '../measure/mathGeometryDependencies.js';
 import { FUNCTION_DEFINITION_FORMAT } from '../functionGeometry/functionDefinitionTypes.js';
 import { resolveFunctionInputs } from '../functionGeometry/resolveFunctionInputs.js';
@@ -218,7 +217,7 @@ describe('測った10mmを既存の積分へ渡す実計算', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Cycle accepted');
     expect(new Set(result.recompute?.analysis.circular)).toEqual(new Set(['R', 'P']));
-    expect(result.failures.find(failure => failure.ownerId === 'P')?.text).toEqual(plainText('係数の参照が循環しています。'));
+    expect(result.failures.find(failure => failure.ownerId === 'P')?.text).toEqual({ key: 'math.error.circular', parameters: {} });
     expect(result.recompute?.analysis.variables.has('P')).toBe(false);
     expect(cycleRequests).toHaveLength(0);
 

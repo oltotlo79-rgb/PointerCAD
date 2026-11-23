@@ -21,6 +21,7 @@ import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
 import { deferredExport } from './deferredShell.js';
 import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
+import { SheetConvertPanel } from '../sheetMetal/SheetConvertPanel.js';
 import { sheetFieldUnitError } from '../sheetMetal/sheetFieldError.js';
 
 import {
@@ -1145,7 +1146,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       )}
 
       {feature.kind === 'functionSurface' ? <FunctionSurfaceProperties feature={feature} /> : null}
-      {feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief' ? <div className="pcad-section">
+      {feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief' || feature.kind === 'sheetConvert' ? <div className="pcad-section">
         <button type="button" className="pcad-button" disabled={feature.suppressed}
           title={t(feature.suppressed ? 'sheetMetal.editSuppressed' : 'sheetMetal.editHint')}
           onClick={() => useAppStore.getState().openSheetMetalTool(feature.kind, feature.id)}>{t('sheetMetal.editReferences')}</button>
@@ -2100,6 +2101,7 @@ export function PropertyPanel(): React.JSX.Element {
   if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section {...propertyPanelFrame}>
     <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
     {sheetMetalTool.kind === 'sheetUnfold' ? <SheetUnfoldPanel key={sheetMetalTool.id} session={sheetMetalTool} />
+      : sheetMetalTool.kind === 'sheetConvert' ? <SheetConvertPanel key={sheetMetalTool.id} session={sheetMetalTool} />
       : <SheetMetalPanel key={sheetMetalTool.id} session={sheetMetalTool} />}
   </section>;
 

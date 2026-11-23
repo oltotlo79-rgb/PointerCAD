@@ -2248,6 +2248,22 @@ describe('パターンの並べ方(PatternPlacement)の2種類の往復(§0.a-0.
     });
   });
 
+  it('リブを並べる保存は履歴の参照と配置で往復する', () => {
+    const rib = {
+      id: 'rib-1', kind: 'rib', name: 'リブ1', suppressed: false, targetFeatureId: 'extrude-1',
+      profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+      thickness: ev('3', 3), side: 'both', extendToBody: true,
+    } as const;
+    const pattern = {
+      id: 'pattern-1', kind: 'pattern', name: '直線パターン1', suppressed: false, sourceFeatureId: rib.id,
+      placement: {
+        kind: 'linear', direction: { kind: 'world', axis: 'y' },
+        spacing: ev('8', 8), count: ev('2', 2), symmetric: false,
+      },
+    } as const;
+    expect(roundTrip(documentWithSolids([rib, pattern])).solids).toEqual([rib, pattern]);
+  });
+
   it('円形(circular、全周)が往復で一致する', () => {
     const document = documentWithSolid({
       id: 'pattern-1',
@@ -4899,6 +4915,9 @@ function allSolidFeatures(): SolidFeatureByKind {
     sheetFlange: { id: 'sheet-flange', name: 'フランジ1', kind: 'sheetFlange', suppressed: false, targetFeatureId: 'sheet-base',
       edges: [{ panelId: 'panel0', boundaryId: 'edge0' }], profile: null, length: ev('20', 20), angle: ev('-90', -90),
       startOffset: ev('0', 0), endOffset: ev('1', 1), lengthBasis: 'tangent', rule: { innerRadius: null, kFactor: null } },
+    // 立体を板金へ変える行(M-08。版 24 の新しい種類)。元の立体・基準の面・内半径と K 係数の式だけを持つ。
+    sheetConvert: { id: 'sheet-convert', name: '板金へ変換1', kind: 'sheetConvert', suppressed: false, sourceFeatureId: 'extrude-1',
+      referenceFace: faceRef('extrude-1', 3), rule: { innerRadius: ev('1 + 1', 2), kFactor: ev('0.4', 0.4) } },
     extrude: {
       id: 'extrude-1',
       kind: 'extrude',
@@ -5269,9 +5288,10 @@ function documentWithAllSolids(): PartDocument {
 }
 
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
-  it('板金と関数曲面・直接編集を含む36種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
+  it('板金と関数曲面・直接編集を含む37種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(36);
+    // M-08 の板金へ変換(sheetConvert)を足して 37。
+    expect(document.solids).toHaveLength(37);
     expect(roundTrip(document)).toEqual({ ...document, patternSlotHighWater: { 'pattern-1': 7 } });
   });
 

@@ -128,15 +128,15 @@ export interface MathGeometryDependencyAnalysis {
  * ------------------------------------------------------------------------- */
 
 export function mathGeometryCycleMessage(coefficient: string, definition: string, shape: string): FailureText {
-  return plainText(`係数「${coefficient}」は図形の測定値「${definition}」を使っていますが、その測る形「${shape}」が「${coefficient}」を使って作られているため循環しています。`);
+  return { key: 'mathGeometry.error.cycle', parameters: { coefficient, definition, shape } };
 }
 
 export function mathGeometryOrderMessage(feature: string, target: string, definition: string, coefficient: string): FailureText {
-  return plainText(`「${feature}」は、後ろにある「${target}」を測った値（図形の測定値「${definition}」）を係数「${coefficient}」から使っています。「${target}」より後ろへ移してください。`);
+  return { key: 'mathGeometry.error.order', parameters: { feature, target, definition, coefficient } };
 }
 
 export function mathGeometryTooDeepMessage(limit: number = MATH_GEOMETRY_MAX_STAGES): FailureText {
-  return plainText(`図形の測定値を使う係数の連なりが上限（${String(limit)}段）を超えています。`);
+  return { key: 'mathGeometry.error.tooDeep', parameters: { limit: String(limit) } };
 }
 
 /* ---------------------------------------------------------------------------

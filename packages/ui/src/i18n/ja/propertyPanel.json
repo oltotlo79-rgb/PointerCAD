@@ -182,7 +182,7 @@
   "propertyPanel.centerPoints": "中心の点",
   "propertyPanel.patternPoints": "並べる点",
   "propertyPanel.targetBody": "加工するもとのソリッド",
-  "propertyPanel.patternSource": "並べる穴",
+  "propertyPanel.patternSource": "並べる元",
   "propertyPanel.coilDiameter": "コイル径",
   "propertyPanel.wireDiameter": "線径",
   "propertyPanel.springPitch": "ピッチ",

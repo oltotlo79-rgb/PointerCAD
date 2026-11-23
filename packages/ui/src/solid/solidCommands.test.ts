@@ -50,6 +50,46 @@ import { subShapeElementId, subShapeRefOf, type SolidFaceEntry, type SubShapeBod
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
 const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+
+describe.each([
+  ['sweep', ['first', 'path']],
+  ['loft', ['first', 'second']],
+  ['ruled', ['first', 'second']],
+] as const)('%s の新規・結合・切り抜き', (tool, selection) => {
+  it.each([['new', null], ['join', 'union'], ['cut', 'subtract']] as const)(
+    '%s は作成した形を指定した相手への演算に使う', (mode, operation) => {
+      const base = documentWithFaces(['first', 'second']);
+      const withPath = replaceSketch(base, addLine(base.sketches[0], 'path'));
+      const target = commitExtrude(withPath, {
+        profile: faceRef('first'),
+        distance: DEFAULT_EXTRUDE_DISTANCE,
+        reversed: false,
+        symmetric: false,
+      });
+      if (!target.ok) throw new Error('Expected a target body');
+      const commit: SolidInputCommit = {
+        kind: 'solid', tool, step: SOLID_TOOL_STEPS[tool], values: {}, flags: {},
+        shapeChoices: { extrudeOperation: mode, extrudeTarget: target.featureId },
+      };
+      const delta = commitSolidInput(target.document, selection, commit);
+      if (!delta.ok) throw new Error(delta.reasonKey);
+      const [created, combined] = delta.document.solids.slice(target.document.solids.length);
+      expect(created.kind).toBe(tool);
+      if (operation === null) {
+        expect(combined).toBeUndefined();
+        expect(delta.featureId).toBe(created.id);
+      } else {
+        expect(combined).toMatchObject({
+          id: delta.featureId, kind: 'boolean', operation,
+          targetFeatureId: target.featureId, toolFeatureId: created.id,
+        });
+        expect(commitSolidInput(target.document, selection, {
+          ...commit, shapeChoices: { extrudeOperation: mode, extrudeTarget: 'stale-target' },
+        })).toEqual({ ok: false, reasonKey: 'solidError.extrudeTargetUnavailable' });
+      }
+    },
+  );
+});
 const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 
 const SKETCH_ID = 'sketch-1';

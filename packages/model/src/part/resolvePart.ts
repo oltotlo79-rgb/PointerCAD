@@ -45,6 +45,9 @@ import type {
 import { resolvePlaneSpec, subShapeFromFingerprint } from '../geometry/planeSpec.js';
 import { projectionCacheKey } from '../sketch/projectionMath.js';
 import { planSheetFeature } from '../sheetMetal/planSheetFeature.js';
+import { convertedReferenceLost, planSheetConvert, sheetConvertFailureText, type SheetConvertLookup,
+  type SheetConvertAnswer, type SheetConvertReason } from '../sheetMetal/planSheetConvert.js';
+import type { SheetRecognitionRequestItem } from '../kernelBridge/sheetRecognition.js';
 import { sheetShapeKey } from '../sheetMetal/shapeKey.js';
 import { firstSketchUseIndexes } from './solidSketchReferences.js';
 export { sketchIdOfPointReference, referencedSketchIds } from './solidSketchReferences.js';
@@ -456,6 +459,8 @@ export type SolidStepPlan =
       readonly toolKey: string;
       /** パターンでは、元の加工結果に追加する工具の配置。空配列は元の結果を引き継ぐ。 */
       readonly transforms?: readonly RigidTransform[];
+      /** 和の形から、リブが足した材料だけを写す指定。 */
+      readonly patternTool?: 'rib';
       /** 何も削れない差を断るか(`BooleanFeature.requireRemoval`)。立てたときだけ欄がある。 */
       readonly requireRemoval?: true;
     }
@@ -955,16 +960,26 @@ export interface ResolvedMeshBody {
   readonly volume: number | null;
   /**
    * 画面に出すか。**いまは必ず true。** 三角形の形は加工にもブーリアンにも使えない
-   * (`IMPORTED_MESH_TARGET_MESSAGE` で断る)ので、消費されようがないためである。
+   * (`IMPORTED_MESH_TARGET_TEXT` で断る)ので、消費されようがないためである。
    * 欄を置いてあるのは段(`ResolvedSolidStep.visible`)と読み方をそろえるためで、
    * 画面はどちらのボディも同じ規則(`visible`)だけを見ればよい。
    */
   readonly visible: boolean;
 }
 
+interface SheetRecognitionComparison {
+  readonly request: SheetRecognitionRequestItem;
+  readonly answer: SheetConvertAnswer;
+  readonly rebuiltKey: string;
+}
+
 export interface ResolvedPart {
   /** 板金の展開・次の曲げに使う導出情報。通常の部品では省略し、文書へ保存しない。 */
   readonly sheetMetalBodies?: ReadonlyMap<string, ResolvedSheetBody>;
+  /** 立体を板金へ変える行(M-08)のうち、認識の答えがまだ無い物の依頼。recomputePart が計算部へ頼み、次の巡に答えを渡す。 */
+  readonly sheetRecognitionRequests?: readonly SheetRecognitionRequestItem[];
+  /** 今回の解決が採用した認識と、対応する組み直し段の鍵。 */
+  readonly sheetRecognitionComparisons?: readonly SheetRecognitionComparison[];
   /**
    * スケッチ id ごとの解決結果(resolveSketch をそのまま呼ぶ)。文書の順を保つ。
    * スケッチ側の失敗は resolved.errors に入っており、下の errors へは写さない
@@ -2739,10 +2754,10 @@ function planPattern(
   consumed: ReadonlySet<string>,
   context: SolidPlanContext,
 ): PlanOutcome {
-  const notPatternSourceMessage = '並べる立体、穴・ねじ穴、または作成行と対になった結合・切り抜きの行を選び直してください。';
+  const invalidSource: FailureText = { key: 'partError.pattern.invalidSource', parameters: {} };
   const source = solids.find(candidate => candidate.id === feature.sourceFeatureId);
   if (source === undefined) return failWith(feature.id, 'missingBody', { key: 'partError.pattern.missingSource', parameters: {} });
-  if (!isPatternSource(source, solids)) return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  if (!isPatternSource(source, solids)) return failWith(feature.id, 'invalidValue', invalidSource);
   if (source.kind === 'boolean' && !bodyKeys.has(source.targetFeatureId)) {
     return failWith(feature.id, 'missingBody', { key: 'partError.pattern.missingTarget', parameters: {} });
   }
@@ -2767,6 +2782,7 @@ function planPattern(
     return { ok: true, plan: {
       kind: 'boolean', operation: source.kind === 'boolean' ? source.operation : 'union',
       targetKey: sourceTarget.targetKey, toolKey, transforms,
+      ...(source.kind === 'rib' ? { patternTool: 'rib' as const } : {}),
     } };
   }
   // もとの穴・ねじ穴の解決をもう一度呼んで再利用する。ただし consumed には
@@ -2807,7 +2823,7 @@ function planPattern(
     };
   }
   // planHole / planThreadHole は必ず 'hole' / 'thread' の計画を返すので、ここへは来ない(型の保険)。
-  return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  return failWith(feature.id, 'invalidValue', invalidSource);
 }
 
 /* ------------------------------------------------------------------ *
@@ -4613,16 +4629,13 @@ function planCut(
 }
 
 /**
- * 読み込んだ三角形の形を加工・組み合わせの対象に指したときの断り(断りの表)。
+ * 読み込んだ三角形の形を加工・組み合わせの対象に指したときの断り(断りの表)。文は ui の文言の表(partError.importedMesh.notMachinable)。
  *
- * **この文言の正本は model のこの 1 行**である。カーネル(`worker/recomputeSolids.ts` の
- * `MESH_NOT_MACHINABLE_MESSAGE`)にも 1 字違わぬ同じ文言の断りがあるが、
- * あちらは二重の網(段まで届いてしまった場合の最後の砦)で、
- * **参照へは変えていない**(model → kernel の依存を作らずに、
- * kernel が model の文言を輸入する形にはできないため、当面は同じ文字列が 2 か所にある)。
+ * カーネル(`worker/recomputeSolids.ts` の `MESH_NOT_MACHINABLE_MESSAGE`)にも 1 字違わぬ同じ文の断りがあるが、
+ * あちらは二重の網(段まで届いてしまった場合の最後の砦)で、kernel は ui の文言の表を読めないので文のまま運ぶ
+ * (同じ文である事は、kernel の recomputeSolids.test.ts と ui の surfaceBodyFailureText.test.ts がそれぞれの側で留める)。
  */
-export const IMPORTED_MESH_TARGET_MESSAGE =
-  '読み込んだ三角形の形には、穴あけや面取りはできません。';
+const IMPORTED_MESH_TARGET_TEXT: FailureText = { key: 'partError.importedMesh.notMachinable', parameters: {} };
 
 /**
  * 読み込んだ形(ベースボディ。FR-802)の段。
@@ -4664,14 +4677,14 @@ function importedMeshTargetError(
     const target = solids.find((candidate) => candidate.id === targetId);
     // 抑制された形はボディを作らないので「見つからない」が正しい断りになる(FR-503)。
     if (target !== undefined && target.kind === 'importedMesh' && !target.suppressed) {
-      return partError(feature.id, 'invalidValue', IMPORTED_MESH_TARGET_MESSAGE);
+      return partErrorWith(feature.id, 'invalidValue', IMPORTED_MESH_TARGET_TEXT);
     }
   }
   return null;
 }
 
 function planSolid(
-  feature: Exclude<SolidFeature, { kind: 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' }>,
+  feature: Exclude<SolidFeature, { kind: 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' | 'sheetConvert' }>,
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
@@ -4763,7 +4776,7 @@ function planSolid(
         `degenerate` の失敗で返してあるのは、`default` を作らずに網羅の switch を保ちつつ、
         万一の呼び違いを黙って通さないためである(FR-504、NFR-RE-1)。
       */
-      return fail(feature.id, 'degenerate', IMPORTED_MESH_TARGET_MESSAGE);
+      return failWith(feature.id, 'degenerate', IMPORTED_MESH_TARGET_TEXT);
   }
 }
 
@@ -5024,6 +5037,22 @@ export interface ResolvePartOptions {
    * ことがない、②`.pcad` の添付をそのまま持ち回れる、の 2 つによる。
    */
   readonly importedShapes?: ImportedShapeBytes;
+  /**
+   * 立体を板金へ変える行(M-08)の、元の立体の認識の答え。依頼(行の id・元の段の鍵・基準の面)で引く。
+   * 渡されない・答えが無い行は段を作らず、`sheetRecognitionRequests` に依頼を積む。
+   */
+  readonly sheetRecognition?: SheetConvertLookup;
+}
+
+/** 変換の行の失敗の種類(文の鍵は sheetConvertFailureText)。 */
+function sheetConvertErrorCode(reason: SheetConvertReason): PartErrorCode {
+  switch (reason) {
+    case 'missingSource': case 'missingBody': case 'pending': return 'missingBody';
+    case 'consumed': return 'consumedTwice';
+    case 'sourceChanged': return 'missingSubShape';
+    case 'workerBroken': return 'workerBroken';
+    default: return 'invalidValue';
+  }
 }
 
 /**
@@ -5086,6 +5115,8 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   // Shared BRep bytes may belong to distinct input bodies; keep later imports independently consumable.
   const importedShapeRefs = new Set<string>();
   const sheetMetalBodies = new Map<string, ResolvedSheetBody>();
+  const sheetRecognitionRequests: SheetRecognitionRequestItem[] = [];
+  const sheetRecognitionComparisons: SheetRecognitionComparison[] = [];
   /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない。 */
   const consumed = new Set<string>();
   const surfaceCutGraph = document.solids.some(feature => feature.kind === 'surfaceCut')
@@ -5128,7 +5159,21 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       continue;
     }
     let outcome: PlanOutcome;
-    if (feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief') {
+    let recognizedSheet: Pick<SheetRecognitionComparison, 'request' | 'answer'> | undefined;
+    if (feature.kind === 'sheetConvert') {
+      const convert = planSheetConvert(feature, bodyKeys, consumed, options.sheetRecognition);
+      if (!convert.ok) {
+        if (convert.request !== undefined) sheetRecognitionRequests.push(convert.request);
+        errors.push(partErrorWith(feature.id, sheetConvertErrorCode(convert.reason), sheetConvertFailureText(convert.reason)));
+        continue;
+      }
+      recognizedSheet = { request: convert.request, answer: convert.answer };
+      sheetMetalBodies.set(feature.id, convert.body);
+      outcome = { ok: true, plan: convert.plan };
+    } else if (feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief') {
+      if (feature.kind !== 'sheetBase' && convertedReferenceLost(feature, sheetMetalBodies.get(feature.targetFeatureId))) {
+        errors.push(partErrorWith(feature.id, 'missingSubShape', sheetConvertFailureText('sourceChanged'))); continue;
+      }
       const sheet = planSheetFeature(feature,
         (reference) => sketches.find((entry) => entry.sketchId === reference.sketchId)?.resolved.faces.find((face) => face.featureId === reference.faceFeatureId),
         bodyKeys, consumed, sheetMetalBodies,
@@ -5166,6 +5211,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       : originAwareCacheKey(geometricKey, feature.id, originSourceIds);
     if (originSourceIds !== undefined) semanticKeys.add(key);
     if (plan.kind === 'importedSolid') importedShapeRefs.add(plan.shapeRef);
+    if (recognizedSheet !== undefined) sheetRecognitionComparisons.push({ ...recognizedSheet, rebuiltKey: key });
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
     // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ)。
@@ -5213,6 +5259,8 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     references,
     steps,
     ...(sheetMetalBodies.size === 0 ? {} : { sheetMetalBodies }),
+    ...(sheetRecognitionRequests.length === 0 ? {} : { sheetRecognitionRequests }),
+    ...(sheetRecognitionComparisons.length === 0 ? {} : { sheetRecognitionComparisons }),
     meshBodies,
     projections,
     errors,

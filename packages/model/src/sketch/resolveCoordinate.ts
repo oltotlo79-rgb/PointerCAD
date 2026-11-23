@@ -39,12 +39,12 @@ export interface ResolvedSphere {
 
 /**
  * 球面上の点の断り(FR-431)。球が消えた・球でない・まだ作られていない
- * (前方参照)のどれも、利用者から見れば「選び直す」で直るので 1 つの文言にまとめる。
+ * (前方参照)のどれも、利用者から見れば「選び直す」で直るので 1 つの文言にまとめる。文は ui の文言の表が鍵ごとに持つ。
  */
-export const MISSING_SPHERE_MESSAGE = '球が見つかりません。球を選び直してください。';
+const MISSING_SPHERE_TEXT: FailureText = { key: 'partError.coordinate.missingSphere', parameters: {} };
 
 /** 緯度が範囲外のときの断り(FR-431、断り方の表)。 */
-export const LATITUDE_RANGE_MESSAGE = '緯度は −90 度から 90 度の間で指定してください。';
+const LATITUDE_RANGE_TEXT: FailureText = { key: 'partError.coordinate.latitudeRange', parameters: {} };
 
 /**
  * 球面上の点の位置(FR-431)。
@@ -119,7 +119,7 @@ export interface ResolveContext {
    * `subShape` と同じ理由でここを口にしてある。**スケッチ 1 本は立体を知らない**ので、
    * 球の中心・半径を解けるのは部品文書の側(`part/resolveReferences.ts`・`part/resolvePart.ts`)
    * だけである。渡されなければ球を 1 つも知らない扱いになり、球面上の点は
-   * `MISSING_SPHERE_MESSAGE` で断る(黙って原点へ落とさない、FR-504)。
+   * `MISSING_SPHERE_TEXT` で断る(黙って原点へ落とさない、FR-504)。
    *
    * **前方参照を断るのは渡す側の役目**。まだ作られていない球を口が返さなければ、
    * ここは「球が見つかりません」になる(履歴の順序を知っているのは部品文書の側だから)。
@@ -217,7 +217,7 @@ export function resolvePointReference(
       // 緯度・経度の良し悪しを言っても直しようがないため)。
       const sphere = context.sphere?.(reference.sphereFeatureId) ?? null;
       if (sphere === null) {
-        return failure(featureId, 'missingBase', MISSING_SPHERE_MESSAGE);
+        return failureWith(featureId, 'missingBase', MISSING_SPHERE_TEXT);
       }
       const invalid = checkFinite(featureId, [
         ['緯度', reference.latitude.value],
@@ -229,7 +229,7 @@ export function resolvePointReference(
       // 緯度は極を越えると裏側へ回り込んでしまい、利用者の意図と一致しない。
       // 経度は 1 周回れば同じ点なので範囲を制限しない。
       if (reference.latitude.value < -90 || reference.latitude.value > 90) {
-        return failure(featureId, 'invalidValue', LATITUDE_RANGE_MESSAGE);
+        return failureWith(featureId, 'invalidValue', LATITUDE_RANGE_TEXT);
       }
       return {
         ok: true,

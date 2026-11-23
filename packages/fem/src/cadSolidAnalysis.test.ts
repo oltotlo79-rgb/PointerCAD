@@ -3,11 +3,18 @@ import { createSubShapeReference, resolveCurrentOrigin, type AnalysisBoundaryMes
   type SolidBody, type SubShapeOrigin } from '@pointercad/model';
 import type { FemClient } from './client.js';
 import { meshCadBoundary, type CadTetraContext } from './cadTetraMesh.js';
-import { analyzeCadSolid, prepareCadSolidAnalysis, type CadSolidSettings, type CadSolidPressureSettings } from './cadSolidAnalysis.js';
+import { analyzeCadSolid, cadSolidSourceKey, currentCadSolidSource, prepareCadSolidAnalysis, type CadSolidSettings,
+  type CadSolidPressureSettings } from './cadSolidAnalysis.js';
+import { femRefusalField, type FemRefusalCode } from './femCodedError.js';
 import { translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import { decodeTetraMesh, readTetraMeshInput, tetraMeshInputSha256 } from './tetraMesh.js';
 
 const options = { boundary: 'closed' as const, linearDeflection: 0.05, angularDeflection: 0.2 };
+/** 投げた断りの符号(投げなければ null、符号の無い誤りなら undefined。0b-4)。 */
+function thrownRefusal(run: () => unknown): FemRefusalCode | null | undefined {
+  try { run(); } catch (error) { return femRefusalField(error).refusal; }
+  return null;
+}
 const coordinates = [0, 0, 0, 2, 0, 0, 2, 3, 0, 0, 3, 0, 0, 0, 4, 2, 0, 4, 2, 3, 4, 0, 3, 4];
 const triangles = [0, 3, 2, 0, 2, 1, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
   1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7];
@@ -144,6 +151,9 @@ describe('CAD faces to public solid solver', () => {
     expect(() => prepare({ ...input, loadedFaces: input.loadedFaces.map(face => ({ ...face, bodyFeatureId: 'foreign' })) })).toThrow();
     expect(() => prepareCadSolidAnalysis({ ...value.current, revision: 8 }, value.mesh, value.regions,
       [0, 1, 2, 3, 4, 5], input)).toThrow(/revision/u);
+    expect(thrownRefusal(() => prepareCadSolidAnalysis({ ...value.current, revision: 8 }, value.mesh, value.regions,
+      [0, 1, 2, 3, 4, 5], input))).toBe('stale-source');
+    expect(thrownRefusal(() => prepare({ ...input, pressureMPa: Number.MAX_VALUE }))).toBeUndefined();
     for (const damaged of [
       { ...value.mesh, coordinates: value.mesh.coordinates.map((coordinate, index) => index === 0 ? NaN : coordinate) },
       { ...value.mesh, boundaryTriangles: value.mesh.boundaryTriangles.map((node, index) => index === 1 ? 0 : node) },
@@ -340,6 +350,8 @@ describe('independent current-face supports', () => {
     const supports = orthogonal().map(row => ({ face: row.face, fixed: [true, false, false] as const }));
     expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
       { ...settings(), fixedFaces: [], supports })).toThrow(/rigid/u);
+    expect(thrownRefusal(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), fixedFaces: [], supports }))).toBe('rigid-body');
   });
   it('refuses conflicting shared DOFs, duplicate support faces and overlap with legacy clamps', async () => {
     const value = await preparedMesh(), [left, front, bottom] = orthogonal();
@@ -352,6 +364,28 @@ describe('independent current-face supports', () => {
       { ...settings(), supports: [bottom] })).toThrow(/repeated/u);
     expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
       { ...settings(), supports: [left] })).toThrow(/Conflicting/u);
+    expect(thrownRefusal(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [left] }))).toBe('support-conflict');
+    const free = { face: left.face, fixed: [false, false, false] as const };
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [free] })).toThrow('Invalid translation restraints');
+    expect(thrownRefusal(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [free] }))).toBe('support-all-free');
+  });
+  it('carries the support refusal code out of analyzeCadSolid with the message unchanged (0b-4)', async () => {
+    const [left] = orthogonal(), calls: unknown[] = [];
+    const client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolid'> = { ...nativeFixture(), analyzeSolid: value => {
+      calls.push(value); return Promise.reject(new Error('analyzeSolid must not run'));
+    } };
+    expect(await analyzeCadSolid(client, kernel(), context, { ...settings(), supports: [left] })).toEqual({ kind: 'failed',
+      code: 'cad-solid', message: 'Conflicting prescribed displacement on a shared node', refusal: 'support-conflict' });
+    expect(calls).toHaveLength(0);
+  });
+  it('refuses a changed CAD source with the stale-source code and the same message (0b-4)', () => {
+    const initial = context(), signature = cadSolidSourceKey(initial);
+    expect(currentCadSolidSource(() => initial, signature)).toBe(initial);
+    expect(() => currentCadSolidSource(() => ({ ...initial, revision: 8 }), signature)).toThrow('CAD source changed during analysis');
+    expect(thrownRefusal(() => currentCadSolidSource(() => ({ ...initial, revision: 8 }), signature))).toBe('stale-source');
   });
   it('retains zero clamps and permits equal shared DOFs without duplicate node constraints', async () => {
     const value = await preparedMesh(), [left] = orthogonal();

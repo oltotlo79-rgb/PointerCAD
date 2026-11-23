@@ -1,4 +1,4 @@
-import { analyzeCadSolid, FemClient, createProductFemWorker, type CadSolidPressureSettings, type CadSolidSettings,
+import { analyzeCadSolid, FemClient, createProductFemWorker, femRefusalField, type CadSolidPressureSettings, type CadSolidSettings,
   type CadTetraContext, type FemWorkerPort } from '@pointercad/fem';
 import { affectsShape, createSubShapeReference, type AnalysisBoundarySource, type PartDocument, type ResolvedPart,
   type SolidBody, type SubShapeRef } from '@pointercad/model';
@@ -14,7 +14,7 @@ import { solidSavedInput } from './solidAnalysisSession.js';
 import { analyzeCadSolidModal, type CadSolidModalSettings } from './cadSolidModal.js';
 import { invalidateSolidModal, solidModalFailureMessage, solidModalRequestValues } from './solidModalState.js';
 import { solidModalEffectiveShared } from './solidModalShared.js';
-import { analyzeCadSolidBuckling, cadSolidBucklingFailureCode } from './cadSolidBuckling.js';
+import { analyzeCadSolidBuckling, cadSolidBucklingFailureCode, cadSolidBucklingFailureSource } from './cadSolidBuckling.js';
 import { invalidateSolidBuckling, solidBucklingModeCount } from './solidBucklingState.js';
 import { solidBucklingEffectiveReference } from './solidBucklingSaved.js';
 import { createSolidSupport, solidBoundaryFailure, solidRunFailure } from './solidBoundaryDraft.js';
@@ -120,7 +120,8 @@ function createSolidModeRuns({ kernel, store, client, context, settings, cancel,
     const id = state.startSolidBuckling();
     const fail = (error: unknown): void => {
       const message = error instanceof Error ? error.message : null;
-      store.getState().receiveSolidBuckling(id, { kind: 'failed', code: message === null ? null : cadSolidBucklingFailureCode(message), message });
+      store.getState().receiveSolidBuckling(id, { kind: 'failed', code: message === null ? null
+        : cadSolidBucklingFailureCode(cadSolidBucklingFailureSource(error)), message });
     };
     try {
       if (session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
@@ -146,7 +147,7 @@ function createSolidModeRuns({ kernel, store, client, context, settings, cancel,
         if (outcome.kind === 'result') store.getState().receiveSolidBuckling(id, { kind: 'result', input: outcome.input,
           result: outcome.result, loadedAreaMm2: outcome.loadedAreaMm2, totalForceN: outcome.totalForceN });
         else if (outcome.kind === 'failed') store.getState().receiveSolidBuckling(id, { kind: 'failed',
-          code: cadSolidBucklingFailureCode(outcome.message), message: outcome.message });
+          code: outcome.code, message: outcome.message });
         else store.getState().cancelSolidBuckling();
       }).catch((error: unknown) => { if (live()) { bucklingActive = null; fail(error); } });
     } catch (error) { fail(error); }
@@ -211,7 +212,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
   const failure = (error: unknown): void => {
     const session = store.getState().solidAnalysisSession;
     if (session) store.setState({ solidAnalysisSession: { ...session, status: 'failed', stage: null, result: null,
-      error: error instanceof Error ? solidBoundaryFailure(error.message) : t('solidAnalysis.failed') } });
+      error: error instanceof Error ? solidBoundaryFailure({ message: error.message, ...femRefusalField(error) }) : t('solidAnalysis.failed') } });
   };
   const validate = (): void => {
     const state = store.getState(), session = state.solidAnalysisSession;
@@ -274,7 +275,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         const next = store.getState().solidAnalysisSession;
         if (next) store.setState({ solidAnalysisSession: { ...next, status: outcome.kind === 'result' ? 'complete'
           : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', stage: null, result: outcome.kind === 'result' ? outcome : null,
-        error: outcome.kind === 'failed' ? solidRunFailure(outcome.code, outcome.message) : null } });
+        error: outcome.kind === 'failed' ? solidRunFailure(outcome) : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };

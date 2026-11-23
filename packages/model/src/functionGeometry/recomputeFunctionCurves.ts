@@ -53,7 +53,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
     if (feature.kind !== 'functionCurve' || invalidInputs.has(feature.id)) continue;
     try {
       if (math === undefined || context === undefined || analysis === undefined || !supportsFunctions(bridge)) {
-        invalidInputs.set(feature.id, plainText('関数の計算部を準備できません。再計算してから作図してください。'));
+        invalidInputs.set(feature.id, { key: 'math.error.function.engineUnavailable', parameters: {} });
         continue;
       }
       const inputs = await resolveFunctionInputs(document, feature.definition, analysis, current);
@@ -64,7 +64,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       if(sampled.components.length===0 && sampled.bezier===undefined){
         // Empty geometry cannot supply an endpoint. Mark the owner invalid before
         // resolving relative points and their connected constraint components.
-        invalidInputs.set(feature.id,plainText('指定したXYZの範囲に曲線がありません。'));
+        invalidInputs.set(feature.id,{ key: 'math.error.function.emptyCurve', parameters: {} });
         continue;
       }
       const geometry = await bridge.functionSketchCurves(sampled);

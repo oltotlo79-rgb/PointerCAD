@@ -12,6 +12,7 @@ import {
   mathGeometryParameterDraft,
   removeMathGeometryDefinition,
   setMathGeometryAngleUnit,
+  setMathGeometryTolerance,
   synchronizeConfigurations,
   type MathGeometryDefinition,
   type MathGeometryOutcome,
@@ -21,6 +22,7 @@ import {
   type PartDocument,
 } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { AppState } from '../store/appState.js';
 import { bodyFor, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
@@ -293,6 +295,16 @@ describe('GR-16: default names and refusals', () => {
       message: t(`mathGeometry.tolerance.error.${field}`) });
     expect(state.applyDocument).not.toHaveBeenCalled();
     expectUnchanged(state);
+  });
+
+  it.each([
+    [{ linearMm: 0, angularRadians: 1e-6 }, '長さの比べる幅は0より大きい有限の数にしてください。'],
+    [{ linearMm: 1e-6, angularRadians: Math.PI / 4 }, '角度の比べる幅は0より大きく45度より小さい数にしてください。'],
+  ] as const)('renders the original definition refusal for %o', (tolerance, before) => {
+    const result = setMathGeometryTolerance(open(), 'g1', tolerance);
+    if (result.ok || result.reason !== 'invalidTolerance') throw new Error('Expected a tolerance refusal');
+    expect(failureMessage(result.text)).toBe(before);
+    expect(failureMessage(result.text)).not.toContain('90度');
   });
 
   it('validates tolerance before looking up the definition, reporting the linear field first', () => {

@@ -1,11 +1,11 @@
 /** 板金の入力だけを保存する。導出座標・メッシュ・一時表示は書き出さない。 */
 import { belowMagnitude } from '@pointercad/model';
-import type { SheetBaseFeature, SheetBendFeature, SheetBendRuleOverride, SheetFlangeFeature, SheetFlangeProfile, SheetMetalFeature,
+import type { SheetBaseFeature, SheetBendFeature, SheetBendRuleOverride, SheetConvertFeature, SheetFlangeFeature, SheetFlangeProfile, SheetMetalFeature,
   SheetMetalRule, SheetPanelBoundaryRef, SheetReliefFeature, SketchFaceRef, SketchLineRef } from '@pointercad/model';
 import { checkRecord, fieldProblem, joinPath, readBoolean, readExpression, readLiteral, readRecord, readString, readValue,
   type Checked, type ExpressionValueJson } from '../guards.js';
 import { readList, serializeExpression } from './fields.js';
-import { readFaceRefItem, serializeFaceRef, serializeLineRef } from './shapeReferences.js';
+import { readFaceRefItem, readSubShapeRefField, serializeFaceRef, serializeLineRef, serializeSubShapeRef } from './shapeReferences.js';
 import type { SolidFeatureBase } from './solidBase.js';
 
 function readId(record: Record<string, unknown>, key: string, path: string): Checked<string> {
@@ -140,6 +140,23 @@ export function readSheetReliefFeature(record: Record<string, unknown>, path: st
     ...(seams.value === undefined ? {} : { seamConnectionIds: seams.value }) } };
 }
 
+/**
+ * 立体を板金へ変える行(M-08。保存の版 24)。板厚・板・曲げは再計算で元の立体から読むので保存しない。
+ * 後から任意の欄(板・縁の指紋など)を足しても、この形で保存した文書はそのまま読める(足す欄は任意にする)。
+ */
+export function readSheetConvertFeature(record: Record<string, unknown>, path: string, base: SolidFeatureBase): Checked<SheetConvertFeature> {
+  const source = readId(record, 'sourceFeatureId', path); if (!source.ok) return source;
+  if (source.value === base.id) return fieldProblem(joinPath(path, 'sourceFeatureId'), 'type');
+  const face = readSubShapeRefField(record, 'referenceFace', path); if (!face.ok) return face;
+  if (face.value.fingerprint.kind !== 'face') return fieldProblem(joinPath(path, 'referenceFace'), 'type');
+  const found = readRecord(record, 'rule', path); if (!found.ok) return found;
+  const at = joinPath(path, 'rule');
+  const innerRadius = readFiniteExpression(found.value, 'innerRadius', at, positiveLength); if (!innerRadius.ok) return innerRadius;
+  const kFactor = readFiniteExpression(found.value, 'kFactor', at, validK); if (!kFactor.ok) return kFactor;
+  return { ok: true, value: { ...base, kind: 'sheetConvert', sourceFeatureId: source.value, referenceFace: face.value,
+    rule: { innerRadius: innerRadius.value, kFactor: kFactor.value } } };
+}
+
 function serializeOverride(rule: SheetBendRuleOverride): SheetBendRuleOverride {
   return { innerRadius: rule.innerRadius === null ? null : serializeExpression(rule.innerRadius),
     kFactor: rule.kFactor === null ? null : serializeExpression(rule.kFactor) };
@@ -166,5 +183,8 @@ export function serializeSheetMetalFeature(feature: SheetMetalFeature): SheetMet
       return { ...base, kind: feature.kind, targetFeatureId: feature.targetFeatureId, boundary: serializeBoundary(feature.boundary),
         position: serializeExpression(feature.position), width: serializeExpression(feature.width), depth: serializeExpression(feature.depth), shape: feature.shape,
         ...(feature.seamConnectionIds === undefined ? {} : { seamConnectionIds: [...feature.seamConnectionIds] }) };
+    case 'sheetConvert':
+      return { ...base, kind: feature.kind, sourceFeatureId: feature.sourceFeatureId, referenceFace: serializeSubShapeRef(feature.referenceFace),
+        rule: { innerRadius: serializeExpression(feature.rule.innerRadius), kFactor: serializeExpression(feature.rule.kFactor) } };
   }
 }

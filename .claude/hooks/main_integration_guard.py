@@ -73,7 +73,7 @@ RELEASE_LOOKUP_TIMEOUT = 3
 
 REASON_TEMPLATE = (
     "{what} は main への統合に当たります(rules/03 §6: main への統合は完了の判定の記録と、"
-    "main と同一 SHA の両OS CI の後)。{detail}"
+    "枝で同じ commit・tree の両 OS の外部検査と verdict を照合した後に push-verified。rules/03 §7.3)。{detail}"
 )
 
 

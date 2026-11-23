@@ -1,4 +1,4 @@
-import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
+import { exceedsMagnitude, InputIssue } from '@pointercad/model/beam-analysis';
 import { isRecord } from './valueGuards.js';
 import type { BeamNodalLoad, Vector3 } from './analysisModel.js';
 import type { BeamContactInput } from './contactModel.js';
@@ -127,7 +127,8 @@ export function translateBeamFrictionContact(value: unknown): FrictionContactTra
       return translateBeamContact({ schema: 'pointercad-beam-contact/1', geometry: row.geometry,
         supports: row.supports, contacts: row.contacts, referenceLoads, loadFactors: [1] });
     } catch (error) {
-      if (error instanceof Error && error.message === 'contact-input: buckling-load: zero reference load') return null;
+      // 荷重 0 の段だけを飛ばす(translateBeamContact が包んだ translateBeamBuckling の断りの符号。文は読まない。0b-4)。
+      if (error instanceof Error && error.cause instanceof InputIssue && error.cause.code === 'zero-reference-load') return null;
       throw error;
     }
   });

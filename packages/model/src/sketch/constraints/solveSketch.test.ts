@@ -1,4 +1,3 @@
-import { plainTextValue } from '../../failureText.js';
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -22,7 +21,6 @@ import { crossVec3, distanceVec3, normalizeVec3, type Vec3 } from '../vec3.js';
 import { diagnoseConstraints } from './diagnose.js';
 import { geometryErrors, geometryOracleFactories, requiredPoint } from './independentGeometry.testSupport.js';
 import {
-  CONSTRAINT_FREE_SKETCH_MESSAGE,
   createConstrainedSketchJob,
   resolveConstrainedSketch,
   type ConstrainedSketch,
@@ -333,7 +331,7 @@ describe('作図面の中で解く(§0.a-0.3)', () => {
     );
     const constrained = resolveConstrainedSketch(document);
     expect(constrained.errors).toHaveLength(1);
-    expect(plainTextValue(constrained.errors[0].text)).toBe(CONSTRAINT_FREE_SKETCH_MESSAGE);
+    expect(constrained.errors[0].text).toEqual({ key: 'partError.sketchConstraint.freeSketch', parameters: {} });
     expect(constrained.diagnosis).toBeNull();
     expectVec3(segmentOf(constrained.resolved, 'line-1').to, [7, 4, 0]);
   });

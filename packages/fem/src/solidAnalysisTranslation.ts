@@ -1,4 +1,5 @@
 import { createPrefixedError } from './valueGuards.js';
+import { FemRefusalError } from './femCodedError.js';
 import { subVec3 as sub, crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
 import { sha256Hex } from './sha256.js';
 import type { SolidAnalysisInput, SolidAnalysisPlan, SolidMaterial, SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
@@ -184,7 +185,7 @@ export function translateSolidAnalysis(value: unknown): { input: SolidAnalysisIn
         if (norm > 1e-12) basis.push(vector.map(v => v / norm));
       }
     }
-    if (basis.length !== 6) fail('unrestrained component rigid-body motion');
+    if (basis.length !== 6) throw new FemRefusalError('rigid-body', 'solid-input: unrestrained component rigid-body motion');
   }
   const forcesN: [number, number, number][] = nodes.map(() => [0, 0, 0]);
   const add = (node: number, force: SolidVector3): void => {

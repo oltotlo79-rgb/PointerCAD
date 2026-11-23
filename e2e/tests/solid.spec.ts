@@ -1238,7 +1238,7 @@ test.describe('P3 加工フィーチャー', () => {
     await expect(solidRow(page, '直線パターン1')).toBeVisible();
     await solidRow(page, '直線パターン1').click();
     await expectVolume(page, BOARD_VOLUME - 3 * HOLE_6_THROUGH);
-    await expect(propertyValue(page, '並べる穴')).toHaveText('穴1');
+    await expect(propertyValue(page, '並べる元')).toHaveText('穴1');
 
     // 8) 元に戻す・やり直す(FR-505)。加工も同じように 1 段ずつ戻る。
     await page.keyboard.press('Control+z');
@@ -1591,17 +1591,51 @@ test.describe('P3 加工フィーチャー', () => {
     await expect(popover(page)).toBeVisible();
     await cancelPopover(page);
 
-    // 3) 穴でない立体を選んで「直線パターン」(§0.a-0.20 の「対象は穴とねじ穴だけ」)。
+    // 3) 独立した押し出しを並べ、実体積を確認する。パターン自身は並べる元にできない。
     await page.keyboard.press('4');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await solidRow(page, '押し出し1').click();
     await openToolMenu(page, '加工');
     const patternButton = machiningTool(page, '直線パターン');
+    await expect(patternButton).toBeEnabled();
+    await patternButton.click();
+    await expect(popoverTitle(page)).toHaveText('まっすぐ並べる');
+    await fillFields(page, ['45', '2']);
+    await commitPopover(page);
+    await expect(solidRowBox(page, '直線パターン1').locator('.pcad-tree__alert')).toHaveAttribute(
+      'title',
+      '並べた立体の一部が、元の立体から離れています。間隔や個数を見直してください。 計算できていません。値を確かめてください。',
+      { timeout: KERNEL_TIMEOUT_MS },
+    );
+    await solidRow(page, '押し出し1').click();
+    await expectVolume(page, BOARD_VOLUME);
+
+    await page.keyboard.press('Control+z');
+    await expect(solidRows(page)).toHaveCount(1);
+    await solidRow(page, '押し出し1').click();
+    await openToolMenu(page, '加工');
+    await patternButton.click();
+    await expect(popoverTitle(page)).toHaveText('まっすぐ並べる');
+    await fillFields(page, ['5', '3']);
+    await commitPopover(page);
+    await solidRow(page, '直線パターン1').click();
+    await expectVolume(page, 50 * 30 * 10);
+    await expect(propertyValue(page, '並べる元')).toHaveText('押し出し1');
+
+    await openToolMenu(page, '加工');
     await expect(patternButton).toBeDisabled();
     await patternButton.click({ force: true });
     await expect(statusText(page)).toHaveText(
-      `${SOLID_ERROR_PREFIX} 並べられるのは穴とねじ穴だけです。`,
+      `${SOLID_ERROR_PREFIX} 選んだ立体や加工は並べられません。並べる元を選び直してください。`,
     );
+    await expect(solidRows(page)).toHaveCount(2);
+    await page.keyboard.press('Control+z');
+    await expect(solidRows(page)).toHaveCount(1);
+    await page.keyboard.press('Control+y');
+    await expect(solidRows(page)).toHaveCount(2);
+    await solidRow(page, '直線パターン1').click();
+    await expectVolume(page, 50 * 30 * 10);
+    await page.keyboard.press('Control+z');
     await expect(solidRows(page)).toHaveCount(1);
 
     // 4) 選ぶ種類は `1`〜`4` で切り替わる(§0.a-0.6)。

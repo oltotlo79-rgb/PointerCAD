@@ -87,6 +87,19 @@ function threadOf(text: string, width: number, depth: number): readonly [number,
   return [(match[1] ?? '').includes('右端から') ? width - x : x, fromTop(match[2] ?? '') ? depth - y : y];
 }
 
+/** 2 本の鎖で示された軸。基準のめねじと他のめねじの位置を取付け穴の列・段から外す。 */
+function splitAxis(text: string, extent: number, thread: number): readonly number[] {
+  const [outer, inner] = text.split('|');
+  if (outer === undefined || inner === undefined) return [];
+  const outerValues = chain(outer);
+  const innerValues = chain(inner);
+  const [center, shared] = positions(outerValues, extent);
+  const [first, otherShared] = positions(innerValues, extent);
+  if (outerValues.length !== 5 || innerValues.length !== 4 || positions(outerValues, extent).length !== 4
+    || center !== thread || shared !== otherShared || first === undefined) return [];
+  return [first, ...positions(outerValues, extent).slice(1)];
+}
+
 /** 段ごとの列の並びの組の穴: 鎖の位置からめねじの軸の位置を外した残りを列と段にする。合わない時は空。 */
 function arrangedHoles(count: number, diameter: number, across: string, up: string, threads: string, width: number,
   depth: number): readonly Hole[] {
@@ -94,8 +107,9 @@ function arrangedHoles(count: number, diameter: number, across: string, up: stri
   const thread = threadOf(threads, width, depth);
   if (rows === undefined || thread === undefined) return [];
   const chainUp = up.split(/\/(?:並び|配列)/u)[0] ?? '';
-  const columns = positions(chain(across), width).filter((x) => x !== thread[0]);
-  const levels = positions(chain(chainUp), depth).map((value) => (fromTop(chainUp) ? depth - value : value)).filter((y) => y !== thread[1]);
+  const columns = across.includes('|') ? splitAxis(across, width, thread[0]) : positions(chain(across), width).filter((x) => x !== thread[0]);
+  const levels = chainUp.includes('|') ? splitAxis(chainUp, depth, depth - thread[1]).map((value) => depth - value).reverse()
+    : positions(chain(chainUp), depth).map((value) => (fromTop(chainUp) ? depth - value : value)).filter((y) => y !== thread[1]);
   const holes = rows.flatMap((row, index) => row.map((column): Hole => [columns[column - 1] ?? NaN, levels[index] ?? NaN, diameter]));
   return holes.length === count ? holes : [];
 }
@@ -182,9 +196,11 @@ describe('資料 1 の長方形の板の 39 回目の 2 本の読みで揃った
       const computed = (width * depth - holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0)) * thickness * (DENSITY[material] ?? NaN) / 1000;
       // 資料の質量は長方形の板 × 密度の 7 割以上(今の決まり)。10% 以内の時だけ行の質量。
       expect(catalog >= 0.7 * computed, record.key).toBe(true);
+      const marks = row.holes.includes('|') ? ['アジャスターのめねじ', 'キャスターを付けるめねじ'] : ['アジャスターのめねじ'];
       expect([record.material, record.massG, record.page, record.kind, record.simplified], record.key).toEqual([material,
-        Math.abs(catalog - computed) <= 0.1 * computed ? catalog : null, Number(row.page), 'アジャスターベース', ['アジャスターのめねじ']]);
-      expect(record.size.startsWith(`アジャスターベース${row.kind.includes('キャスタープレート') ? '（キャスターも付けられる板）' : ''} `), record.key).toBe(true);
+        Math.abs(catalog - computed) <= 0.1 * computed ? catalog : null, Number(row.page), 'アジャスターベース', marks]);
+      const caster = row.kind.includes('キャスタープレート') || row.kind === 'キャスターも付けられる板';
+      expect(record.size.startsWith(`アジャスターベース${caster ? '（キャスターも付けられる板）' : ''} `), record.key).toBe(true);
     }
   });
 

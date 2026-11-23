@@ -68,7 +68,8 @@ export function referencedSketchIds(
   sketches: readonly SketchDocument[] = [],
 ): readonly string[] {
   switch (feature.kind) {
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return sheetFeatureDependencies(feature).sketchItems.map((item) => item.sketchId);
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert':
+      return sheetFeatureDependencies(feature).sketchItems.map((item) => item.sketchId);
     case 'extrude':
       return [feature.profile.sketchId];
     case 'revolve':

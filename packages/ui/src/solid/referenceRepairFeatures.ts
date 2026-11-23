@@ -12,6 +12,7 @@ export function repairSolid(feature: SolidFeature, map: RepairMapper): SolidFeat
     case 'holeTranslate': return { ...feature, face: map(feature.face, 'face', 'cylinder') };
     case 'faceRotate': return { ...feature, face: map(feature.face, 'face', 'plane'), hinge: map(feature.hinge, 'hinge', 'line') };
     case 'faceOffset': return { ...feature, face: map(feature.face, 'face', 'plane') };
+    case 'sheetConvert': return { ...feature, referenceFace: map(feature.referenceFace, 'referenceFace', 'plane') };
     case 'fillet': case 'chamfer': return { ...feature, targets: feature.targets.map((ref, index) => map(ref, `targets:${index}`)) };
     case 'draft': return { ...feature, neutralFace: map(feature.neutralFace, 'neutralFace', 'plane'),
       faces: feature.faces.map((ref, index) => map(ref, `faces:${index}`)) };

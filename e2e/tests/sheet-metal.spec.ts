@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile, stat } from 'node:fs/promises';
-import { readPcadFile } from '../../packages/io/src/index.js';
+import { parseDxfTags, readDxf, readPcadFile, writePcadFile } from '../../packages/io/src/index.js';
 import { sheetFlatDrawingFlow } from './sheetDrawingFlow.js';
 import { sheetExportFlow, verifySheetStepFiles } from './sheetExportFlow.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
@@ -8,6 +8,20 @@ import { withBrowserFailureDiagnostics } from './browserFailureDiagnostics.js';
 import { captureManualDetail } from './captureManualDetail.js';
 
 import { tree, command, chooseSheet, volume, rectangleFace } from './sheetUiFlow.js';
+import { addFlangeToConvertedPlate, convertExtrudedPlate, openConvertTool, undoRedoConvert, unfoldConvertedFlange, unfoldConvertedPlate } from './sheetConvertFlow.js';
+
+import { clickWorldPoint } from './homeViewProjection.js';
+import { beginRecompute, waitForRecompute } from './recompute.js';
+import { sheetHolePartFile } from './sheetHoleFixture.js';
+import { openSheetPart } from './sheetPartFlow.js';
+
+async function useBrowserFileEvents(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
+      Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+    }
+  });
+}
 
 const fileAction = (page: Page, name: string) => page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name, exact: true });
 
@@ -275,4 +289,129 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await verifySheetStepFiles(page, savedPath, exports);
 
   expect(errors).toEqual([]);
+}));
+
+test('M-08 押し出した板を板金へ変え、取り消し・やり直し・展開の後、フランジを足して展開DXFと保存・開き直しまで同じ形になる', async ({ page }, testInfo) => withBrowserFailureDiagnostics(page, testInfo, async (stage) => {
+  const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+  await useBrowserFileEvents(page);
+  stage('板を作って板金へ変える');
+  await convertExtrudedPlate(page);
+  stage('取り消すと元の押し出しに戻り、やり直すと変換が戻る');
+  await undoRedoConvert(page);
+  stage('変換した板金を展開する');
+  await unfoldConvertedPlate(page);
+  stage('変換した板金にフランジを足す');
+  await addFlangeToConvertedPlate(page);
+  stage('フランジを足した板金を展開し、展開DXFを書き出す');
+  await unfoldConvertedFlange(page);
+  const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
+  const dxfPath = testInfo.outputPath('sheet-convert-flat.dxf');
+  const dxfDownload = page.waitForEvent('download');
+  await unfold.getByRole('button', { name: '展開DXF', exact: true }).click();
+  await (await dxfDownload).saveAs(dxfPath);
+  const dxf = readDxf(parseDxfTags(await readFile(dxfPath, 'utf8')));
+  expect(dxf.unit).toBe('mm');
+  // 切断の外形は 50 × (30 + 1.9π + 20)。曲げは +90 度なので BEND_UP の線だけ(flatBendLines.ts の direction)。
+  const points = dxf.entities.filter((entity) => entity.layer === 'CUT_OUTER').flatMap((entity) => entity.kind === 'line' ? [entity.start, entity.end] : []);
+  const size = (axis: 'x' | 'y'): number => Math.max(...points.map((point) => point[axis])) - Math.min(...points.map((point) => point[axis]));
+  const [short, long] = [size('x'), size('y')].sort((a, b) => a - b);
+  expect(short).toBeCloseTo(50, 4);
+  expect(long).toBeCloseTo(50 + 1.9 * Math.PI, 4);
+  expect(dxf.entities.filter((entity) => entity.layer === 'BEND_UP').length).toBeGreaterThan(0);
+  expect(dxf.entities.some((entity) => entity.layer === 'BEND_DOWN')).toBe(false);
+  stage('保存して開き直すと、変換とフランジを同じ形で再計算する');
+  const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();
+  const savedPath = testInfo.outputPath('sheet-convert.pcad'); await (await downloaded).saveAs(savedPath);
+  const decoded = readPcadFile(await readFile(savedPath)); if (!decoded.ok) throw new Error(decoded.error.message);
+  expect(decoded.document.schemaVersion).toBe(24);
+  expect(decoded.document.solids.map((feature) => feature.kind)).toEqual(['extrude', 'sheetConvert', 'sheetFlange']);
+  await fileAction(page, '新規').click(); await expect(tree(page, 'フランジ1')).toHaveCount(0);
+  const reopen = await beginRecompute(page);
+  const chooser = page.waitForEvent('filechooser'); await fileAction(page, '開く').click(); await (await chooser).setFiles(savedPath);
+  await waitForRecompute(page, reopen);
+  await expect(tree(page, 'フランジ1')).toBeVisible({ timeout: 60_000 }); await tree(page, 'フランジ1').click();
+  await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(5000 + 200 * Math.PI, 4);
+  expect(errors).toEqual([]);
+}));
+
+/** 既存の穴表のスケッチを使い、認識前の立体だけを作る。形状と穴の表は Worker が計算する。 */
+function sheetConvertSourceFile(blind: boolean): Uint8Array {
+  const seed = readPcadFile(sheetHolePartFile());
+  if (!seed.ok) throw new Error(seed.error.message);
+  const sketch = seed.document.sketches[0];
+  const profile = { sketchId: sketch.id, faceFeatureId: 'outer' };
+  const n = (value: number) => ({ value, source: String(value), display: String(value) });
+  const base = { kind: 'extrude', id: 'solid-1', name: '押し出し1', suppressed: false, profile,
+    distance: n(2), reversed: false, symmetric: false } as const;
+  if (blind) {
+    const bore = { ...base, id: 'solid-2', name: '押し出し2', profile: { ...profile, faceFeatureId: 'hole-1' }, distance: n(1) };
+    const cut = { kind: 'boolean', id: 'solid-3', name: '差1', suppressed: false, operation: 'subtract',
+      targetFeatureId: base.id, toolFeatureId: bore.id } as const;
+    return writePcadFile({ ...seed.document, solids: [base, bore, cut] });
+  }
+  const circles = sketch.features.filter((feature) => feature.kind === 'arc');
+  const outerFace = sketch.features.find((feature) => feature.id === profile.faceFeatureId);
+  if (circles.length !== 2 || outerFace?.kind !== 'face') throw new Error('外周面と二つの円が必要です');
+  const holedSketch = { ...sketch, features: [
+    ...sketch.features.filter((feature) => feature.id !== outerFace.id),
+    // 面を解く時点で、穴の境界となる円が履歴に積まれている必要がある。
+    { ...outerFace, holes: circles.map(({ id }) => [{ featureId: id }]) },
+  ] };
+  return writePcadFile({ ...seed.document, schemaVersion: 23, sketches: [holedSketch], solids: [base] });
+}
+
+test('M-08 二つの貫通穴を持つ立体を板金へ変え、展開図に径4の穴表を配置する', async ({ page }, testInfo) => withBrowserFailureDiagnostics(page, testInfo, async (stage) => {
+  await useBrowserFileEvents(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  stage('押し出しの立体と基準面を選び、二つの穴を残して変換する');
+  await openSheetPart(page, '貫通穴.pcad', sheetConvertSourceFile(false));
+  const form = await openConvertTool(page, '押し出し1');
+  await clickWorldPoint(page, [25, 15, 2]);
+  await expect(form.getByRole('status').first()).toHaveText('元の立体: 押し出し1');
+  const commit = await beginRecompute(page);
+  await form.getByRole('button', { name: '作成', exact: true }).click();
+  await waitForRecompute(page, commit);
+  await tree(page, '板金へ変換1').click();
+  await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 - 16 * Math.PI, 4);
+  stage('展開図の view-1 を選び、円穴二つの穴表を配置する');
+  await chooseSheet(page, '板金の展開');
+  const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
+  await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
+  await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
+  await unfold.getByRole('button', { name: '展開から図面を作成', exact: true }).click();
+  const section = page.locator('.pcad-drawing-property-section[data-property-kind="table"]');
+  await expect(section).toBeVisible({ timeout: 60_000 });
+  if (await section.getAttribute('open') === null) await section.locator(':scope > summary').click();
+  const editor = page.locator('.pcad-drawing-table-editor');
+  await editor.getByLabel('表と部品番号', { exact: true }).selectOption('hole');
+  await editor.getByLabel('穴の座標を測る図', { exact: true }).selectOption('view-1');
+  await editor.getByRole('button', { name: '表を配置', exact: true }).click();
+  const table = page.locator('.pcad-drawing-svg [data-owner-id="table-1"]');
+  for (const label of ['A1', 'A2', 'φ4']) {
+    await expect(table.locator(`[aria-label="${label}"]`)).toHaveCount(2, { timeout: 60_000 });
+  }
+  await expect(table.locator('[aria-label="A3"]')).toHaveCount(0);
+}));
+
+test('M-08 底の残る穴を持つ立体の変換を断り、取消後も元の形とUndoが残る', async ({ page }, testInfo) => withBrowserFailureDiagnostics(page, testInfo, async (stage) => {
+  await useBrowserFileEvents(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await openSheetPart(page, '止まり穴.pcad', sheetConvertSourceFile(true));
+  const undo = page.getByRole('button', { name: '元に戻す', exact: true });
+  await expect(undo).toBeDisabled();
+  stage('板厚が一定でない元の立体を選び、変換の拒否理由を確認する');
+  const form = await openConvertTool(page, '差1');
+  await clickWorldPoint(page, [25, 15, 2]);
+  await expect(form.getByRole('status').first()).toHaveText('元の立体: 差1');
+  await form.getByRole('button', { name: '作成', exact: true }).click();
+  await expect(form.getByRole('alert')).toHaveText('板厚が途中で変わっています。厚みをそろえてください。', { timeout: 60_000 });
+  stage('取消後も元の立体が残り、変換行とUndoを追加していないことを確認する');
+  await form.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await expect(tree(page, '板金へ変換1')).toHaveCount(0);
+  await expect(undo).toBeDisabled();
+  await tree(page, '差1').click();
+  await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 - 4 * Math.PI, 4);
 }));

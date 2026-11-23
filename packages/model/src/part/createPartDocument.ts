@@ -441,6 +441,7 @@ export type SolidLabelKey =
   | 'sheetFlange'
   | 'sheetBend'
   | 'sheetRelief'
+  | 'sheetConvert'
   | 'extrude'
   | 'revolve'
   | 'sew'
@@ -524,6 +525,7 @@ const SOLID_FEATURE_KIND_TABLE = {
   sheetFlange: true,
       sheetBend: true,
       sheetRelief: true,
+  sheetConvert: true,
   extrude: true,
   revolve: true,
   sew: true,
@@ -584,6 +586,7 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   sheetFlange: 'フランジ',
   sheetBend: '指定線で曲げる',
   sheetRelief: '曲げリリーフ',
+  sheetConvert: '板金へ変換',
   extrude: '押し出し',
   revolve: '回転',
   sew: '縫合',
@@ -848,7 +851,9 @@ function schemaVersionFor(document: PartDocument, feature: SolidFeature): { read
     && (feature.operation.kind === 'offsetBody' || feature.operation.kind === 'blend'));
   const usesSweepShape = feature.kind === 'sweep'
     && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined);
-  return (usesEdgeDistance || usesSweepShape || usesSurfaceBody) && document.schemaVersion < NEW_FEATURE_SCHEMA_VERSION
+  // 立体を板金へ変える行(M-08)も、同じ版 24 の新しい種類(統括の決定 2026-11-22)。
+  const usesNewKind = usesEdgeDistance || usesSweepShape || usesSurfaceBody || feature.kind === 'sheetConvert';
+  return usesNewKind && document.schemaVersion < NEW_FEATURE_SCHEMA_VERSION
     ? { schemaVersion: NEW_FEATURE_SCHEMA_VERSION } : {};
 }
 
@@ -1042,6 +1047,7 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
   switch (feature.kind) {
     case 'sheetBase': return [];
     case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return [feature.targetFeatureId];
+    case 'sheetConvert': return [feature.sourceFeatureId];
     case 'sew':
       return solids === undefined ? [] : sewnSurfaceBodyIds(feature, solids);
     case 'extrude':
@@ -1124,7 +1130,7 @@ function sewnSurfaceBodyIds(feature: SewFeature, solids: readonly SolidFeature[]
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
     // 板金の曲げはパネルグラフを伴い、加工パターンの材料にはしない。
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return false;
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert': return false;
     case 'hole':
     case 'threadHole':
     case 'fillet':
@@ -1183,6 +1189,7 @@ export function isPatternSource(feature: SolidFeature, solids?: readonly SolidFe
   if (feature.kind === 'hole' || feature.kind === 'threadHole') return true;
   if (solids === undefined) return false;
   if (feature.kind !== 'boolean') {
+    if (feature.kind === 'rib') return true;
     if (feature.kind === 'importedSolid') return feature.bodyKind === 'solid';
     return isResultTool(feature) || feature.kind === 'spring' || feature.kind === 'sew';
   }

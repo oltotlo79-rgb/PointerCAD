@@ -5,7 +5,7 @@
  * Rは `coef("G")` を式に持つ図形由来の係数で、Gは長さ2mmのスケッチ線分の測定値。
  * A（2.5）は図形由来ではない。
  */
-import { FailureTextError, plainText, type FailureText } from '../failureText.js';
+import { FailureTextError, type FailureText } from '../failureText.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as number, mathScalarExpression, type ExpressionValue, type StoredMathExpression,
 } from '@pointercad/expression';
@@ -197,7 +197,7 @@ describe('規則: 演算ごとに、その被演算子が図形由来の係数�
   it('座標曲線 Y = floor(coef("R"))*X は付録Cの「演算」の文で断り、どの式か(Y)も返す', () => {
     expect(checkGeometryDerivedFunctionOperations(plot(formulaOf('curve', 'floor(coef("R"))*X')), DERIVED)).toEqual({
       operation: 'floor', output: 'Y',
-      text: plainText('図形の測定値から計算する式では「floor」を使えません。値の境目で結果が変わる計算は使えません。') });
+      text: { key: 'mathGeometry.error.discontinuousOperation', parameters: { operation: 'floor' } } });
   });
 
   it.each([

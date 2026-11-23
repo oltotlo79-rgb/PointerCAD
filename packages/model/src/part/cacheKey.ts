@@ -200,6 +200,7 @@ export interface BooleanKeyMaterial {
   readonly targetKey: string;
   readonly toolKey: string;
   readonly transforms?: readonly KeyTransform[];
+  readonly patternTool?: 'rib';
   /** 何も削れない差を断るか。立てたときだけ鍵の文字列へ `;requireRemoval=true` を足す。 */
   readonly requireRemoval?: true;
 }
@@ -970,8 +971,9 @@ function keyTransform(transform: KeyTransform): string {
 }
 
 /** 省略した通常の和・差は従来の鍵。空配列は配置済みの元だけを残すパターン。 */
-function optionalBooleanTransforms(transforms: readonly KeyTransform[] | undefined): string {
-  return transforms === undefined ? '' : `;transforms=${keyTransformList(transforms)}`;
+function optionalBooleanPattern(material: BooleanKeyMaterial): string {
+  const placement = material.transforms === undefined ? '' : `;transforms=${keyTransformList(material.transforms)}`;
+  return placement + (material.patternTool === undefined ? '' : `;patternTool=${material.patternTool}`);
 }
 
 /** 剛体変換の並び。長さを混ぜるので、空と恒等1つは必ず別の文字列になる。 */
@@ -1248,7 +1250,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;targetKey=${material.targetKey}` +
         `;toolKey=${material.toolKey}` +
         (material.requireRemoval === true ? ';requireRemoval=true' : '') +
-        optionalBooleanTransforms(material.transforms) + '}'
+        optionalBooleanPattern(material) + '}'
       );
     case 'hole':
       return (

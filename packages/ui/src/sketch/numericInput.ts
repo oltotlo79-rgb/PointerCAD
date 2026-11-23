@@ -1033,7 +1033,7 @@ const TORUS_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
 /**
  * 緯度の範囲(度)。**両端を含む**(±90 は極そのもので、正しい点になる)。
  * 極を越えると裏側へ回り込んで利用者の意図と一致しないので、model の
- * `resolvePointReference` も同じ範囲で断る(`LATITUDE_RANGE_MESSAGE`)。
+ * `resolvePointReference` も同じ範囲で断る(鍵 `partError.coordinate.latitudeRange`)。
  * 同じ条件を欄の側でも見て、**決める前に赤くする**(NFR-UX-5)。
  */
 const LATITUDE_RANGE: NumericFieldRange = { min: -90, minInclusive: true, max: 90, maxInclusive: true };

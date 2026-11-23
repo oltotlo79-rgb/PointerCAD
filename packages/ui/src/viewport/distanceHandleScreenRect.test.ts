@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { distanceHandleScreenRect } from './distanceHandleScreenRect.js';
+import { distanceHandleScreenRect, unionScreenRect } from './distanceHandleScreenRect.js';
 import { HANDLE_PICK_RADIUS_PIXELS } from './sectionHandleDrag.js';
 
 describe('距離のつまみの画面の外形(入力の窓が覆わないための避ける箱)', () => {
@@ -12,5 +12,10 @@ describe('距離のつまみの画面の外形(入力の窓が覆わないため
     expect(distanceHandleScreenRect({ base: [30, 0, 0], origin: [10, 0, -5] }, project))
       .toEqual({ left: 100 - r, top: 500 - r, right: 300 + r, bottom: 550 + r });
     expect(distanceHandleScreenRect({ base: [0, 0, 0], origin: [0, 0, 1] }, point => point[2] > 0 ? null : [0, 0])).toBeNull();
+  });
+
+  it('離した時は、開いた時の箱と伸ばした後の外形を囲む', () => {
+    expect(unionScreenRect({ left: 0, top: 10, right: 5, bottom: 20 }, { left: -3, top: 12, right: 4, bottom: 30 }))
+      .toEqual({ left: -3, top: 10, right: 5, bottom: 30 });
   });
 });

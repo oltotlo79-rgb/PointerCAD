@@ -51,4 +51,24 @@ describe('finite one-shot Worker dispatch', () => {
     const s = await scope(); s.send({ ...request, identity: { ...request.identity, revision: 99 } });
     expect(calls.finite).not.toHaveBeenCalled(); expect(s.worker.close).toHaveBeenCalledTimes(1);
   });
+  // 0b-4: 失敗の符号は投げた所の符号で決め、文は読まない。計算部の文から読むのは境目の 1 か所(femCodedError.ts)だけ。
+  it.each([
+    ['a coded fem error keeps its code even without a text head', 'coded', { code: 'asset-corrupt', message: 'pinned asset rejected' }],
+    ['a refusal error sends its refusal code', 'refusal', { code: 'solver-failed', message: 'free DOFs', refusal: 'supports' }],
+    ['a wrapped native buckling text sends the read refusal', 'native',
+      { code: 'solver-failed', message: 'PythonError: ValueError: solid-buckling-mechanism: singular', refusal: 'mechanism' }],
+    ['a wrapped offline denial keeps its code ahead of the phase', 'denied',
+      { code: 'offline-request-denied', message: 'Failed to load: offline-request-denied: unexpected script' }],
+  ] as const)('%s', async (_, kind, failure) => {
+    const s = await scope();
+    const { FemCodedError, FemRefusalError } = await import('./femCodedError.js');
+    calls.finite.mockImplementation((_input, notify: (phase: string) => void) => {
+      notify('solving');
+      return Promise.reject(kind === 'coded' ? new FemCodedError('asset-corrupt', 'pinned asset rejected')
+        : kind === 'refusal' ? new FemRefusalError('supports', 'free DOFs') : new Error(failure.message));
+    });
+    s.send(request);
+    await vi.waitFor(() => { expect(s.worker.close).toHaveBeenCalledTimes(1); });
+    expect(s.replies[1]).toEqual({ protocol: FEM_PROTOCOL, kind: 'failure', identity: request.identity, failure });
+  });
 });

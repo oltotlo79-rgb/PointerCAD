@@ -84,7 +84,10 @@ describe('linked weld symbols on the drawing and in export', () => {
     const [linked, manual] = displayDrawingWelds(drawing, resolved, measured, library);
     expect(linked?.unresolved).toBe(true);
     expect(linked?.element.style).toEqual({ color: '#b91c1c' });
-    expect(linked?.messages.filter((message) => message.includes('補足の一覧'))).toHaveLength(2);
+    expect(linked?.messages.filter((message) => message.includes('補足の一覧'))).toEqual([
+      '結び付けた溶接はビードごとに長さか間隔が違うため、この溶接記号の 1 組の寸法では表せません。各ビードの値は補足の一覧を見てください。',
+      '結び付けた溶接は 2 脚の長さが違うため、この溶接記号の脚長 1 つでは表せません。2 脚の値は補足の一覧を見てください。',
+    ]);
     expect(linked?.element.texts?.slice(1).map((text) => text.text)).toEqual([
       '溶接 weld-1 の実際の値（溶接記号ではありません）',
       '脚長: 2つ目の面 6 mm、1つ目の面 8 mm',
@@ -134,7 +137,7 @@ describe('linked weld symbols on the drawing and in export', () => {
       [symbol('weld-symbol-1', 'weld-9')]);
     const [display] = displayDrawingWelds(drawing, resolved, measured, library);
     expect(display?.unresolved).toBe(true);
-    expect(display?.messages.some((message) => message.includes('見つかりません'))).toBe(true);
+    expect(display?.messages).toContain('結び付けた溶接が元のアセンブリに見つかりません(消されたか、別の溶接に置き換わりました)。結び付けを外すか、溶接を選び直してください。');
     expect(display?.element.texts).toHaveLength(1);
     expect(display?.bounds).toEqual({ left: 40, bottom: 60, right: 56, top: 67 });
   });

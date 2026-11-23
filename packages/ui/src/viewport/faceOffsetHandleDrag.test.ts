@@ -8,17 +8,22 @@
 import {
   absoluteCoordinate, appendFeature, replaceSketch, resolveSketch, type SolidBody, type SolidFaceEntry, type Vec3,
 } from '@pointercad/model';
+import React, { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { createNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
+import { distanceHandleOf } from '../solid/extrudeHandle.js';
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { bodyFor, orbitFrom, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { createFaceOffsetHandleDrag } from './faceOffsetHandleDrag.js';
+import { HANDLE_PICK_RADIUS_PIXELS } from './sectionHandleDrag.js';
 
-afterEach(() => { vi.unstubAllGlobals(); resetTestStore(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); resetTestStore(); });
 
 const END_FACE = subShapeElementId('extrude-1', 'face', 0);
 
@@ -138,6 +143,31 @@ describe('つまみを引くと、入力欄の距離だけが動く(M-05 4-2a)',
     useAppStore.getState().openNumericInput(createNumericInput('faceRotate', 'faceRotateAngle'), [0, 0]);
     expect(createFaceOffsetHandleDrag(scene, project).begin([400, 50])).toBe(false);
   });
+
+  it('引いている間は窓の避ける箱を変えず、離すと伸ばした後のつまみの外形を足し、窓は先端を覆わない所へ開き直す', () => {
+    openFaceOffset('5');
+    const drag = createFaceOffsetHandleDrag(scene, project);
+    expect(drag.begin([450, 50])).toBe(true);
+    drag.move([700, 50]);
+    expect(distanceSource()).toBe('30');
+    expect(useAppStore.getState().numericInputAvoid).toBeNull();
+    drag.end();
+    const handle = distanceHandleOf(useAppStore.getState());
+    if (handle === null) throw new Error('つまみがありません');
+    // 根もと (40, 15, 5) → 画面 (400, 50)、伸ばした先端 (70, 15, 5) → 画面 (700, 50)。
+    expect(useAppStore.getState().numericInputAvoid).toEqual({ left: 400 - HANDLE_PICK_RADIUS_PIXELS, top: 50 - HANDLE_PICK_RADIUS_PIXELS,
+      right: 700 + HANDLE_PICK_RADIUS_PIXELS, bottom: 50 + HANDLE_PICK_RADIUS_PIXELS });
+    // ブラウザーと同じく、初期値ではなく離した直後のストアを読む。
+    vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    const markup = renderToStaticMarkup(createElement(NumericInputPopover, { viewportWidth: 920, viewportHeight: 803 }));
+    const position = /left:([\d.]+)px/u.exec(markup);
+    if (position === null) throw new Error('入力窓の横位置が描画されていません');
+    const left = Number(position[1]);
+    const tip = project(handle.origin)[0];
+    // 窓の幅は 260(NumericInputPopover.tsx の POPOVER_WIDTH_PIXELS)。先端の掴める範囲と重ならない。
+    expect(left + 260 < tip - HANDLE_PICK_RADIUS_PIXELS || left > tip + HANDLE_PICK_RADIUS_PIXELS).toBe(true);
+    expect(markup).toContain('data-placement="left"');
+  });
 });
 
 /** attachSketchInteraction に同じ写し方の場面を渡し、canvas と window へ出来事を送る(`attachSketchInteraction.boundary.test.ts` と同じ作り)。 */
@@ -239,6 +269,7 @@ describe('ビューポートの入力への結び(M-05 4-2a)', () => {
         { type: 'edit', index: 0, source: '7' });
       useAppStore.getState().updateNumericInput(typed);
       expect(h.captured.size).toBe(0);
+      expect(useAppStore.getState().numericInputAvoid).toBeNull();
       h.pointer('pointermove', 600, 50);
       expect(distanceSource()).toBe('7');
     } finally { h.detach(); }
@@ -250,6 +281,7 @@ describe('ビューポートの入力への結び(M-05 4-2a)', () => {
     h.pointer('pointerdown', 450, 50);
     h.detach();
     expect(h.captured.size).toBe(0);
+    expect(useAppStore.getState().numericInputAvoid).toBeNull();
     const opened = useAppStore.getState().numericInput;
     expect(h.escape().defaultPrevented).toBe(false);
     expect(useAppStore.getState().numericInput).toBe(opened);

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { plainText } from '../failureText.js';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { CANDIDATE_MATH_BY_ID, MATH_INPUT_FORMAT, validateMathDecimal, type MathNode,
   type StoredMathExpression } from '@pointercad/expression/math/contracts';
@@ -103,7 +102,7 @@ describe('checkGeometryDerivedOperations(Q4=S1 の許可範囲)', () => {
   ])('%s は値の境目で結果が飛ぶので拒否し、文字の表記(%s)で理由に出す', (id, name) => {
     const expression = operation('multiply', numberNode('2'), operation(id, geometryNode('g1', 'G')));
     expect(checkGeometryDerivedOperations(expression)).toEqual({ operation: id,
-      text: plainText(`図形の測定値から計算する式では「${name}」を使えません。値の境目で結果が変わる計算は使えません。`) });
+      text: { key: 'mathGeometry.error.discontinuousOperation', parameters: { operation: name } } });
   });
 
   it.each([['sum', 'sum'], ['integrate', 'integrate'], ['lambda', 'function']])(
@@ -175,10 +174,10 @@ describe('mathGeometryCoefficientValue(測った値を係数として渡す契�
     const boolean: MathGeometryOutcome = { ...identity, status: 'value', kind: 'boolean', value: true,
       representation: 'geometry-double', tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE };
     const unresolved: MathGeometryOutcome = { ...identity, status: 'unresolved', reason: 'ambiguous-reference',
-      text: plainText('形が変わり、参照先を1つに決められません。選び直してください。') };
+      text: { key: 'mathGeometry.reason.ambiguous-reference', parameters: {} } };
     expect(mathGeometryCoefficientValue(document, target, boolean)).toEqual({ status: 'boolean' });
     expect(mathGeometryCoefficientValue(document, target, unresolved)).toEqual({ status: 'unresolved',
-      reason: 'ambiguous-reference', text: plainText('形が変わり、参照先を1つに決められません。選び直してください。') });
+      reason: 'ambiguous-reference', text: { key: 'mathGeometry.reason.ambiguous-reference', parameters: {} } });
     expect(mathGeometryCoefficientValue(document, target, undefined)).toEqual({ status: 'pending' });
     expect(mathGeometryCoefficientValue(document, target, { ...realOutcome(20), documentId: 'another-part' })).toEqual({ status: 'pending' });
     expect(mathGeometryCoefficientValue(document, target, { ...realOutcome(20), id: 'g2' })).toEqual({ status: 'pending' });
@@ -197,14 +196,14 @@ describe('mathGeometryCoefficientValue(測った値を係数として渡す契�
 
 describe('理由の文(付録C。検査で文字列を照合する)', () => {
   it('付録Cの文と一字一句同じで、付録Cに無い2つの文も固定する', () => {
-    expect(mathGeometryReferenceMismatchMessage('箱1体積')).toEqual(plainText('図形の測定値の参照先を確認できません: 箱1体積'));
-    expect(mathGeometryUnresolvedMessage('箱1体積', '幅B', plainText('参照先の形を正しく計算できませんでした。')))
+    expect(mathGeometryReferenceMismatchMessage('箱1体積')).toEqual({ key: 'mathGeometry.error.referenceMismatch', parameters: { label: '箱1体積' } });
+    expect(mathGeometryUnresolvedMessage('箱1体積', '幅B', { key: 'mathGeometry.error.failedShape', parameters: {} }))
       .toEqual({ key: 'mathGeometry.error.unresolved',
-        parameters: { definition: '箱1体積', coefficient: '幅B', reason: plainText('参照先の形を正しく計算できませんでした。') } });
-    expect(mathGeometryBooleanMessage('平行1')).toEqual(plainText('平行・垂直などの判定の結果は係数の式に使えません: 平行1'));
+        parameters: { definition: '箱1体積', coefficient: '幅B', reason: { key: 'mathGeometry.error.failedShape', parameters: {} } } });
+    expect(mathGeometryBooleanMessage('平行1')).toEqual({ key: 'mathGeometry.error.booleanResult', parameters: { definitionName: '平行1' } });
     expect(mathGeometryOperationMessage('floor'))
-      .toEqual(plainText('図形の測定値から計算する式では「floor」を使えません。値の境目で結果が変わる計算は使えません。'));
-    expect(mathGeometryPendingMessage('箱1体積')).toEqual(plainText('図形の測定値「箱1体積」を計算中です。形の計算が終わると使えます。'));
-    expect(mathGeometryOutsideCoefficientMessage('箱1体積')).toEqual(plainText('図形の測定値は係数の式の中でだけ使えます: 箱1体積'));
+      .toEqual({ key: 'mathGeometry.error.discontinuousOperation', parameters: { operation: 'floor' } });
+    expect(mathGeometryPendingMessage('箱1体積')).toEqual({ key: 'mathGeometry.error.pending', parameters: { definitionName: '箱1体積' } });
+    expect(mathGeometryOutsideCoefficientMessage('箱1体積')).toEqual({ key: 'mathGeometry.error.outsideCoefficient', parameters: { label: '箱1体積' } });
   });
 });

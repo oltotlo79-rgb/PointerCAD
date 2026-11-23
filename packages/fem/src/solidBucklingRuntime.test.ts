@@ -89,10 +89,29 @@ describe('solid buckling client lifecycle', () => {
     const second = fem.analyzeSolidBuckling(value);
     const third = fem.analyzeSolidBuckling(value);
     expect(await second).toMatchObject({ kind: 'cancelled', reason: 'superseded' });
+    // 欄 refusal の無い返事(欄を足す前の Worker): FemClient が文から 1 度だけ読み、ui は今までと同じ分けを選ぶ(0b-4)。
     workers[2].reply({ protocol: FEM_PROTOCOL, kind: 'failure', identity: workers[2].posted[0].identity,
       failure: { code: 'solver-failed', message: 'solid-buckling-no-positive-mode: 0 positive load factor(s) for 2 requested' } });
-    expect(await third).toMatchObject({ kind: 'failed', failure: { code: 'solver-failed' } });
+    expect(await third).toMatchObject({ kind: 'failed', failure: { code: 'solver-failed', refusal: 'no-positive-mode',
+      message: 'solid-buckling-no-positive-mode: 0 positive load factor(s) for 2 requested' } });
     expect(workers.map(worker => worker.terminated)).toEqual([1, 1, 1]);
+  });
+  it('passes a sent refusal through without reading the text and refuses an unknown refusal code (0b-4)', async () => {
+    const { workers, fem } = client(), value = input();
+    const sent = fem.analyzeSolidBuckling(value);
+    workers[0].reply({ protocol: FEM_PROTOCOL, kind: 'failure', identity: workers[0].posted[0].identity,
+      failure: { code: 'solver-failed', message: 'solid-buckling-budget: the sent code wins over the text', refusal: 'mechanism' } });
+    expect(await sent).toMatchObject({ kind: 'failed', failure: { code: 'solver-failed', refusal: 'mechanism',
+      message: 'solid-buckling-budget: the sent code wins over the text' } });
+    const plain = fem.analyzeSolidBuckling(value);
+    workers[1].reply({ protocol: FEM_PROTOCOL, kind: 'failure', identity: workers[1].posted[0].identity,
+      failure: { code: 'solver-failed', message: 'native failure without a buckling head' } });
+    const completion = await plain;
+    expect(completion.kind === 'failed' && 'refusal' in completion.failure).toBe(false);
+    const unknown = fem.analyzeSolidBuckling(value);
+    workers[2].reply({ protocol: FEM_PROTOCOL, kind: 'failure', identity: workers[2].posted[0].identity,
+      failure: { code: 'solver-failed', message: 'x', refusal: 'other' } });
+    expect(await unknown).toMatchObject({ kind: 'failed', failure: { code: 'invalid-protocol' } });
   });
 });
 

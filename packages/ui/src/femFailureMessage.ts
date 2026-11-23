@@ -4,8 +4,8 @@ import { t, type MessageKey } from './i18n/t.js';
  * 計算部(FEM の Worker)の断りを、解析の窓によらず同じ日本語の文にする(A-24)。
  *
  * - 計算の準備のファイル(資産)を読めなかった(asset-missing)・壊れていた(asset-corrupt)時は、窓の「入力を確かめて」の文を
- *   出さず、次にする事が分かる共通の文にする。Worker は message の頭(`asset-missing: …`)で code を決める
- *   (packages/fem/src/worker.ts)ので、code の無い所では message の頭で見分けてよい。
+ *   出さず、次にする事が分かる共通の文にする。Worker の message は code と同じ頭(`asset-missing: …`)で始まる
+ *   (packages/fem/src/offlineBrowser.ts)ので、code の無い所では message の頭で見分けてよい。
  * - ほかの計算部の code は、内部の英語の文を出さず「計算部で計算できませんでした（code）。」にする。
  * - 計算部の code でない断り(入力や形状の断り)は扱わない(null。呼び手の今の文のまま)。
  */

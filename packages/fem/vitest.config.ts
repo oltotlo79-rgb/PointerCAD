@@ -52,7 +52,8 @@ const options = {
     'src/solidFiniteOffline.test.ts',
     'src/solidFiniteWire.test.ts',
     'src/solidFiniteWorker.test.ts', 'src/cadTetraMeshOwnership.test.ts', 'src/cadCurvedTetraMeshOwnership.test.ts', 'src/assemblyMeshOwnership.test.ts',
-    'src/runtimeDelivery.test.ts'],
+    'src/runtimeDelivery.test.ts',
+    'src/femCodedError.test.ts'],
 };
 
 export default createPackageVitestConfig('performance-serial', options);

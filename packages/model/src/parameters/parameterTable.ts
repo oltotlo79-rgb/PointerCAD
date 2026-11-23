@@ -25,6 +25,7 @@ import {
 
 import { nextSerialName } from '../sketch/createSketchDocument.js';
 import { nonLengthVariables } from '../units/length.js';
+import { plainText } from '../failureText.js';
 import { ensureParameterMathIds } from './parameterMathIdentity.js';
 import { expressionParameterNames } from './expressionReferences.js';
 import { knownMathParameterEvaluation } from './mathParameterEvaluation.js';
@@ -162,7 +163,7 @@ export function analyzeParameters(
       continue;
     }
     if (parameter.value.mathDefinition !== undefined) {
-      failures.push({ name, message: 'この数式は数学計算部での再計算が必要です。' });
+      failures.push({ name, text: plainText('この数式は数学計算部での再計算が必要です。') });
       continue;
     }
     const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables, nonLengthVariables: nonLength });
@@ -172,7 +173,7 @@ export function analyzeParameters(
       continue;
     }
     // 循環の外にあって循環を参照している名前も、ここで unknownVariable として拾われる。
-    failures.push({ name, message: result.error.message });
+    failures.push({ name, text: plainText(result.error.message) });
   }
 
   return {

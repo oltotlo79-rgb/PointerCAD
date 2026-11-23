@@ -18,6 +18,7 @@
 import type { PartDocument } from '../part/types.js';
 import { analyzeMathGeometryDependencies } from './mathGeometryDependencies.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
+import type { FailureText } from '../failureText.js';
 
 /** 段階再計算の段取り。`recomputePart` がこのとおりに形を作り、測る。 */
 export interface MathGeometryStagePlan {
@@ -25,7 +26,7 @@ export interface MathGeometryStagePlan {
    * 係数名 → その係数を計算させない理由(依存の解析の `blocked`)。どの段の数式の評価にも
    * `DocumentMathContext.blocked` として渡す。理由を持つ係数は数学の計算部へ送られず、その理由で失敗する。
    */
-  readonly blocked: ReadonlyMap<string, string>;
+  readonly blocked: ReadonlyMap<string, FailureText>;
   /**
    * 途中の段で測る定義。`stages[k - 1]` が段 k の形を作った後で測る定義で、文書の並び。
    * 段 k の定義は、段 k より前に測った値だけで作れる形を測る(依存の解析の `stageOf`)。
@@ -81,7 +82,7 @@ export function isMathGeometryValue(outcome: MathGeometryOutcome): boolean {
  * (`PartRecomputeResult.mathGeometry`)で、ここで作ったものは再計算の外へ出ない。
  */
 export function unmeasuredMathGeometryOutcomes(definitions: readonly MathGeometryDefinition[], documentId: string,
-  generation: number, message: string): readonly MathGeometryOutcome[] {
+  generation: number, text: FailureText): readonly MathGeometryOutcome[] {
   return definitions.map(definition => ({ id: definition.id, documentId, generation, status: 'unresolved' as const,
-    reason: 'failed-geometry' as const, message }));
+    reason: 'failed-geometry' as const, text }));
 }

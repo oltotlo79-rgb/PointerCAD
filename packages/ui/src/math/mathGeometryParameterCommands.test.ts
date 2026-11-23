@@ -3,7 +3,7 @@ import { collectMathCoefficients, expressionValueFromNumber } from '@pointercad/
 import { analyzeParameters, createAssemblyDocument, createDrawingDocument, createEmptyPartDocument,
   DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryDerivedParameters, mathGeometryParameterDraft,
   prepareDocumentMathIdentity, type MathGeometryDefinition, type MathGeometryOutcome, type MathGeometryQuantity,
-  type MathGeometryValueUnit, type Parameter, type ParameterAnalysis, type ParameterUnit, type PartDocument } from '@pointercad/model';
+  type MathGeometryValueUnit, type Parameter, type ParameterAnalysis, type ParameterUnit, type PartDocument, plainText } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
@@ -184,7 +184,7 @@ describe('createParameterFromMathGeometryCommand（GR-31）', () => {
     const document = part();
     const common = { id: 'g1', documentId: document.id, generation: 1 };
     const outcomes: readonly MathGeometryOutcome[] = kind === 'missing' ? [] : kind === 'unresolved'
-      ? [{ ...common, status: 'unresolved', reason: 'missing-reference', message: '参照先が見つかりません。' }]
+      ? [{ ...common, status: 'unresolved', reason: 'missing-reference', text: plainText('参照先が見つかりません。') }]
       : [{ ...common, status: 'value', kind: 'boolean', value: true, representation: 'geometry-double', tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE }];
     open(document, outcomes);
     refused();
@@ -315,7 +315,7 @@ describe('係数行の図形由来と現在値（GR-31）', () => {
   it('現在の解析が失敗した行では、古い値の代わりに理由を表示する', () => {
     const document = derivedPart(), analysis = evaluated(document);
     open(document, [measured(document)], { ...analysis, variables: new Map([['固定', 7]]), failures: [
-      { name: '直接', message: '測定値がありません' }, { name: '間接', message: '係数を計算できません' },
+      { name: '直接', text: plainText('測定値がありません') }, { name: '間接', text: plainText('係数を計算できません') },
     ] });
     const markup = renderPanel();
     expect(markup).toContain('測定値がありません');

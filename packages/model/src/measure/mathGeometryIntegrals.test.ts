@@ -59,7 +59,7 @@ describe('Q10: 積分の場と座標式だけに局所関数を許可する', ()
     ['lineintegral(sum(coef("R")*k,k,1,3),[x],[t],t,0,1)', 'sum', 'sum'],
     ['lineintegral(1,[x],[t],t,0,surfaceintegral(floor(coef("R")),[x,y,z],[u,v,0],[u,v],[0,0],[1,1]))', 'floor', 'floor'],
   ])('%s の不連続演算を積分内でも隠さない', (source, operation, name) => {
-    const issue = { operation, message: mathGeometryOperationMessage(name) };
+    const issue = { operation, text: mathGeometryOperationMessage(name) };
     expect(checkGeometryDerivedOperations(expression(source))).toEqual(issue);
     expect(checkGeometryDerivedFunctionOperations(plot(`${source}+X`), derived)).toEqual({ ...issue, output: 'Y' });
   });
@@ -68,7 +68,7 @@ describe('Q10: 積分の場と座標式だけに局所関数を許可する', ()
     expect(checkGeometryDerivedFunctionOperations(plot('floor(X)+lineintegral(coef("R"),[x],[t],t,0,1)'), derived)).toBeNull();
     expect(checkGeometryDerivedFunctionOperations(plot('sum(X^k,k,1,3)+coef("R")'), derived)).toBeNull();
     expect(checkGeometryDerivedFunctionOperations(plot('floor(lineintegral(coef("R"),[x],[t],t,0,1))+X'), derived))
-      .toEqual({ operation: 'floor', message: mathGeometryOperationMessage('floor'), output: 'Y' });
+      .toEqual({ operation: 'floor', text: mathGeometryOperationMessage('floor'), output: 'Y' });
   });
 
   it('局所関数を単独・上下限・異なる束縛の場所へ移しても許可しない', () => {

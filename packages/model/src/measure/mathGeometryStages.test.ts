@@ -7,7 +7,7 @@
  * 呼出し回数、参照先を切った文書、途中段の失敗、関数作図の係数を検査する。
  * 段取りの `planMathGeometryStages` はOCCTを使わない純関数として検査する。
  */
-import { plainTextValue } from '../failureText.js';
+import { plainText, plainTextValue, type FailureText } from '../failureText.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest, executeFunctionImplicitCurveWorkRequest,
@@ -138,6 +138,10 @@ function volumes(result: PartRecomputeResult): ReadonlyMap<string, number> {
 function messageOf(result: PartRecomputeResult, featureId: string): string | undefined {
   return plainTextValue(result.errors.find(error => error.featureId === featureId)?.text) ?? undefined;
 }
+/** 誤りの鍵と値(0b-3h2。鍵へ移した理由〔測れない測定値を使う係数など〕は、文へ読み戻さずに鍵と値で比べる)。 */
+function textOf(result: PartRecomputeResult, featureId: string): FailureText | undefined {
+  return result.errors.find(error => error.featureId === featureId)?.text;
+}
 /** これから形の計算部へ頼む段(立体の id の並び)を、呼んだ順に記録する(前の記録は消す)。 */
 function recordSolidCalls() {
   const spy = vi.spyOn(bridge, 'recomputeSolids');
@@ -242,10 +246,10 @@ describe('段取り(planMathGeometryStages。OCCT を使わない)', () => {
     expect(isMathGeometryValue({ ...real, value: Number.NaN })).toBe(false);
     expect(isMathGeometryValue({ ...base, status: 'value', kind: 'boolean', value: true, representation: 'geometry-double',
       tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE })).toBe(false);
-    expect(isMathGeometryValue({ ...base, status: 'unresolved', reason: 'missing-reference', message: MISSING_MESSAGE })).toBe(false);
-    expect(unmeasuredMathGeometryOutcomes([volumeOf('g-box1', '箱1体積', 'box-1')], DOCUMENT_ID, 7, 'ソリッドを作れませんでした: 切断'))
+    expect(isMathGeometryValue({ ...base, status: 'unresolved', reason: 'missing-reference', text: plainText(MISSING_MESSAGE) })).toBe(false);
+    expect(unmeasuredMathGeometryOutcomes([volumeOf('g-box1', '箱1体積', 'box-1')], DOCUMENT_ID, 7, plainText('ソリッドを作れませんでした: 切断')))
       .toEqual([{ id: 'g-box1', documentId: DOCUMENT_ID, generation: 7, status: 'unresolved', reason: 'failed-geometry',
-        message: 'ソリッドを作れませんでした: 切断' }]);
+        text: plainText('ソリッドを作れませんでした: 切断') }]);
   });
 });
 
@@ -330,7 +334,8 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
       expect(measure).toHaveBeenCalled();
       const broken = result.errors.filter(error => error.code === 'workerBroken');
       expect(broken.map(error => error.featureId)).toContain('幅B');
-      for (const error of broken) expect(plainTextValue(error.text)).toContain(KERNEL_BROKEN_MESSAGE);
+      for (const error of broken) expect(JSON.stringify(error.text)).toContain(KERNEL_BROKEN_MESSAGE);
+      expect(textOf(result, '幅B')).toEqual(mathGeometryUnresolvedMessage('箱1面積', '幅B', plainText(KERNEL_BROKEN_MESSAGE)));
     } finally { measure.mockRestore(); }
   });
 
@@ -353,7 +358,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     const result = await recomputePart(document, bridge, { math: context });
     expect(messageOf(result, '幅B')).toBe(
       '係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。');
-    expect(messageOf(result, 'box-1')).toBeDefined();
+    expect(textOf(result, 'box-1')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-2']);
     expect(measured(result)).toEqual(new Map([['g-box1', 'unresolved:failed-geometry']]));
     expect(result.parameterAnalysis?.variables.has('幅B')).toBe(false);
@@ -367,7 +372,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
     expect(messageOf(result, '幅B')).toBe(
       '「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。');
-    expect(messageOf(result, 'box-1')).toBeDefined();
+    expect(textOf(result, 'box-1')).toBeDefined();
     expect(numberOf(measured(result).get('g-box2'))).toBeCloseTo(24_000, 6);
     expect(calls()).toEqual([['box-2']]);
   });
@@ -418,8 +423,8 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     const cut = documentUpTo(full, 0);
     expect(cut.solids.map(feature => feature.id)).toEqual(['box-1']);
     const result = await recomputePart(cut, bridge, { math: mathContext(cut).context });
-    expect(result.errors.map(error => [error.featureId, plainTextValue(error.text)])).toEqual([
-      ['表示用', mathGeometryUnresolvedMessage('箱2体積', '表示用', MISSING_MESSAGE)]]);
+    expect(result.errors.map(error => [error.featureId, error.text])).toEqual([
+      ['表示用', mathGeometryUnresolvedMessage('箱2体積', '表示用', plainText(MISSING_MESSAGE))]]);
     expect(result.parameterAnalysis?.variables.has('表示用')).toBe(false);
     expect(result.parameterAnalysis?.variables.get('幅B')).toBeCloseTo(24, 9);
     expect(measured(result).get('g-box2')).toBe('unresolved:missing-reference');
@@ -434,10 +439,10 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     expect(planMathGeometryStages(document)?.stages.map(stage => stage.map(item => item.id))).toEqual([['g-gone'], ['g-box2']]);
     const calls = recordSolidCalls();
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
-    expect(messageOf(result, 'P')).toBe(mathGeometryUnresolvedMessage('消えた体積', 'P', MISSING_MESSAGE));
-    expect(messageOf(result, 'Q')).toBe(mathGeometryUnresolvedMessage('箱2体積', 'Q', FAILED_SHAPE_MESSAGE));
-    expect(messageOf(result, 'box-2')).toBeDefined();
-    expect(messageOf(result, 'box-3')).toBeDefined();
+    expect(textOf(result, 'P')).toEqual(mathGeometryUnresolvedMessage('消えた体積', 'P', plainText(MISSING_MESSAGE)));
+    expect(textOf(result, 'Q')).toEqual(mathGeometryUnresolvedMessage('箱2体積', 'Q', plainText(FAILED_SHAPE_MESSAGE)));
+    expect(textOf(result, 'box-2')).toBeDefined();
+    expect(textOf(result, 'box-3')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-1']);
     expect(measured(result)).toEqual(new Map([['g-gone', 'unresolved:missing-reference'], ['g-box2', 'unresolved:failed-geometry']]));
     // 段2は段1と同じ形しかできないので作り直さず、段1の形で測る。
@@ -449,8 +454,8 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     spy.mockRejectedValueOnce(new Error('計算部との通信が切れました。'));
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
     expect(result.cancelled).toBe(false);
-    expect(messageOf(result, '幅B')).toBe(mathGeometryUnresolvedMessage('箱1体積', '幅B', 'ソリッドを作れませんでした: 計算部との通信が切れました。'));
-    expect(messageOf(result, 'box-2')).toBeDefined();
+    expect(textOf(result, '幅B')).toEqual(mathGeometryUnresolvedMessage('箱1体積', '幅B', plainText('ソリッドを作れませんでした: 計算部との通信が切れました。')));
+    expect(textOf(result, 'box-2')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-1']);
     expect(numberOf(measured(result).get('g-box1'))).toBeCloseTo(24_000, 6);
     expect(measured(result).get('g-box2')).toBe('unresolved:failed-geometry');
@@ -536,14 +541,14 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
       const circles = (result.sketches[0]?.resolved.splines ?? []).filter(spline => spline.featureId === 'circle');
       if (!sameSketch) {
         // 段1で線を測り(2)、最後の段で R=2 の円を描く。断るのは floor を使う曲線だけ。
-        expect(result.errors.map(error => [error.featureId, plainTextValue(error.text)])).toEqual([['refused', mathGeometryOperationMessage('floor')]]);
+        expect(result.errors.map(error => [error.featureId, error.text])).toEqual([['refused', mathGeometryOperationMessage('floor')]]);
         expect(circles.length).toBeGreaterThan(0);
         for (const [x, y] of circles.flatMap(spline => sampleSpline(spline, 16))) expect(Math.abs(Math.hypot(x, y) - 2)).toBeLessThan(0.05);
         return;
       }
       // 同じスケッチの要素は拘束・相対点で線と連動しうるので、GR-02 はスケッチ単位で上流に数え、循環として止める。
-      expect(messageOf(result, 'R')).toBe(mathGeometryCycleMessage('R', 'G', first.name));
-      expect(messageOf(result, 'circle')).toBeDefined();
+      expect(textOf(result, 'R')).toEqual(mathGeometryCycleMessage('R', 'G', first.name));
+      expect(textOf(result, 'circle')).toBeDefined();
       expect(circles).toEqual([]);
     }, 60_000);
 });

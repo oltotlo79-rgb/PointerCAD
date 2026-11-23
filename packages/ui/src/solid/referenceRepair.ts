@@ -10,6 +10,7 @@ import { currentMathGeometry } from '../math/mathGeometryResults.js';
 import { repairConsumerIssues } from './referenceRepairIssues.js';
 import { clearDrawingRepairDescriptor } from '../drawing/referenceRepairProjection.js';
 import { beginReferenceRepairPreview, clearReferenceRepairPreview } from './referenceRepairPreview.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 export interface RepairImpact {
   readonly key: string;
@@ -89,7 +90,7 @@ export function referenceRepairImpacts(state: AppState, source: CurrentRepairSlo
     const result: RepairImpact = { key: definition.id, ownerId: definition.id, name: definition.name, consumer: 'dimension',
       status: !ready || outcome === undefined ? 'pending' : outcome.status === 'value' ? 'matched'
         : outcome.reason === 'ambiguous-reference' ? 'ambiguous' : 'missing',
-      ...(outcome?.status === 'unresolved' ? { issue: outcome.message } : {}),
+      ...(outcome?.status === 'unresolved' ? { issue: failureMessage(outcome.text) } : {}),
     };
     if (index === -1) impacts.push(result);
     else impacts[index] = { ...result, key: impacts[index].key };

@@ -1,6 +1,7 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
+import { plainTextValue } from '../failureText.js';
 
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import {
@@ -163,7 +164,7 @@ describe('analyzeParameters(評価できなかった名前)', () => {
     const analysis = analyzeParameters([param('A', '未知 + 1')], []);
     expect(analysis.failures).toHaveLength(1);
     expect(analysis.failures[0].name).toBe('A');
-    expect(analysis.failures[0].message).toContain('未知');
+    expect(plainTextValue(analysis.failures[0].text)).toContain('未知');
     expect(plain(analysis.variables)).toEqual({});
   });
 

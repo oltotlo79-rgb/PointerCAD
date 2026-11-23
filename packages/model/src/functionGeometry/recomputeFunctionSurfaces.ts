@@ -8,7 +8,7 @@ import { functionSurfaceRequest } from './functionSurfaceRequest.js';
 import { resolveFunctionInputs } from './resolveFunctionInputs.js';
 import { recomputeImplicitFunctionSurface } from './recomputeImplicitFunctionSurface.js';
 import { functionSurfaceInputSignature } from './functionSurfacePlanCache.js';
-import { plainText, type FailureText } from '../failureText.js';
+import { FailureTextError, plainText, type FailureText } from '../failureText.js';
 
 export async function recomputeFunctionSurfaces(document: PartDocument, analysis: ParameterAnalysis | undefined,
   math: DocumentMathContext | undefined, context: FunctionRecomputeContext | undefined,
@@ -64,7 +64,8 @@ export async function recomputeFunctionSurfaces(document: PartDocument, analysis
       plans.set(feature.id, plan);
     } catch (error) {
       if (!current()) return result(true);
-      invalidInputs.set(feature.id, plainText(error instanceof Error ? error.message : '関数曲面の再計算を完了できませんでした。'));
+      invalidInputs.set(feature.id, error instanceof FailureTextError ? error.text
+        : plainText(error instanceof Error ? error.message : '関数曲面の再計算を完了できませんでした。'));
     }
   }
   return result(false);

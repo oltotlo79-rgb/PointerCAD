@@ -71,6 +71,8 @@ import type {
   SolidBodyMesh,
   SectionRequest,
   SectionResult,
+  SheetMetalRecognitionOutcome,
+  SheetMetalRecognitionRequest,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -109,6 +111,7 @@ import {
 import { compareCachedMaterials, type MaterialComparisonRequest } from './compareCachedMaterials.js';
 import type { MaterialComparisonOutcome } from './compareMaterialBodies.js';
 import { withKernelMemory } from './kernelMemory.js';
+import { recognizeCachedSheetMetal } from './recognizeCachedSheetMetal.js';
 
 const DEFAULT_PART_ID = 'part:current';
 
@@ -625,6 +628,11 @@ export interface KernelApi {
    */
   measure(request: MeasureRequest): Promise<MeasureResult>;
   /**
+   * 覚えてある立体を板金として読む(M-08。中身は `recognizeCachedSheetMetal.ts`)。測定と同じく再計算を起こさない
+   * 読み取りで、立体は段のキャッシュの鍵、基準の面は指紋で指す。読めない理由は投げずに符号で返す(文は画面の側)。
+   */
+  recognizeSheetMetal(request: SheetMetalRecognitionRequest): Promise<SheetMetalRecognitionOutcome>;
+  /**
    * 覚えてある形をファイルの中身へ書き出す(FR-803)。
    *
    * **形式ごとに口を増やさない**。STEP / STL / OBJ / glTF / 3MF 用の三角形 /
@@ -950,6 +958,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     releaseReferenceMeshLease: hiddenLeaseResources.releaseReferenceMeshLease,
     readCachedBodies: hiddenLeaseResources.readCachedBodies,
     compareMaterials(request, shouldCancel) { return compareCachedMaterials(request, cache, loadOcct, shouldCancel); },
+    recognizeSheetMetal(request) { return withAcquiredKeys(request.items.map(item => item.shapeKey), () => recognizeCachedSheetMetal(request, cache, loadOcct)); },
     async checkInterference(request, onProgress, shouldCancel, callbackDelivery, onCheckpoint): Promise<InterferenceResult> {
       const snapshot = snapshotInterferenceRequest(request);
       const preparation = prepareInterference(snapshot);
@@ -1130,8 +1139,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
 
     async offsetSketchCurves(request): Promise<SketchOffsetOutcome> {
       const oc = await loadOcct();
-      const results: SketchOffsetResult[] = [];
-      const failures: SketchOffsetFailure[] = [];
+      const results: SketchOffsetResult[] = [], failures: SketchOffsetFailure[] = [];
 
       // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
       for (const item of request.items) {

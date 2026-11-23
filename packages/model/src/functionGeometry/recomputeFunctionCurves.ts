@@ -6,7 +6,7 @@ import type {
   PointContinuationWorkerClient,
   FunctionSurfaceWorkerClient,
 } from '@pointercad/expression/math/client';
-import { plainText, type FailureText } from '../failureText.js';
+import { FailureTextError, plainText, type FailureText } from '../failureText.js';
 
 
 
@@ -74,7 +74,8 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       curves.set(feature.id, geometry.curves);
     } catch (error) {
       if (!current()) return result(true);
-      invalidInputs.set(feature.id, plainText(error instanceof Error ? error.message : '関数の再計算を完了できませんでした。'));
+      invalidInputs.set(feature.id, error instanceof FailureTextError ? error.text
+        : plainText(error instanceof Error ? error.message : '関数の再計算を完了できませんでした。'));
     }
   }
   return result(false);

@@ -1,6 +1,7 @@
 import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { createEmptyPartDocument, DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId, mathGeometryOperationMessage,
   absoluteCoordinate, FREE_WORK_PLANE_ID, type DocumentMathContext, type MathGeometryOutcome, type PartDocument } from '@pointercad/model';
 import type { ExpressionValue } from '@pointercad/expression';
@@ -80,6 +81,6 @@ describe('図形由来の積分を係数の入力画面へ渡す', () => {
   ])('編集候補 %s は積分内の不連続演算の名前で拒否する', source => {
     const document = part('coef("R")');
     expect(mathGeometryEditorProblem(mathGeometryEditorCandidate(document, 'P', value(source))))
-      .toBe(mathGeometryOperationMessage('floor'));
+      .toBe(failureMessage(mathGeometryOperationMessage('floor')));
   });
 });

@@ -49,6 +49,7 @@ import {
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { CurrentMathGeometry } from '../math/mathGeometryResults.js';
 
 /* ---------------------------------------------------------------------------
@@ -438,7 +439,7 @@ export function parameterRowsOf(
   geometry?: CurrentMathGeometry,
 ): readonly ParameterRow[] {
   const failureByName = new Map(
-    analysis.failures.map((failure) => [failure.name, failure.message] as const),
+    analysis.failures.map((failure) => [failure.name, failureMessage(failure.text)] as const),
   );
   const circular = new Set(analysis.circular);
   const unused = new Set(analysis.unused);

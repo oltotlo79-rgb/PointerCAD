@@ -9,6 +9,7 @@ import { pendingFieldVariables, referencesPendingVariable } from '../shell/prope
 import { MathExpressionDialog } from './MathExpressionDialog.js';
 import { currentMathGeometry, mathGeometryInputsFor } from './mathGeometryResults.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 interface PropertyMathFieldProps extends ExpressionFieldProps {
   readonly storedValue: ExpressionValue;
@@ -75,7 +76,7 @@ export function PropertyMathField({ storedValue, replaceValue, ...props }: Prope
         if (mathGeometryInputsFor(useAppStore.getState(), target.document) !== geometry) {
           return { ok: false, message: t('mathGeometry.editor.pending') };
         }
-        if (!evaluated.ok) return { ok: false, message: evaluated.failures[0]?.message ?? t('math.workerFailed') };
+        if (!evaluated.ok) return { ok: false, message: evaluated.failures.map((failure) => failureMessage(failure.text))[0] ?? t('math.workerFailed') };
         useAppStore.getState().applyDocument(evaluated.document);
         return { ok: true };
       }} />}

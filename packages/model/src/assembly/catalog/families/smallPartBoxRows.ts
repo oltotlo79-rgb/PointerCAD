@@ -1,6 +1,10 @@
 /**
  * 生成物(手で直さない): 資料 1 の小さい部品の行(外形を包む形)(統括の決定 2026-11-19 15:5x の 1)。担当の道具 make_book1_box_rows.py が、
  * 39 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `smallPartBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ * 60 回目からの読みの行(ブラケットのそのほか)は、2 本で一致した全体の 3 寸法・材質・質量から書いた。2 本で横と奥行の書き方だけが違う行は、
+ * 縦が同じで残りの 2 つの数の組も同じ時に、幅を縦と同じ数にして箱を決めた(統括の決定 2026-11-22。寸法は作っていない)。
+ * トラスのつなぎは、2 本の数の組と横が同じで、縦と奥行を断面の図を正面にした読みのとおりにした(統括の決定 2026-11-22)。
+ * 角の補強の板の奥行は、資料の板厚の注記(t=)の数。
  */
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
@@ -111,4 +115,64 @@ export const FOOT_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
     depth: 65, height: 79, massG: 342, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'anchor-bracket-89x65x89-al', size: '床留めのブラケット 89×65×89（外形を包む形・アルミ）', page: 250, kind: '床留めのブラケット', material: 'aluminum', width: 89,
     depth: 65, height: 89, massG: 420, simplified: ['外形を包む形で、細部は作っていない'] },
+];
+
+export const BRACKET_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'hidden-bracket-23x11x23-al-sus', size: '隠れる形のブラケット 23×11×23（外形を包む形・アルミ・ステンレス）', page: 59, kind: '隠れる形のブラケット', material: 'mixed',
+    materialText: 'アルミ・ステンレス', width: 23, depth: 11, height: 23, massG: 6, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'corner-brace-bracket-168x18x168-sus', size: '角の補強のブラケット 168×18×168（外形を包む形・ステンレス）', page: 66, kind: '角の補強のブラケット', material: 'stainless',
+    width: 168, depth: 18, height: 168, massG: 65, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'corner-brace-plate-100x2x100-sus', size: '角の補強の板 100×2×100（外形を包む形・ステンレス）', page: 66, kind: '角の補強の板', material: 'stainless', width: 100,
+    depth: 2, height: 100, massG: 104, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'truss-joint-42x20x17.5-al', size: 'トラスのつなぎ 42×20×17.5（外形を包む形・アルミ）', page: 67, kind: 'トラスのつなぎ', material: 'aluminum', width: 42, depth: 20,
+    height: 17.5, massG: 14, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'lever-swivel-bracket-20x27x20-al', size: '締めレバー付きの向きを変えられるブラケット 20×27×20（外形を包む形・アルミ）', page: 69, kind: '締めレバー付きの向きを変えられるブラケット',
+    material: 'aluminum', materialText: 'アルミ', width: 20, depth: 27, height: 20, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'hidden-bracket-29x15.5x26-al-sus', size: '隠れる形のブラケット 29×15.5×26（外形を包む形・アルミ・ステンレス）', page: 127, kind: '隠れる形のブラケット', material: 'mixed',
+    materialText: 'アルミ・ステンレス', width: 29, depth: 15.5, height: 26, massG: 10.4, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'hidden-bracket-31.5x15.5x31.5-al-sus', size: '隠れる形のブラケット 31.5×15.5×31.5（外形を包む形・アルミ・ステンレス）', page: 127, kind: '隠れる形のブラケット',
+    material: 'mixed', materialText: 'アルミ・ステンレス', width: 31.5, depth: 15.5, height: 31.5, massG: 14.8, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-box-25x20x25-sus', size: 'L 形のブラケット 25×20×25（外形を包む形・ステンレス）', page: 139, kind: 'L 形のブラケット', material: 'stainless', width: 25,
+    depth: 20, height: 25, massG: 18, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'truss-joint-56x30x26-al', size: 'トラスのつなぎ 56×30×26（外形を包む形・アルミ）', page: 140, kind: 'トラスのつなぎ', material: 'aluminum', width: 56, depth: 30,
+    height: 26, massG: 37, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'lever-swivel-bracket-30x38x30-al', size: '締めレバー付きの向きを変えられるブラケット 30×38×30（外形を包む形・アルミ）', page: 141, kind: '締めレバー付きの向きを変えられるブラケット',
+    material: 'aluminum', materialText: 'アルミ', width: 30, depth: 38, height: 30, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'swivel-bracket-30x38x30-al', size: '向きを変えられるブラケット 30×38×30（外形を包む形・アルミ）', page: 141, kind: '向きを変えられるブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 30, depth: 38, height: 30, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'corner-brace-bracket-227x28x227-sus', size: '角の補強のブラケット 227×28×227（外形を包む形・ステンレス）', page: 142, kind: '角の補強のブラケット', material: 'stainless',
+    width: 227, depth: 28, height: 227, massG: 200, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'corner-brace-plate-120x2x120-sus', size: '角の補強の板 120×2×120（外形を包む形・ステンレス）', page: 142, kind: '角の補強の板', material: 'stainless', width: 120,
+    depth: 2, height: 120, massG: 155.8, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'hidden-bracket-42x19x37.5-al-sus', size: '隠れる形のブラケット 42×19×37.5（外形を包む形・アルミ・ステンレス）', page: 218, kind: '隠れる形のブラケット', material: 'mixed',
+    materialText: 'アルミ・ステンレス', width: 42, depth: 19, height: 37.5, massG: 24, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'hidden-bracket-42x19x42-al-sus', size: '隠れる形のブラケット 42×19×42（外形を包む形・アルミ・ステンレス）', page: 218, kind: '隠れる形のブラケット', material: 'mixed',
+    materialText: 'アルミ・ステンレス', width: 42, depth: 19, height: 42, massG: 31, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-box-35x30x35-sus', size: 'L 形のブラケット 35×30×35（外形を包む形・ステンレス）', page: 232, kind: 'L 形のブラケット', material: 'stainless', width: 35,
+    depth: 30, height: 35, massG: 54, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'truss-joint-78x40x36-al', size: 'トラスのつなぎ 78×40×36（外形を包む形・アルミ）', page: 233, kind: 'トラスのつなぎ', material: 'aluminum', width: 78, depth: 40,
+    height: 36, massG: 104, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'truss-joint-78x45x36-al', size: 'トラスのつなぎ 78×45×36（外形を包む形・アルミ）', page: 233, kind: 'トラスのつなぎ', material: 'aluminum', width: 78, depth: 45,
+    height: 36, massG: 117, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'swivel-bracket-40x55x40-al', size: '向きを変えられるブラケット 40×55×40（外形を包む形・アルミ）', page: 234, kind: '向きを変えられるブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 40, depth: 55, height: 40, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'swivel-bracket-45x55x45-al', size: '向きを変えられるブラケット 45×55×45（外形を包む形・アルミ）', page: 234, kind: '向きを変えられるブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 45, depth: 55, height: 45, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'lever-swivel-bracket-40x55x40-al', size: '締めレバー付きの向きを変えられるブラケット 40×55×40（外形を包む形・アルミ）', page: 235, kind: '締めレバー付きの向きを変えられるブラケット',
+    material: 'aluminum', materialText: 'アルミ', width: 40, depth: 55, height: 40, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'lever-swivel-bracket-45x55x45-al', size: '締めレバー付きの向きを変えられるブラケット 45×55×45（外形を包む形・アルミ）', page: 235, kind: '締めレバー付きの向きを変えられるブラケット',
+    material: 'aluminum', materialText: 'アルミ', width: 45, depth: 55, height: 45, massG: null, massOmission: 'kitMassOnly',
+    simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'corner-brace-bracket-338x38x338-sus', size: '角の補強のブラケット 338×38×338（外形を包む形・ステンレス）', page: 237, kind: '角の補強のブラケット', material: 'stainless',
+    width: 338, depth: 38, height: 338, massG: 571, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'corner-brace-plate-150x3x150-sus', size: '角の補強の板 150×3×150（外形を包む形・ステンレス）', page: 237, kind: '角の補強の板', material: 'stainless', width: 150,
+    depth: 3, height: 150, massG: 374, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-box-15x10x15-fe', size: 'L 形のブラケット 15×10×15（外形を包む形・鉄）', page: 351, kind: 'L 形のブラケット', material: 'steel', width: 15, depth: 10,
+    height: 15, massG: 4.2, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

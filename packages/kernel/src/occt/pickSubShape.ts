@@ -27,6 +27,11 @@ import { boundingDiagonal, edgeAt, faceAt, vertexAt, type SubShapeTables } from 
 export const MISSING_SUB_SHAPE_MESSAGE =
   '選んだ面(辺)が見つかりません。形が大きく変わったため、選び直してください。';
 
+/** 位置の点を部品の大きさで割るための長さ。加工フィーチャーと同じ決め方にする。 */
+function matchScale(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
+  return boundingDiagonal(oc, shape) * 0.5;
+}
+
 /**
  * 指紋に最も近い部分形状を選び直し、その形を返す。届かなければ null。
  *
@@ -39,12 +44,11 @@ export function pickSubShape(
   tables: SubShapeTables,
   query: SubShapeQuery,
 ): TopoDS_Shape | null {
-  // 位置の点を部品の大きさで割るための長さ。加工フィーチャーと同じ決め方にする。
-  const scale = boundingDiagonal(oc, shape) * 0.5;
+  const scale = matchScale(oc, shape);
   switch (query.kind) {
     case 'face': {
-      const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
-      return match.status !== 'matched' ? null : faceAt(oc, shape, match.match.index);
+      const index = pickFaceIndex(oc, shape, tables, query, scale);
+      return index === null ? null : faceAt(oc, shape, index);
     }
     case 'edge': {
       const match = resolveEdgeReference(tables.edges, query, scale, tables.origins);
@@ -55,4 +59,19 @@ export function pickSubShape(
       return match.status !== 'matched' ? null : vertexAt(oc, shape, match.match.index);
     }
   }
+}
+
+/**
+ * 指紋に最も近い面の通し番号(`collectSubShapes` と同じ数え方)を返す。届かなければ null。
+ * 形を取り出さずに番号だけが要る呼び出し(板金の認識)のための口で、選び方は `pickSubShape` と同じ。
+ */
+export function pickFaceIndex(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  tables: SubShapeTables,
+  query: Extract<SubShapeQuery, { readonly kind: 'face' }>,
+  scale = matchScale(oc, shape),
+): number | null {
+  const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+  return match.status === 'matched' ? match.match.index : null;
 }

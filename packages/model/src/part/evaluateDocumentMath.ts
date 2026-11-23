@@ -38,7 +38,7 @@ export interface DocumentMathContext {
    * findings, supplied by the stage recomputation). A blocked coefficient fails with exactly that reason
    * and is never sent to the math engine; everything depending on it fails as well.
    */
-  readonly blocked?: ReadonlyMap<string, string>;
+  readonly blocked?: ReadonlyMap<string, FailureText>;
 }
 type DocumentMathResult =
   | { readonly ok: true; readonly document: PartDocument; readonly analysis: ParameterAnalysis }
@@ -49,6 +49,21 @@ type DocumentMathResult =
         /** Definition IDs whose measured value was needed but absent from `context.geometry` (計算待ち). */
         readonly pendingGeometry: ReadonlySet<string> } };
 
+/** 鍵と値の組が同じか(差し込む値の入れ子も比べる。同じ持ち主の同じ理由を 2 回つながない)。 */
+function sameText(a: FailureText, b: FailureText): boolean {
+  const names = Object.keys(a.parameters);
+  return a.key === b.key && names.length === Object.keys(b.parameters).length && names.every((name) => {
+    if (!Object.hasOwn(b.parameters, name)) return false;
+    const left = a.parameters[name], right = b.parameters[name];
+    return typeof left === 'string' || typeof right === 'string' ? left === right : sameText(left, right);
+  });
+}
+
+/** 同じ持ち主の値の不正な入力の理由を改行でつなぐ(同じ理由は 2 回つながない)。 */
+function joinedInputText(previous: FailureText | undefined, text: FailureText): FailureText {
+  return previous === undefined || sameText(previous, text) ? text : { key: 'math.error.lines', parameters: { first: previous, rest: text } };
+}
+
 export function hasDocumentMath(document: PartDocument): boolean {
   let found = document.parameters.some(parameter => parameter.value.mathDefinition !== undefined)
     || document.solids.some(feature => feature.kind === 'functionSurface')
@@ -58,7 +73,7 @@ export function hasDocumentMath(document: PartDocument): boolean {
 }
 
 type ValueResult = { readonly ok: true; readonly value: ExpressionValue; readonly decimal: string }
-  | { readonly ok: false; readonly message: string; readonly code?: WorkerBrokenCode };
+  | { readonly ok: false; readonly text: FailureText; readonly code?: WorkerBrokenCode };
 
 const verifiedFields = new WeakMap<PartDocument, ReadonlyMap<ExpressionValue, ExpressionValue>>();
 /** Only a successfully evaluated field of this exact immutable document can supply displayed coordinates. */
@@ -82,19 +97,19 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
   const nonLength = nonLengthVariables(document.parameters);
   const byName = new Map<string, Parameter>(), byId = new Map<string, Parameter>();
   const evaluatedParameters = new Map<string, Parameter>();
-  const parameterFailures = new Map<string, string>(), invalidInputs = new Map<string, string>(), workerBrokenParameters = new Set<string>();
+  const parameterFailures = new Map<string, FailureText>(), invalidInputs = new Map<string, FailureText>(), workerBrokenParameters = new Set<string>();
   const geometryDefinitions = resolvableMathGeometryDefinitions(document), pendingGeometry = new Set<string>();
   /** Coefficient name → math-geometry definition IDs it uses; filled before any formula is evaluated. */
   let geometryDerived: ReadonlyMap<string, readonly string[]> = new Map();
   let calculationUnavailable = false;
   let inputRevision = 0;
-  const fail = (ownerId: string, value: ExpressionValue, message: string) => { failures.push({ ownerId, source: value.source, message }); };
+  const fail = (ownerId: string, value: ExpressionValue, text: FailureText) => { failures.push({ ownerId, source: value.source, text }); };
 
   for (const parameter of document.parameters) {
     // The `math-geometry:` prefix is reserved for measured values, so a `coef` ID never names both kinds.
     if (byName.has(parameter.name) || (parameter.mathId !== undefined && (!isParameterMathId(parameter.mathId)
       || parameter.mathId.startsWith(MATH_GEOMETRY_COEFFICIENT_PREFIX) || byId.has(parameter.mathId)))) {
-      fail(parameter.name, parameter.value, '係数の名前または参照先が不正・重複しています。');
+      fail(parameter.name, parameter.value, plainText('係数の名前または参照先が不正・重複しています。'));
     }
     byName.set(parameter.name, parameter);
     if (parameter.mathId !== undefined) byId.set(parameter.mathId, parameter);
@@ -112,7 +127,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     && expressionParameterNames(value, document.parameters).some(name => geometryDerived.has(name));
   /** One `coef` reference to a measured value, read by the formula of the coefficient `coefficientName`. */
   const geometryInput = (reference: { readonly label: string }, definitionId: string, coefficientName: string):
-    { readonly input: MathWorkRequest['coefficients'][number] } | { readonly problem: string; readonly pending: boolean; readonly code?: WorkerBrokenCode } => {
+    { readonly input: MathWorkRequest['coefficients'][number] } | { readonly problem: FailureText; readonly pending: boolean; readonly code?: WorkerBrokenCode } => {
     const definition = geometryDefinitions.get(definitionId);
     if (definition === undefined || definition.name !== reference.label) {
       return { problem: mathGeometryReferenceMismatchMessage(reference.label), pending: false };
@@ -124,7 +139,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         pendingGeometry.add(definitionId);
         return { problem: mathGeometryPendingMessage(definition.name), pending: true };
       case 'boolean': return { problem: mathGeometryBooleanMessage(definition.name), pending: false };
-      case 'unresolved': return { problem: mathGeometryUnresolvedMessage(definition.name, coefficientName, input.message), pending: false, ...(input.code === undefined ? {} : { code: input.code }) };
+      case 'unresolved': return { problem: mathGeometryUnresolvedMessage(definition.name, coefficientName, input.text), pending: false, ...(input.code === undefined ? {} : { code: input.code }) };
     }
   };
 
@@ -137,11 +152,11 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
    * `mathDefinition`-based branch below already reports its own referenced-coefficient failure
    * (`参照する係数を計算できません`) without going through `unknownVariable` at all.
    */
-  const dependentFailureMessage = (error: ExpressionError, source: string): string | null => {
+  const dependentFailureMessage = (error: ExpressionError, source: string): FailureText | null => {
     if (error.code !== 'unknownVariable') return null;
     for (const name of collectVariableNames(source)) {
       const reason = parameterFailures.get(name);
-      if (reason !== undefined) return `参照する係数「${name}」を計算できません: ${reason}`;
+      if (reason !== undefined) return { key: 'math.error.dependentCoefficient', parameters: { name, reason } };
     }
     return null;
   };
@@ -153,9 +168,9 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     if (definition === undefined) {
       const options = { variables, exactVariables, nonLengthVariables: nonLength };
       const exact = evaluateExpressionExact(value.source, options);
-      if (!exact.ok) return { ok: false, message: dependentFailureMessage(exact.error, value.source) ?? exact.error.message };
+      if (!exact.ok) return { ok: false, text: dependentFailureMessage(exact.error, value.source) ?? plainText(exact.error.message) };
       const result = evaluateExpression(value.source, options);
-      if (!result.ok) return { ok: false, message: dependentFailureMessage(result.error, value.source) ?? result.error.message };
+      if (!result.ok) return { ok: false, text: dependentFailureMessage(result.error, value.source) ?? plainText(result.error.message) };
       // A measured double is never re-read as an exact rational, not even after legacy arithmetic.
       if (usesGeometryDerived(value)) return { ok: true, value: result.value, decimal: exact.value.exact };
       try {
@@ -164,23 +179,23 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         return rational === null ? { ok: true, value: result.value, decimal: exact.value.exact }
           : { ok: true, value: { ...result.value, value: rational.value, display: rational.display }, decimal: rational.decimal };
       } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : '係数の原式を確認できません。' };
+        return { ok: false, text: plainText(error instanceof Error ? error.message : '係数の原式を確認できません。') };
       }
     }
-    if (definition.source !== value.source) return { ok: false, message: '保存された原式と数学定義が一致しません。' };
+    if (definition.source !== value.source) return { ok: false, text: plainText('保存された原式と数学定義が一致しません。') };
     const references = collectMathCoefficients(definition.expression);
     const measured = references.filter(reference => mathGeometryDefinitionIdOf(reference.id) !== null);
     if (measured.length > 0 && coefficientName === undefined) {
-      return { ok: false, message: mathGeometryOutsideCoefficientMessage(measured[0].label) };
+      return { ok: false, text: mathGeometryOutsideCoefficientMessage(measured[0].label) };
     }
     // Allowed operations: checked before any value is looked up, so a refused operation is never reported as pending.
     if (measured.length > 0 || usesGeometryDerived(value)) {
       const issue = checkGeometryDerivedOperations(definition.expression);
-      if (issue !== null) return { ok: false, message: issue.message };
+      if (issue !== null) return { ok: false, text: issue.text };
     }
     const inputs: MathWorkRequest['coefficients'][number][] = [];
     // Every reference is examined so all pending measurements are listed; the first real problem wins.
-    let problem: string | undefined, pending: string | undefined, problemCode: WorkerBrokenCode | undefined;
+    let problem: FailureText | undefined, pending: FailureText | undefined, problemCode: WorkerBrokenCode | undefined;
     for (const reference of references) {
       const definitionId = mathGeometryDefinitionIdOf(reference.id);
       if (definitionId !== null && coefficientName !== undefined) {
@@ -191,22 +206,22 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         continue;
       }
       const parameter = byId.get(reference.id), coefficient = coefficients.get(reference.id);
-      if (parameter === undefined || parameter.name !== reference.label) problem ??= `係数の参照先を確認できません: ${reference.label}`;
-      else if (coefficient === undefined) problem ??= `参照する係数を計算できません: ${reference.label}`;
+      if (parameter === undefined || parameter.name !== reference.label) problem ??= plainText(`係数の参照先を確認できません: ${reference.label}`);
+      else if (coefficient === undefined) problem ??= plainText(`参照する係数を計算できません: ${reference.label}`);
       else inputs.push(coefficient);
     }
-    if (problem !== undefined) return { ok: false, message: problem, ...(problemCode === undefined ? {} : { code: problemCode }) };
-    if (pending !== undefined) return { ok: false, message: pending };
+    if (problem !== undefined) return { ok: false, text: problem, ...(problemCode === undefined ? {} : { code: problemCode }) };
+    if (pending !== undefined) return { ok: false, text: pending };
     inputRevision += 1;
     const completion = await context.client.evaluate({ identity: { ...context.identity, editorId: 'document-math', inputRevision },
       source: value.source, notation: definition.inputNotation, angleUnit: definition.angleUnit, definition, coefficients: inputs }, 5_000, context.signal);
     if (completion.status !== 'result') {
       calculationUnavailable = true;
-      return { ok: false, message: `数式の計算を完了できませんでした: ${completion.status}` };
+      return { ok: false, text: plainText(`数式の計算を完了できませんでした: ${completion.status}`) };
     }
     const result = mathScalarExpression(completion.result);
     if (result.ok) bindMathCompositionNames(result.value, compositionNames);
-    return result;
+    return result.ok ? result : { ok: false, text: plainText(result.message) };
   };
 
   try {
@@ -215,8 +230,8 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     for (const name of circular) {
       const parameter = byName.get(name);
       if (parameter) {
-        const message = '係数の参照が循環しています。';
-        fail(name, parameter.value, message); parameterFailures.set(name, message);
+        const text = plainText('係数の参照が循環しています。');
+        fail(name, parameter.value, text); parameterFailures.set(name, text);
       }
     }
     for (const name of order) {
@@ -227,7 +242,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       if (blocked !== undefined) { fail(name, parameter.value, blocked); parameterFailures.set(name, blocked); continue; }
       const result = await evaluate(parameter.value, name);
       if (!current()) return cancelled();
-      if (!result.ok) { fail(name, parameter.value, result.message); parameterFailures.set(name, result.message); if (result.code !== undefined) workerBrokenParameters.add(name); continue; }
+      if (!result.ok) { fail(name, parameter.value, result.text); parameterFailures.set(name, result.text); if (result.code !== undefined) workerBrokenParameters.add(name); continue; }
       let coefficient: MathWorkRequest['coefficients'][number];
       try {
         const id = parameter.mathId ?? `legacy-coefficient:${document.parameters.indexOf(parameter)}`;
@@ -235,8 +250,8 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         coefficient = geometryDerived.has(name) ? { id, label: name, decimal: result.decimal } : { id, label: name,
           decimal: result.decimal, exactExpression: originalCoefficientExpression(result.value, legacyNames, [...coefficientNames.values()]) };
       } catch (error) {
-        const message = error instanceof Error ? error.message : '係数の原式を確認できません。';
-        fail(name, parameter.value, message); parameterFailures.set(name, message); continue;
+        const text = plainText(error instanceof Error ? error.message : '係数の原式を確認できません。');
+        fail(name, parameter.value, text); parameterFailures.set(name, text); continue;
       }
       variables.set(name, result.value.value);
       exactVariables.set(name, result.decimal);
@@ -253,9 +268,9 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       if (!current()) return cancelled();
       replacements.set(field.value, result);
       if (!result.ok) {
-        fail(field.ownerId, field.value, result.message);
+        fail(field.ownerId, field.value, result.text);
         const previous = invalidInputs.get(field.ownerId);
-        invalidInputs.set(field.ownerId, previous === undefined || previous === result.message ? result.message : `${previous}\n${result.message}`);
+        invalidInputs.set(field.ownerId, joinedInputText(previous, result.text));
       }
     }
     if (calculationUnavailable) return { ok: false, cancelled: false, failures };
@@ -276,8 +291,8 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     }
     const analysis: ParameterAnalysis = { variables, exactVariables, mathCoefficients: coefficientNames, nonLengthVariables: nonLength, circular,
       failures: document.parameters.flatMap(parameter => {
-        const message = parameterFailures.get(parameter.name);
-        return message === undefined ? [] : [{ name: parameter.name, message, ...(workerBrokenParameters.has(parameter.name) ? { code: 'workerBroken' as const } : {}) }];
+        const text = parameterFailures.get(parameter.name);
+        return text === undefined ? [] : [{ name: parameter.name, text, ...(workerBrokenParameters.has(parameter.name) ? { code: 'workerBroken' as const } : {}) }];
       }),
       unused: document.parameters.map(parameter => parameter.name).filter(name => !used.has(name)),
       ...(geometryDerived.size === 0 ? {} : { geometryDerived }) };
@@ -293,12 +308,11 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     verifiedFields.set(document, values);
     verifiedFields.set(evaluated, values);
     if (failures.length > 0) return { ok: false, cancelled: false, failures,
-      // 値の不正な入力は、数式の計算部の文(同じ持ち主の文は改行でつないだまま)を、そのまま出す鍵と値で運ぶ(0b-3。関数の長さの基準 210 行を増やさない 1 行)。
-      recompute: { document: evaluated, analysis, invalidInputs: new Map([...invalidInputs].map(([owner, message]) => [owner, plainText(message)])), pendingGeometry } };
+      recompute: { document: evaluated, analysis, invalidInputs, pendingGeometry } };
     return { ok: true, document: evaluated, analysis };
   } catch (error) {
     if (!current()) return cancelled();
-    failures.push({ ownerId: document.id, source: '', message: error instanceof Error ? error.message : '数式の再計算を完了できませんでした。' });
+    failures.push({ ownerId: document.id, source: '', text: plainText(error instanceof Error ? error.message : '数式の再計算を完了できませんでした。') });
     return { ok: false, cancelled: false, failures };
   }
 }

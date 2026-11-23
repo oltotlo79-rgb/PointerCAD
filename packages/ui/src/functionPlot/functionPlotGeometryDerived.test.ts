@@ -22,6 +22,7 @@ import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { createEmptyPartDocument, DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryOperationMessage,
   mathGeometryParameterDraft, type MathGeometryDefinition, type Parameter, type PartDocument } from '@pointercad/model';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { editFunctionField, evaluateFunctionPlotDraft, functionPlotDraft, type FunctionPlotDraft } from './functionPlotDraft.js';
 
@@ -139,7 +140,7 @@ describe('関数作図の式で図形由来の係数を不連続な演算へ渡�
     const result = await evaluate({ ...draft, outputs: { ...draft.outputs, Y: editFunctionField(draft.outputs.Y, source) } },
       withFormulaOverride(source, FLOOR_R_PLUS_X), document);
     if (result.ok) throw new Error('Expected the geometry-derived operation to be refused');
-    expect(result.fields.get('Y')).toBe(mathGeometryOperationMessage('floor'));
+    expect(result.fields.get('Y')).toBe(failureMessage(mathGeometryOperationMessage('floor')));
     expect([...result.fields.keys()]).toEqual(['Y']);
   });
 

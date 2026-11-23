@@ -43,7 +43,7 @@ describe('未解決の式は数値や形状に変えず、文書の式と条件�
     const saved=setUnresolvedMathProblem(createEmptyPartDocument(),{id:'math-problem:symbol',name:'記号付きの式',status:'unresolved',definition:result.definition});
     const document:PartDocument={...saved,mathParameterSerial:7,parameters:[{name:'a',mathId:'coefficient:7',value:expressionValueFromNumber(2),unit:'none',description:''}]};
     const renamed=await renameDocumentMathParameter(document,'a','厚さ',context(document));
-    if(!renamed.ok) throw new Error(renamed.message);
+    if(!renamed.ok) throw new Error(JSON.stringify(renamed.text));
     expect(renamed.document.unresolvedMathProblems?.[0]).toMatchObject({status:'unresolved',definition:{declarations}});
     expect(renamed.document.unresolvedMathProblems?.[0].definition.source).toContain('厚さ');
     expect(renamed.document.unresolvedMathProblems?.[0].definition.source).toContain('a_1');
@@ -88,7 +88,7 @@ describe('未解決の式は数値や形状に変えず、文書の式と条件�
     if(!checked.ok) throw new Error(JSON.stringify(checked.failures));
     expect(checked.analysis.unused).not.toContain('a');
     const renamed=await renameDocumentMathParameter(document,'a','熱拡散',context(document));
-    if(!renamed.ok) throw new Error(renamed.message);
+    if(!renamed.ok) throw new Error(JSON.stringify(renamed.text));
     const entry=renamed.document.unresolvedMathProblems?.[0];
     if(entry===undefined) throw new Error('保存した式が消えました。');
     expect(entry.status).toBe('unresolved');

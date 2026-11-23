@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature, DEFAULT_MATH_GEOMETRY_TOLERANCE,
   mathGeometryCoefficientId, mathGeometryCycleMessage, mathGeometryOperationMessage, mathGeometryOrderMessage,
   mathGeometryTooDeepMessage, prepareDocumentMathIdentity,
   type DocumentMathContext, type MathGeometryDefinition, type MathGeometryOutcome, type MathGeometryValueUnit,
-  type Parameter, type PartDocument } from '@pointercad/model';
+  type Parameter, type PartDocument, plainText } from '@pointercad/model';
 import { expressionValueFromNumber, type AngleUnit, type ExpressionValue } from '@pointercad/expression';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply, formatMathText, MATH_INPUT_FORMAT, type MathNode } from '@pointercad/expression/math/contracts';
 import { createMathBackend, executeMathWorkRequest } from '@pointercad/expression/math/worker';
@@ -91,7 +92,7 @@ describe('GR-17 図形の測定値を係数入力へ渡す', () => {
   it('未解決・真偽・別文書・未計算の値は候補にしない', async () => {
     const document = { ...part(), mathGeometry: ['missing', 'boolean', 'foreign', 'pending'].map(id => definition(id, id)) };
     const geometry = new Map<string, MathGeometryOutcome>([
-      ['missing', { id: 'missing', documentId: document.id, generation: 1, status: 'unresolved', reason: 'missing-reference', message: 'missing' }],
+      ['missing', { id: 'missing', documentId: document.id, generation: 1, status: 'unresolved', reason: 'missing-reference', text: plainText('missing') }],
       ['boolean', { id: 'boolean', documentId: document.id, generation: 1, status: 'value', kind: 'boolean', value: true, representation: 'geometry-double', tolerance }],
       ['foreign', { ...measured(document, 'foreign'), documentId: 'different' }],
     ]);
@@ -144,7 +145,7 @@ describe('GR-17 図形の測定値を係数入力へ渡す', () => {
     const document = { ...box(initial, 'P'), mathGeometry: [definition('g', '体積', 'box-2')] };
     const target = open(document), channel = context(document), before = useAppStore.getState().undoStack;
     expect(await applyParameterMath(target, value(reference()), document, channel)).toEqual({ ok: false,
-      message: mathGeometryCycleMessage('P', '体積', document.solids[1].name) });
+      message: failureMessage(mathGeometryCycleMessage('P', '体積', document.solids[1].name)) });
     expect(channel.client.evaluate).not.toHaveBeenCalled();
     expect(useAppStore.getState().undoStack).toBe(before);
   });
@@ -154,7 +155,7 @@ describe('GR-17 図形の測定値を係数入力へ渡す', () => {
     const document = prepareDocumentMathIdentity({ ...box(box(base, 'P')), parameters: [row('P')], mathGeometry: [definition('g', '体積', 'box-2')] });
     const target = open(document), channel = context(document);
     expect(await applyParameterMath(target, value(reference()), document, channel)).toEqual({ ok: false,
-      message: mathGeometryOrderMessage(document.solids[0].name, document.solids[1].name, '体積', 'P') });
+      message: failureMessage(mathGeometryOrderMessage(document.solids[0].name, document.solids[1].name, '体積', 'P')) });
     expect(channel.client.evaluate).not.toHaveBeenCalled();
   });
 
@@ -167,14 +168,14 @@ describe('GR-17 図形の測定値を係数入力へ渡す', () => {
       definitions.push(definition(id, name, `box-${String(index)}`));
       parameters.push({ ...row(`P${String(index)}`), value: value(reference(id, name)) });
     }
-    expect(mathGeometryEditorProblem({ ...document, parameters, mathGeometry: definitions })).toBe(mathGeometryTooDeepMessage());
+    expect(mathGeometryEditorProblem({ ...document, parameters, mathGeometry: definitions })).toBe(failureMessage(mathGeometryTooDeepMessage()));
   });
 
   it('floorは数値が出せる式でも適用せず、演算の理由を返す', async () => {
     const document = part(), target = open(document), channel = context(document);
     const refused = value({ kind: 'operation', operation: 'floor', operands: [reference()] });
-    expect(mathGeometryEditorProblem(mathGeometryEditorCandidate(document, 'P', refused))).toBe(mathGeometryOperationMessage('floor'));
-    expect(await applyParameterMath(target, refused, document, channel)).toEqual({ ok: false, message: mathGeometryOperationMessage('floor') });
+    expect(mathGeometryEditorProblem(mathGeometryEditorCandidate(document, 'P', refused))).toBe(failureMessage(mathGeometryOperationMessage('floor')));
+    expect(await applyParameterMath(target, refused, document, channel)).toEqual({ ok: false, message: failureMessage(mathGeometryOperationMessage('floor')) });
     expect(channel.client.evaluate).not.toHaveBeenCalled();
     expect(useAppStore.getState().document).toBe(document);
   });
@@ -184,7 +185,7 @@ describe('GR-17 図形の測定値を係数入力へ渡す', () => {
     if (id === undefined) throw new Error('missing parameter identity');
     const document = { ...initial, parameters: [initial.parameters[0], { ...initial.parameters[1], value: value({ kind: 'operation', operation: 'floor',
       operands: [{ kind: 'symbol', reference: { role: 'coefficient', id, label: 'P' } }] }) }] };
-    expect(mathGeometryEditorProblem(mathGeometryEditorCandidate(document, 'P', value(reference())))).toBe(mathGeometryOperationMessage('floor'));
+    expect(mathGeometryEditorProblem(mathGeometryEditorCandidate(document, 'P', value(reference())))).toBe(failureMessage(mathGeometryOperationMessage('floor')));
   });
 
   it('現在でない間は計算中を通知し、取消後に古い測定値で数式計算を始めない', async () => {

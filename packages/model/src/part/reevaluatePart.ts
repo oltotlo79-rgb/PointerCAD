@@ -22,6 +22,7 @@
 
 import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { reevaluateFaceOffset } from './directFaceEdit.js';
 import { mapFunctionDefinition } from '../functionGeometry/mapFunctionDefinition.js';
 
@@ -62,8 +63,8 @@ export interface ReevaluationFailure {
   readonly ownerId: string;
   /** 評価できなかった式そのもの(利用者が書いた文字列のまま)。 */
   readonly source: string;
-  /** 理由(日本語)。`evaluateExpression` が返したものをそのまま渡す。 */
-  readonly message: string;
+  /** 理由の文の鍵と値(0b-3h2。`evaluateExpression` が返した文は plainText で運ぶ)。 */
+  readonly text: FailureText;
 }
 
 /** 評価し直した結果。 */
@@ -706,16 +707,16 @@ export function collectParameterUsages(document: PartDocument): readonly Paramet
 function reevaluateValue(
   value: ExpressionValue,
   variables: ReadonlyMap<string, number>,
-  onFailure: (message: string) => void,
+  onFailure: (text: FailureText) => void,
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
   if (value.mathDefinition !== undefined) {
-    onFailure('この数式は数学計算部での再計算が必要です。');
+    onFailure(plainText('この数式は数学計算部での再計算が必要です。'));
     return value;
   }
   const result = evaluateExpression(value.source, { ...options, variables });
   if (!result.ok) {
-    onFailure(result.error.message);
+    onFailure(plainText(result.error.message));
     return value;
   }
   const next = result.value;
@@ -736,8 +737,8 @@ export function reevaluatePartDocument(
 ): PartReevaluation {
   const failures: ReevaluationFailure[] = [];
   const next = mapDocumentExpressions(document, (value, ownerId) =>
-    reevaluateValue(value, variables, (message) => {
-      failures.push({ ownerId, source: value.source, message });
+    reevaluateValue(value, variables, (text) => {
+      failures.push({ ownerId, source: value.source, text });
     }, options),
   );
   return { document: next, failures };

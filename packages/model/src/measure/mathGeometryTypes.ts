@@ -2,6 +2,7 @@
 import type { SubShapeFingerprint, SubShapeRef } from '../geometry/subShapeRef.js';
 import type { PointReference } from '../sketch/types.js';
 import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
+import type { FailureText } from '../failureText.js';
 
 export type MathSubShapeReference<K extends SubShapeFingerprint['kind']> =
   SubShapeRef & { readonly fingerprint: Extract<SubShapeFingerprint, { readonly kind: K }> };
@@ -95,7 +96,8 @@ export type MathGeometryOutcome = {
   /** ambiguous-reference: after a shape change, two current candidates score too close to pick one. */
   | { readonly status: 'unresolved';
       readonly reason: 'missing-reference' | 'failed-geometry' | 'unsupported' | 'invalid-request' | 'ambiguous-reference';
-      readonly message: string;
+      /** 測れなかった理由の文の鍵と値(0b-3h2。画面は ui の failureMessage で文にする)。 */
+      readonly text: FailureText;
       /** 計算部(Worker)が止まって測れなかった時だけ付く(0b-1c。理由の種類は failed-geometry のまま)。 */
       readonly code?: WorkerBrokenCode }
 );

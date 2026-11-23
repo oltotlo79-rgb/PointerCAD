@@ -1434,6 +1434,21 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
     bridge.dispose();
   });
 
+  it('recognizeSheetMetal(M-08)は頼んだ件ぶんの workerBroken で解決する', async () => {
+    const bridge = createKernelBridge();
+    const face: SubShapeRef = { bodyFeatureId: 'plate', index: 0,
+      fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1500, position: [25, 15, 2], axis: [0, 0, 1], radius: null } };
+    const pending = bridge.recognizeSheetMetal?.([{ id: 'convert-1', bodyKey: 'key-1', face }, { id: 'convert-2', bodyKey: 'key-1', face }])
+      ?? Promise.reject(new Error('Worker の橋に板金の認識の口がありません'));
+    silentWorkers.breakCurrent();
+
+    await expect(pending).resolves.toEqual([
+      { id: 'convert-1', kind: 'unavailable', code: 'workerBroken' },
+      { id: 'convert-2', kind: 'unavailable', code: 'workerBroken' },
+    ]);
+    bridge.dispose();
+  });
+
   it('functionSketchCurves は止まりの断り(符号 workerBroken)で解決する', async () => {
     const bridge = createKernelBridge();
     const pending = bridge.functionSketchCurves({ featureId: 'function-1', components: [[[0, 0, 0], [1, 0, 0]]],

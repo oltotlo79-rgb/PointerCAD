@@ -464,7 +464,7 @@ describe('いまの値の判定(currentMathGeometry)', () => {
         generation: 1,
         status: 'unresolved',
         reason,
-        message: `model の理由の文: ${reason}`,
+        text: plainText(`model の理由の文: ${reason}`),
       })),
     ];
     call.settle({ ...resultFor(call.document), generation: 1, mathGeometry: sent });

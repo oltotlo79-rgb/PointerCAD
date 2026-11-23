@@ -5,6 +5,7 @@ import { mathGeometryEditorCandidate, mathGeometryEditorProblem } from '../math/
 import { mathGeometryInputsFor } from '../math/mathGeometryResults.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 export interface ParameterMathTarget {
   readonly document: PartDocument;
@@ -26,7 +27,7 @@ export async function applyParameterMath(target: ParameterMathTarget, value: Exp
   const isCurrent = () => ownerIsCurrent() && mathGeometryInputsFor(useAppStore.getState(), target.document) === geometry;
   const result = await evaluateDocumentMath(candidate, { ...context, geometry, isCurrent });
   if (!isCurrent()) return { ok: false, message: t('math.operation.cancelled') };
-  if (!result.ok) return { ok: false, message: result.failures[0]?.message ?? t('math.workerFailed') };
+  if (!result.ok) return { ok: false, message: result.failures.map((failure) => failureMessage(failure.text))[0] ?? t('math.workerFailed') };
   useAppStore.getState().applyDocument(result.document);
   return { ok: true };
 }

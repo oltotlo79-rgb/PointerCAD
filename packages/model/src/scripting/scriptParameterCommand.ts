@@ -5,6 +5,7 @@ import { synchronizeConfigurations } from '../part/configurations.js';
 import {hasDocumentMath} from '../part/evaluateDocumentMath.js';
 import { parseDisplayInput, normalizeInchQuotes } from '../units/length.js';
 import { ScriptCommandError, type ScriptCommandChange, type ScriptCommandContext } from './scriptCommandContext.js';
+import { plainTextValue } from '../failureText.js';
 import type { ScriptCommand } from './scriptTypes.js';
 
 export function applyScriptParameterCommand(context: ScriptCommandContext,
@@ -27,6 +28,8 @@ export function applyScriptParameterCommand(context: ScriptCommandContext,
   const next = applyParameters(updated);
   if (next.analysis.circular.length > 0) throw new ScriptCommandError('パラメータの参照が循環しています。');
   const failure = next.analysis.failures[0] ?? next.failures[0];
-  if (failure !== undefined) throw new ScriptCommandError(failure.message);
+  // スクリプトの誤りは文で運ぶ(スクリプトの文を鍵へ移すのは別の行)。数式を持つ文書は上で戻るので、ここへ来るのは式の計算部の文
+  // (plainText)だけ(0b-3h2)。
+  if (failure !== undefined) throw new ScriptCommandError(plainTextValue(failure.text) ?? 'パラメータを評価できませんでした。');
   return { document: next.document, reference: null, featureIds: [] };
 }

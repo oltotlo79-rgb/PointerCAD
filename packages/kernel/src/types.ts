@@ -391,6 +391,79 @@ export interface SketchProjectionOutcome {
   readonly failures: readonly SketchProjectionFailure[];
 }
 
+// ここから下は、板厚が一定の立体を板金として読む照会(M-08。読むのは `occt/recognizeSheetMetal.ts`)。
+
+/**
+ * 板金として読めなかった理由の符号。文は持たず、画面の側の一覧が符号ごとに文を選ぶ。
+ * `sourceChanged` は、基準の面の指紋が今の形のどの面にも合わない時(元の立体を編集した後など)。
+ */
+export type SheetMetalRecognitionReason = 'invalidSource' | 'ambiguousPair' | 'variableThickness' | 'unsupportedBend'
+  | 'cutAcrossBend' | 'unsupportedBoundary' | 'unsupportedConnection' | 'sourceChanged';
+
+/** 板の輪郭の 1 辺。`edgeIndex` は形の辺の表(`SolidBodyMesh.edges`)と同じ通し番号。 */
+export interface SheetMetalRecognizedRim {
+  readonly edgeIndex: number;
+  readonly curve: SegmentSpec | ArcSpec;
+}
+
+/**
+ * 平らな板 1 枚。`faceIndex` は板厚の始点側の面、`oppositeFaceIndex` は裏の面(どちらも面の表と同じ通し番号)。
+ * 外周と穴は、始点側の面の上で、内向きの法線 `inward` まわりに向きを揃えた並び。
+ */
+export interface SheetMetalRecognizedPanel {
+  readonly faceIndex: number;
+  readonly oppositeFaceIndex: number;
+  readonly inward: Vec3Tuple;
+  readonly outer: readonly SheetMetalRecognizedRim[];
+  readonly holes: readonly (readonly SheetMetalRecognizedRim[])[];
+}
+
+/**
+ * 円筒の曲げ 1 つ。`fromFaceIndex` の板から `toFaceIndex` の板へ曲がる。半径は内側の円筒の半径(内半径)、
+ * 角度は度で、符号は軸 `axis` まわりの向き。接線は両側の板と曲げの境の線分で、`axis` の向きに並ぶ。
+ */
+export interface SheetMetalRecognizedBend {
+  readonly fromFaceIndex: number;
+  readonly toFaceIndex: number;
+  readonly innerFaceIndex: number;
+  readonly outerFaceIndex: number;
+  readonly radius: number;
+  readonly width: number;
+  readonly angleDegrees: number;
+  readonly axis: Vec3Tuple;
+  readonly axisOrigin: Vec3Tuple;
+  readonly fromTangent: SegmentSpec;
+  readonly toTangent: SegmentSpec;
+}
+
+/** 読んだ結果。板は基準の面の板を先頭に、曲げを近い順にたどって並ぶ。 */
+export type SheetMetalRecognition =
+  | {
+      readonly ok: true;
+      readonly thickness: number;
+      readonly panels: readonly SheetMetalRecognizedPanel[];
+      readonly bends: readonly SheetMetalRecognizedBend[];
+    }
+  | { readonly ok: false; readonly reason: SheetMetalRecognitionReason };
+
+/** 照会の依頼。立体は形状キャッシュの鍵で、基準の面は指紋で指す(カーネルが選び直す)。 */
+export interface SheetMetalRecognitionRequest {
+  readonly items: readonly {
+    readonly id: string;
+    readonly shapeKey: string;
+    readonly face: Extract<SubShapeQuery, { readonly kind: 'face' }>;
+  }[];
+}
+
+/**
+ * 照会の結果。1 件ごとに読んだ結果か、形状キャッシュに鍵の形が無い時の `missingBody` を返す
+ * (1 件だめでも残りは読む。FR-504、NFR-RE-1)。
+ */
+export interface SheetMetalRecognitionOutcome {
+  readonly results: readonly { readonly id: string; readonly recognition: SheetMetalRecognition }[];
+  readonly failures: readonly { readonly id: string; readonly code: 'missingBody' }[];
+}
+
 // ここから下はソリッド(立体)の依頼と結果(FR-401〜404)。
 // Comlink 越しに渡せる素の値(数値・文字列・真偽・配列・TypedArray)だけで書く。
 // OCCT の形そのものは Worker の中に置いたままにする(NFR-MA-1)。

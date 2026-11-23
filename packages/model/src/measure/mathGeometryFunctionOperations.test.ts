@@ -5,7 +5,7 @@
  * Rは `coef("G")` を式に持つ図形由来の係数で、Gは長さ2mmのスケッチ線分の測定値。
  * A（2.5）は図形由来ではない。
  */
-import { plainText, plainTextValue, type FailureText } from '../failureText.js';
+import { FailureTextError, plainText, type FailureText } from '../failureText.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as number, mathScalarExpression, type ExpressionValue, type StoredMathExpression,
 } from '@pointercad/expression';
@@ -197,7 +197,7 @@ describe('規則: 演算ごとに、その被演算子が図形由来の係数�
   it('座標曲線 Y = floor(coef("R"))*X は付録Cの「演算」の文で断り、どの式か(Y)も返す', () => {
     expect(checkGeometryDerivedFunctionOperations(plot(formulaOf('curve', 'floor(coef("R"))*X')), DERIVED)).toEqual({
       operation: 'floor', output: 'Y',
-      message: '図形の測定値から計算する式では「floor」を使えません。値の境目で結果が変わる計算は使えません。' });
+      text: plainText('図形の測定値から計算する式では「floor」を使えません。値の境目で結果が変わる計算は使えません。') });
   });
 
   it.each([
@@ -217,7 +217,7 @@ describe('規則: 演算ごとに、その被演算子が図形由来の係数�
     ['parametric-curve', 'T*floor(coef("R"))', 'floor', 'floor', 'Z'],
   ] as const)('%s の %s は「%s」を理由に断る', (form, source, name, operation, output) => {
     expect(checkGeometryDerivedFunctionOperations(plot(formulaOf(form, source)), DERIVED))
-      .toEqual({ operation, message: operationMessage(name), output });
+      .toEqual({ operation, text: operationMessage(name), output });
   });
 
   it.each([
@@ -249,8 +249,9 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
     'resolveFunctionInputs は floor(coef("R")) を値の参照より前に断る(%s)', async (_case, geometry) => {
       const { document, analysis } = await evaluate(part([curveFeature('refused', formulaOf('curve', 'floor(coef("R"))*X'))]), geometry);
       expect(analysis.geometryDerived).toEqual(new Map([['R', [G_ID]]]));
-      await expect(resolveFunctionInputs(document, functionCurve(document, 'refused').definition, analysis, () => true))
-        .rejects.toThrow(new Error(operationMessage('floor')));
+      const refusal = resolveFunctionInputs(document, functionCurve(document, 'refused').definition, analysis, () => true);
+      await expect(refusal).rejects.toBeInstanceOf(FailureTextError);
+      await expect(refusal).rejects.toMatchObject({ text: operationMessage('floor') });
     });
 
   it.each([['implicit-curve', 'X^2+Y^2-coef("R")^2'], ['curve', 'floor(X)+coef("R")']] as const)(
@@ -298,7 +299,7 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
     const { functions, calls } = workers();
     const result = await recomputeFunctionCurves(document, bridge, analysis, context, functions, undefined, () => false);
     expect(result.cancelled).toBe(false);
-    expect(Object.fromEntries(result.invalidInputs)).toEqual({ refused: plainText(operationMessage('floor')) });
+    expect(Object.fromEntries(result.invalidInputs)).toEqual({ refused: operationMessage('floor') });
     expect(result.curves.has('refused')).toBe(false);
     for (const [x, y, z] of samplesOf(result.curves.get('circle'))) {
       expect(Math.abs(Math.hypot(x, y) - 2)).toBeLessThan(0.05); expect(z).toBeCloseTo(0, 10);
@@ -320,7 +321,7 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
     const result = await recomputeFunctionSurfaces(document, analysis, context, functions, new Map(), () => false);
     expect(result.cancelled).toBe(false);
     expect(Object.fromEntries(result.invalidInputs)).toEqual({
-      'refused-coordinate': plainText(operationMessage('floor')), 'refused-implicit': plainText(operationMessage('round')) });
+      'refused-coordinate': operationMessage('floor'), 'refused-implicit': operationMessage('round') });
     const plane = result.plans.get('plane')?.geometry;
     if (plane === undefined || !('vertices' in plane)) throw new Error('Expected a sampled plane');
     expect(plane.vertices.length).toBeGreaterThan(3);
@@ -365,7 +366,7 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
   it('関数上の点: 親の式が floor(coef("R")) を使うと、点の経路でも同じ理由で断り計算部へ送らない', async () => {
     const { result, calls, position } = await pointResult('X^2+Y^2-floor(coef("R"))^2');
     expect(result.cancelled).toBe(false);
-    expect(Object.fromEntries(result.invalidInputs)).toEqual({ chosen: plainText(operationMessage('floor')) });
+    expect(Object.fromEntries(result.invalidInputs)).toEqual({ chosen: operationMessage('floor') });
     expect(position).toBeNull(); expect(calls.points).toBe(0);
   });
 
@@ -376,7 +377,7 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
     try {
       const result = await recomputePart(document, bridge, { math: mathContext(document, MEASURED), functions });
       expect(result.cancelled).toBe(false);
-      expect(result.errors.map(error => [error.featureId, plainTextValue(error.text)])).toEqual([['refused', operationMessage('floor')]]);
+      expect(result.errors.map(error => [error.featureId, error.text])).toEqual([['refused', operationMessage('floor')]]);
       const circle = result.sketches[0].resolved.splines.filter(spline => spline.featureId === 'circle');
       for (const [x, y] of samplesOf(circle)) expect(Math.abs(Math.hypot(x, y) - 2)).toBeLessThan(0.05);
     } finally { await bridge.releasePart(document.id); }
@@ -387,8 +388,9 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
       { axes: ['X'], parameters: [], coefficients: [{ id: mathGeometryCoefficientId(G_ID), label: 'G' }] }, backend);
     const { document, analysis } = await evaluate(part([curveFeature('direct',
       { kind: 'coordinate-curve', independent: 'X', outputs: { Y: direct, Z: parse('0', ['X']) } })]), MEASURED);
-    await expect(resolveFunctionInputs(document, functionCurve(document, 'direct').definition, analysis, () => true))
-      .rejects.toThrow(new Error(mathGeometryOutsideCoefficientMessage('G')));
+    const refusal = resolveFunctionInputs(document, functionCurve(document, 'direct').definition, analysis, () => true);
+    await expect(refusal).rejects.toBeInstanceOf(FailureTextError);
+    await expect(refusal).rejects.toMatchObject({ text: mathGeometryOutsideCoefficientMessage('G') });
   });
 
   it('範囲の欄の floor(coef("R")) は GR-04 の数式評価が断る(この規則は式だけを見て二重に判定しない)', async () => {
@@ -397,7 +399,7 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
       bounds: { ...BOUNDS, X: { min: number(-4), max: scalar('floor(coef("R"))+3', [{ id: R_ID, label: 'R', decimal: '2' }]) } } } };
     expect(checkGeometryDerivedFunctionOperations(bounded.definition, DERIVED)).toBeNull();
     const { invalidInputs } = await evaluate(part([bounded]), MEASURED);
-    expect(plainTextValue(invalidInputs.get('ranged'))).toBe(operationMessage('floor'));
+    expect(invalidInputs.get('ranged')).toEqual(operationMessage('floor'));
   });
 });
 

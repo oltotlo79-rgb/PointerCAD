@@ -871,11 +871,11 @@ function isShapeBuild(value: PartRecomputeResult | ShapeBuild | MathFailedBuild)
 }
 
 /**
- * 数式の前段で失敗して形を作らなかった時(0b-3)。理由は数式の計算部の文のまま持ち、結果の誤りへは mathFailedResult が 1 か所で替える。
- * 途中の段(measureStages)は、誤りの鍵と値から文を読まずに、この文を未解決の理由にする。
+ * 数式の前段で失敗して形を作らなかった時(0b-3)。理由は鍵と値(数式の計算部の文は plainText)で持ち、結果の誤りへは mathFailedResult が
+ * 1 か所で替える。途中の段(measureStages)は、この鍵と値をそのまま未解決の理由にする(0b-3h2)。
  */
 interface MathFailedBuild {
-  readonly mathFailures: readonly { readonly ownerId: string; readonly message: string }[];
+  readonly mathFailures: readonly { readonly ownerId: string; readonly text: FailureText }[];
 }
 
 function isMathFailedBuild(value: PartRecomputeResult | ShapeBuild | MathFailedBuild): value is MathFailedBuild {
@@ -884,7 +884,7 @@ function isMathFailedBuild(value: PartRecomputeResult | ShapeBuild | MathFailedB
 
 function mathFailedResult(build: MathFailedBuild, generation: number): PartRecomputeResult {
   return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
-    errors: build.mathFailures.map(failure => ({ featureId: failure.ownerId, code: 'invalidValue', text: plainText(failure.message) })) };
+    errors: build.mathFailures.map(failure => ({ featureId: failure.ownerId, code: 'invalidValue', text: failure.text })) };
 }
 
 /** 段階再計算の 1 段で数式の評価へ渡すもの(`DocumentMathContext` の同じ名前の欄)。 */
@@ -892,7 +892,7 @@ interface StageMath {
   /** この再計算でここまでに測った結果(定義ID → 結果)。無い定義を使う係数は「計算待ち」になる。 */
   readonly geometry: ReadonlyMap<string, MathGeometryOutcome>;
   /** 計算させない係数と理由(循環・順序違反・段数超過。`MathGeometryStagePlan.blocked`)。 */
-  readonly blocked: ReadonlyMap<string, string>;
+  readonly blocked: ReadonlyMap<string, FailureText>;
 }
 
 /** 途中の段の数式の評価が理由を返さずに失敗したときの文(`evaluateDocumentMath` の最後の文と同じ)。 */
@@ -953,22 +953,22 @@ async function measureStages(
       continue;
     }
     /** この段から先のまだ測っていない定義を、段の失敗の理由付きで未解決にする。 */
-    const giveUp = (message: string): StageMath => {
+    const giveUp = (text: FailureText): StageMath => {
       const rest = plan.stages.slice(index).flat().filter((definition) => !known.has(definition.id));
-      for (const outcome of unmeasuredMathGeometryOutcomes(rest, document.id, generation, message)) {
+      for (const outcome of unmeasuredMathGeometryOutcomes(rest, document.id, generation, text)) {
         known.set(outcome.id, outcome);
       }
       return current();
     };
     if (shapes === undefined || valueSinceBuild) {
       const build = await buildShapes(document, bridge, options, generation, current());
-      if (isMathFailedBuild(build)) return giveUp(build.mathFailures[0]?.message ?? STAGE_MATH_FAILED_MESSAGE);
+      if (isMathFailedBuild(build)) return giveUp(build.mathFailures[0]?.text ?? plainText(STAGE_MATH_FAILED_MESSAGE));
       if (!isShapeBuild(build)) {
         // 数学の計算部があるので、ここへ来るのは取消だけ(数学計算部を準備できない早い戻りは、この関数の頭で断っている)。
-        return build.cancelled ? null : giveUp(STAGE_MATH_FAILED_MESSAGE);
+        return build.cancelled ? null : giveUp(plainText(STAGE_MATH_FAILED_MESSAGE));
       }
       if (!build.solid.ok) {
-        return giveUp(build.solid.message);
+        return giveUp(plainText(build.solid.message));
       }
       shapes = { build, bodies: build.referenceBodies };
       valueSinceBuild = false;
@@ -1018,7 +1018,7 @@ async function buildShapes(
       evaluated = result.recompute.document;
       parameterAnalysis = result.recompute.analysis;
       invalidInputs = result.recompute.invalidInputs;
-      parameterErrors.push(...parameterAnalysis.failures.map(failure => ({ featureId: failure.name, code: failure.code ?? ('invalidValue' as const), text: plainText(failure.message) })));
+      parameterErrors.push(...parameterAnalysis.failures.map(failure => ({ featureId: failure.name, code: failure.code ?? ('invalidValue' as const), text: failure.text })));
     } else {
       evaluated = result.document;
       parameterAnalysis = result.analysis;

@@ -30,6 +30,7 @@ import type {
   SketchProjectionRequestItem,
   SketchProjectionResult,
 } from './sketchContracts.js';
+import type { SheetRecognitionReply, SheetRecognitionRequestItem } from './sheetRecognition.js';
 import type {
   SolidBody,
   SolidRecomputeOutcome,
@@ -168,6 +169,11 @@ export interface KernelBridge {
   sectionSketchCurves(
     requests: readonly SketchProjectionRequestItem[],
   ): Promise<SketchProjectionResult>;
+  /**
+   * 段の立体を板金として読む(M-08)。**再計算を起こさない読み取り**で、依頼の順に 1 件ずつ答え、投げない。
+   * 任意の口なのは、口を持たない検査用の偽の橋を変えないため(持たない橋では、変換の行が理由つきで断る)。
+   */
+  recognizeSheetMetal?(requests: readonly SheetRecognitionRequestItem[]): Promise<readonly SheetRecognitionReply[]>;
   /**
    * 覚えてある形を測る(FR-1101、FR-1102)。**再計算を起こさない読み取り。**
    * 対象は立体を作ったフィーチャーの id で指し、`steps` から段の鍵

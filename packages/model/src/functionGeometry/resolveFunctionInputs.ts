@@ -9,6 +9,7 @@ import type { PartDocument } from '../part/types.js';
 import type { FunctionDefinition } from './functionDefinitionTypes.js';
 import { mapFunctionDefinition } from './mapFunctionDefinition.js';
 import { resolveFunctionRanges } from './resolveFunctionRanges.js';
+import { FailureTextError } from '../failureText.js';
 
 /**
  * The calculation tape (`scalarMathTape.ts`) has no `equal` outside a `which` condition, so only
@@ -40,7 +41,7 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
   if (analysis.geometryDerived !== undefined) {
     const issue = checkGeometryDerivedFunctionOperations(definition,
       mathGeometryDerivedCoefficientIds(document.parameters, analysis.geometryDerived));
-    if (issue !== null) throw new Error(issue.message);
+    if (issue !== null) throw new FailureTextError(issue.text);
   }
   const ranges = await resolveFunctionRanges(definition, { isCurrent, evaluate: value => {
     const evaluated = evaluatedDocumentMathValue(document, value);
@@ -59,7 +60,7 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
   });
   const coefficients = [...references].map(([id, label]) => {
     // As the coefficient rules say: a measured value is read only by a coefficient's own formula, never by a plot formula.
-    if (mathGeometryDefinitionIdOf(id) !== null) throw new Error(mathGeometryOutsideCoefficientMessage(label));
+    if (mathGeometryDefinitionIdOf(id) !== null) throw new FailureTextError(mathGeometryOutsideCoefficientMessage(label));
     const parameter = document.parameters.find(item => item.mathId === id && item.name === label);
     const decimal = parameter === undefined ? undefined : analysis.exactVariables.get(parameter.name);
     if (decimal === undefined) throw new Error(`係数の原式を再計算できません: ${label}`);

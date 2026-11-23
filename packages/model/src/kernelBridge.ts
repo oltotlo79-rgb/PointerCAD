@@ -34,6 +34,7 @@ import type { AnalysisBoundaryReply } from './geometry/analysisMesh.js';
 import { HOST_RECORD_BYTES, MeshHostRetention } from './kernelBridge/meshHostRetention.js';
 import type { MaterialComparisonBridge, MaterialComparisonResult } from './kernelBridge/materialComparisonContracts.js';
 import { readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
+import { askSheetRecognition, unavailableSheetReplies, type SheetRecognitionReply } from './kernelBridge/sheetRecognition.js';
 export type { MaterialComparisonBridge, MaterialComparisonResult, MaterialComparisonGeometry, MaterialDifferenceRegion } from './kernelBridge/materialComparisonContracts.js';
 import { readFunctionCurveGeometry, type FunctionKernelBridge } from './functionGeometry/functionCurveGeometry.js';
 import type {
@@ -1830,12 +1831,8 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     },
 
     async projectSketchCurves(requests): Promise<SketchProjectionResult> {
-      if (requests.length === 0) {
-        return { results: [], failures: [] };
-      }
-      if (health.broken && !disposed) {
-        restart();
-      }
+      if (requests.length === 0) return { results: [], failures: [] };
+      if (health.broken && !disposed) restart();
       const active = connection;
       return raceWithBroken(
         active,
@@ -1847,12 +1844,8 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     },
 
     async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
-      if (requests.length === 0) {
-        return { results: [], failures: [] };
-      }
-      if (health.broken && !disposed) {
-        restart();
-      }
+      if (requests.length === 0) return { results: [], failures: [] };
+      if (health.broken && !disposed) restart();
       const active = connection;
       return raceWithBroken(
         active,
@@ -1861,6 +1854,15 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
           .then((outcome) => toProjectionResult(requests, outcome)),
         () => ({ results: [], failures: brokenFailures(requests) }),
       );
+    },
+
+    async recognizeSheetMetal(requests): Promise<readonly SheetRecognitionReply[]> {
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      return raceWithBroken(
+        active,
+        () => askSheetRecognition(requests, (request) => active.remote.recognizeSheetMetal(request)),
+        () => unavailableSheetReplies(requests, 'workerBroken'));
     },
 
     async readCachedBodies(steps, ids, lease): Promise<SolidRecomputeOutcome> {
@@ -2208,6 +2210,8 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
       });
       return toProjectionResult(requests, outcome);
     },
+
+    recognizeSheetMetal: (requests) => askSheetRecognition(requests, (request) => api.recognizeSheetMetal(request)),
 
     async readCachedBodies(steps, ids): Promise<SolidRecomputeOutcome> {
       const selected = cachedBodySteps(steps, ids);

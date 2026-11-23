@@ -17,6 +17,7 @@ import {
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
 import { mathGeometryInputsFor } from '../math/mathGeometryResults.js';
 import { activePartDocument } from '../store/documentKind.js';
@@ -167,16 +168,16 @@ export async function prepareParameterCsv(
     };
     if (!result.ok) return { ok: false, issues: result.failures.length > 0 ? result.failures.map(failure =>
       issue(records.find(record => record.name === failure.ownerId)?.recordNumber ?? 0,
-        'expression', failure.message)) : [issue(0, '*', result.cancelled
+        'expression', failureMessage(failure.text))) : [issue(0, '*', result.cancelled
       ? t('parameter.csv.stale') : t('parameter.csv.mathCheckFailed'))] };
     candidate = result.document;
   } else {
     const result = applyParameters(candidate);
     for (const failure of result.analysis.failures) {
       issues.push(issue(records.find(record => record.name === failure.name)?.recordNumber ?? 0,
-        'expression', failure.message));
+        'expression', failureMessage(failure.text)));
     }
-    for (const failure of result.failures) issues.push(issue(0, 'expression', failure.message));
+    for (const failure of result.failures) issues.push(issue(0, 'expression', failureMessage(failure.text)));
     if (issues.length > 0) return { ok: false, issues };
     candidate = result.document;
   }

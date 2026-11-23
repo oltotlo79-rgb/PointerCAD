@@ -16,6 +16,7 @@
  * 演算制限だけの独立した配線検査は `functionPlotGeometryDerived.test.ts` に残す。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
 import { createMathBackend, executeMathWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
@@ -87,7 +88,7 @@ describe('evaluateFunctionPlotDraftへ現在の図形の文脈を渡す(GR-18c)'
     const result = await evaluateFunctionPlotDraft(document, 1, withOutput('floor(coef("R"))+X'), realClient(),
       new AbortController().signal, () => true, resolvedGeometry(document.id));
     if (result.ok) throw new Error('Expected the geometry-derived operation to be refused');
-    expect(result.fields.get('Y')).toBe(mathGeometryOperationMessage('floor'));
+    expect(result.fields.get('Y')).toBe(failureMessage(mathGeometryOperationMessage('floor')));
     expect([...result.fields.keys()]).toEqual(['Y']);
   });
 
@@ -96,7 +97,7 @@ describe('evaluateFunctionPlotDraftへ現在の図形の文脈を渡す(GR-18c)'
     const result = await evaluateFunctionPlotDraft(document, 1, withOutput('coef("A")+X'), realClient(),
       new AbortController().signal, () => true, new Map());
     if (result.ok) throw new Error('Expected the still-pending measurement to block confirmation');
-    expect(result.fields.get('form')).toBe(mathGeometryPendingMessage('G'));
+    expect(result.fields.get('form')).toBe(failureMessage(mathGeometryPendingMessage('G')));
     expect([...result.fields.keys()]).toEqual(['form']);
   });
 

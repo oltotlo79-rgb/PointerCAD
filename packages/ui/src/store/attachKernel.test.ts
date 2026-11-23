@@ -310,7 +310,7 @@ describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR
       readCachedBodies: unused, functionSketchCurves: unused, tessellateSketch: unused,
       offsetSketchCurves: unused, projectSketchCurves: unused, sectionSketchCurves: unused,
       hiddenLineViews: unused, sectionViews: unused, measure: unused, exportShapes: unused,
-      importShape: unused, inspectPrintability: unused,
+      importShape: unused, inspectPrintability: unused, recognizeSheetMetal: unused,
       recomputeSolids(request) {
         generations.push(request.generation);
         beforeAnswer();

@@ -16,6 +16,7 @@ import type { PartDocument } from '../part/types.js';
 import { mathGeometryCoefficientId, mathGeometryReferencesOf } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
 import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
+import { plainText, type FailureText } from '../failureText.js';
 
 /* ---------------------------------------------------------------------------
  * Operations allowed in a formula computed from a measured value
@@ -48,8 +49,8 @@ export const GEOMETRY_DERIVED_OPERATIONS: ReadonlySet<string> = new Set<string>(
 export interface GeometryDerivedOperationIssue {
   /** The rejected operation ID exactly as stored in the formula (e.g. `floor`, `less`, `sum`). */
   readonly operation: string;
-  /** The refusal sentence, naming the operation the way the text notation spells it. */
-  readonly message: string;
+  /** The refusal sentence (key and values, 0b-3h2), naming the operation the way the text notation spells it. */
+  readonly text: FailureText;
 }
 
 /** How the text notation writes an operation: its engine head in lower case (`ceiling` → `ceil`). */
@@ -99,7 +100,7 @@ export function checkGeometryDerivedOperations(expression: MathNode): GeometryDe
       continue;
     }
     if (node.kind === 'binder' || (node.kind === 'operation' && !GEOMETRY_DERIVED_OPERATIONS.has(node.operation))) {
-      return { operation: node.operation, message: mathGeometryOperationMessage(operationName(node.operation)) };
+      return { operation: node.operation, text: mathGeometryOperationMessage(operationName(node.operation)) };
     }
     if (node.kind === 'operation') {
       for (let index = node.operands.length - 1; index >= 0; index -= 1) pending.push(node.operands[index]);
@@ -197,7 +198,7 @@ export type MathGeometryCoefficientInput =
   | { readonly status: 'value'; readonly coefficient: MathCoefficientValue }
   | { readonly status: 'pending' }
   | { readonly status: 'boolean' }
-  | { readonly status: 'unresolved'; readonly reason: UnresolvedMathGeometryReason; readonly message: string; readonly code?: WorkerBrokenCode };
+  | { readonly status: 'unresolved'; readonly reason: UnresolvedMathGeometryReason; readonly text: FailureText; readonly code?: WorkerBrokenCode };
 
 /**
  * Convert `outcome` (the caller's current result for `definition`, or `undefined`) into the input the
@@ -215,11 +216,11 @@ export function mathGeometryCoefficientValue(document: PartDocument, definition:
   outcome: MathGeometryOutcome | undefined): MathGeometryCoefficientInput {
   if (outcome === undefined || outcome.id !== definition.id || outcome.documentId !== document.id) return { status: 'pending' };
   if (outcome.status === 'unresolved') {
-    return { status: 'unresolved', reason: outcome.reason, message: outcome.message, ...(outcome.code === undefined ? {} : { code: outcome.code }) };
+    return { status: 'unresolved', reason: outcome.reason, text: outcome.text, ...(outcome.code === undefined ? {} : { code: outcome.code }) };
   }
   if (outcome.kind === 'boolean') return { status: 'boolean' };
   if (!Number.isFinite(outcome.value)) {
-    return { status: 'unresolved', reason: 'failed-geometry', message: '図形から有限で妥当な測定値を取得できませんでした。' };
+    return { status: 'unresolved', reason: 'failed-geometry', text: plainText('図形から有限で妥当な測定値を取得できませんでした。') };
   }
   return { status: 'value',
     coefficient: { id: mathGeometryCoefficientId(definition.id), label: definition.name, decimal: String(outcome.value) } };
@@ -231,31 +232,31 @@ export function mathGeometryCoefficientValue(document: PartDocument, definition:
  * ------------------------------------------------------------------------- */
 
 /** 「参照先の不一致」: the definition is missing, renamed without this reference, or ambiguous. */
-export function mathGeometryReferenceMismatchMessage(label: string): string {
-  return `図形の測定値の参照先を確認できません: ${label}`;
+export function mathGeometryReferenceMismatchMessage(label: string): FailureText {
+  return plainText(`図形の測定値の参照先を確認できません: ${label}`);
 }
 
 /** 「測れない」: `reason` is the measuring code's own sentence. */
-export function mathGeometryUnresolvedMessage(definitionName: string, coefficientName: string, reason: string): string {
-  return `図形の測定値「${definitionName}」を測れないため、係数「${coefficientName}」を計算できません: ${reason}`;
+export function mathGeometryUnresolvedMessage(definitionName: string, coefficientName: string, reason: FailureText): FailureText {
+  return { key: 'mathGeometry.error.unresolved', parameters: { definition: definitionName, coefficient: coefficientName, reason } };
 }
 
 /** 「真偽」. */
-export function mathGeometryBooleanMessage(definitionName: string): string {
-  return `平行・垂直などの判定の結果は係数の式に使えません: ${definitionName}`;
+export function mathGeometryBooleanMessage(definitionName: string): FailureText {
+  return plainText(`平行・垂直などの判定の結果は係数の式に使えません: ${definitionName}`);
 }
 
 /** 「演算」. */
-export function mathGeometryOperationMessage(operation: string): string {
-  return `図形の測定値から計算する式では「${operation}」を使えません。値の境目で結果が変わる計算は使えません。`;
+export function mathGeometryOperationMessage(operation: string): FailureText {
+  return plainText(`図形の測定値から計算する式では「${operation}」を使えません。値の境目で結果が変わる計算は使えません。`);
 }
 
 /** Not a refusal: the value is simply not measured yet in this recomputation ("計算待ち"). */
-export function mathGeometryPendingMessage(definitionName: string): string {
-  return `図形の測定値「${definitionName}」を計算中です。形の計算が終わると使えます。`;
+export function mathGeometryPendingMessage(definitionName: string): FailureText {
+  return plainText(`図形の測定値「${definitionName}」を計算中です。形の計算が終わると使えます。`);
 }
 
 /** Only a coefficient's own formula may read a measured value. */
-export function mathGeometryOutsideCoefficientMessage(label: string): string {
-  return `図形の測定値は係数の式の中でだけ使えます: ${label}`;
+export function mathGeometryOutsideCoefficientMessage(label: string): FailureText {
+  return plainText(`図形の測定値は係数の式の中でだけ使えます: ${label}`);
 }

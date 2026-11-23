@@ -37,6 +37,16 @@ export type {
   SketchSectionItem,
   Vec2Tuple,
 } from './types.js';
+// 立体を板金として読む照会(M-08)。Worker 越しの依頼と結果、読めない理由の符号。
+export type {
+  SheetMetalRecognition,
+  SheetMetalRecognitionOutcome,
+  SheetMetalRecognitionReason,
+  SheetMetalRecognitionRequest,
+  SheetMetalRecognizedBend,
+  SheetMetalRecognizedPanel,
+  SheetMetalRecognizedRim,
+} from './types.js';
 export { makeProjection, orderPlaneCurves, planeBasisOf, projectPointToPlane } from './occt/makeProjection.js';
 export { makeSection } from './occt/makeSection.js';
 export { functionCurvePolylines } from './occt/functionCurvePolylines.js';

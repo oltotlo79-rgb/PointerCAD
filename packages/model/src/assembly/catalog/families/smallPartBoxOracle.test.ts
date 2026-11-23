@@ -14,7 +14,7 @@ import type { CatalogFamily } from '../types.js';
 import type { PanelPartRecord } from './panelPartCatalog.js';
 import * as smallPartBoxCatalog from './smallPartBoxCatalog.js';
 import {
-  CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, DRAWER_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS,
+  BRACKET_PART_BOX_RECORDS, CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, DRAWER_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS,
 } from './smallPartBoxRows.js';
 
 type Cells = Readonly<Record<string, string>>;
@@ -42,6 +42,7 @@ const RECORDS_BY_ID: Readonly<Record<string, readonly PanelPartRecord[]>> = {
   [smallPartBoxCatalog.FOOT_PART_BOX_FAMILY.id]: FOOT_PART_BOX_RECORDS,
   [smallPartBoxCatalog.DOOR_PART_BOX_FAMILY.id]: DOOR_PART_BOX_RECORDS,
   [smallPartBoxCatalog.DRAWER_PART_BOX_FAMILY.id]: DRAWER_PART_BOX_RECORDS,
+  [smallPartBoxCatalog.BRACKET_PART_BOX_FAMILY.id]: BRACKET_PART_BOX_RECORDS,
 };
 const OTHER_ORACLES = {
   'slot-long-part': { reason: '長物は断面・長さの上限・単位質量を照らす', test: 'slotLongPartOracle.test.ts' },
@@ -51,13 +52,18 @@ const RECORDS = Object.values(RECORDS_BY_ID).flat();
 /**
  * 「横:43.5(…)/縦:33/奥行:33(…)」→ 向きごとの数(括弧の参考寸法・φ・「なし」は外す。端の名前の無い数も読む)。
  * 決まった長さの品「断面の横:9.6/断面の縦:35.3/長さ:アウターL1=355.6、インナーL2=352.6」は、横は断面の横、縦は断面の縦、
- * 奥行は番号つきの長さ(L1= など)の長い方(縮めた時の長さ)として読む。
+ * 奥行は番号つきの長さ(L1= など)の長い方(縮めた時の長さ)として読む。板の記入「横:100/縦:100/板厚:t=2」の板厚(注記 t=)は奥行の数として読む。
  */
 function directions(text: string | undefined): ReadonlyMap<string, readonly number[]> {
   const found = new Map<string, readonly number[]>();
   for (const segment of (text ?? '').split('/')) {
     const [name, body] = segment.split(':');
     if (name === undefined || body === undefined) continue;
+    if (name === '板厚') {
+      const thickness = /^t=([0-9]+(?:\.[0-9]+)?)$/u.exec(body.trim())?.[1];
+      found.set('奥行', thickness === undefined ? [] : [Number(thickness)]);
+      continue;
+    }
     found.set(name, body.split(';').flatMap((item) => {
       const match = /^([0-9]+(?:\.[0-9]+)?)(?:mm)?(?:\(|$)/u.exec(item.trim());
       return match?.[1] === undefined ? [] : [Number(match[1])];
@@ -119,9 +125,19 @@ describe('資料 1 の小さい部品の製品の行と照らす側の読み', (
     for (const record of RECORDS) {
       const cells = FIXTURE.find((row) => row.key === record.key)?.cells ?? {};
       const found = directions(cells['全体の記入']);
-      expect(sorted([...found.values()].flat()), record.key).toEqual(sorted([record.width, record.depth, record.height]));
-      expect(found.get('横') ?? [], record.key).toContain(record.width);
-      expect(found.get('縦') ?? [], record.key).toContain(record.height);
+      const box = sorted([record.width, record.depth, record.height]);
+      expect(sorted([...found.values()].flat()), record.key).toEqual(box);
+      const first = cells['全体の記入(1 本目)'];
+      if (first === undefined) {
+        expect(found.get('横') ?? [], record.key).toContain(record.width);
+        expect(found.get('縦') ?? [], record.key).toContain(record.height);
+      } else {
+        // 2 本で横と奥行の書き方だけが違う行(統括の決定 2026-11-22): 2 本とも 3 つの数が箱と同じで縦は高さ、横は 2 本で違い、幅は縦と同じ数。
+        const other = directions(first);
+        expect([sorted([...other.values()].flat()), other.get('縦'), found.get('縦'), record.width], record.key)
+          .toEqual([box, [record.height], [record.height], record.height]);
+        expect(other.get('横'), record.key).not.toEqual(found.get('横'));
+      }
       const materials = materialsOf(cells['材質']);
       expect(record.material === 'mixed' ? record.materialText : record.material, record.key)
         .toBe(record.material === 'mixed' ? materials.map((material) => LABELS[material]).join('・') : materials[0]);

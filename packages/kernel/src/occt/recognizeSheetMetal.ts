@@ -1,6 +1,7 @@
 /** Read an open tree of constant-thickness panels from the trimmed, oriented B-rep. */
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
-import type { ArcSpec, SegmentSpec, SolidEdgeInfo, SolidFaceInfo, Vec3Tuple } from '../types.js';
+import type { SegmentSpec, SheetMetalRecognition, SheetMetalRecognitionReason, SheetMetalRecognizedBend,
+  SheetMetalRecognizedPanel, SheetMetalRecognizedRim, SolidEdgeInfo, SolidFaceInfo, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 import { countSheetMetalSolids } from './sheetMetalJoin.js';
 import { addVec, crossVec, dotVec, lengthVec, scaleVec, subVec } from './sketchCorner.js';
@@ -8,30 +9,12 @@ import { isValidShape } from './solidMesh.js';
 import { collectSubShapes } from './subShapes.js';
 import { APPROXIMATION_TOLERANCE_MM, exceedsMagnitude, GEOMETRIC_CONFUSION_MM } from './tolerances.js';
 
-type Reason = 'invalidSource' | 'ambiguousPair' | 'variableThickness' | 'unsupportedBend'
-  | 'cutAcrossBend' | 'unsupportedBoundary' | 'unsupportedConnection';
-interface Rim { edgeIndex: number; curve: SegmentSpec | ArcSpec }
-interface Panel {
-  faceIndex: number;
-  oppositeFaceIndex: number;
-  inward: Vec3Tuple;
-  outer: Rim[];
-  holes: Rim[][];
-}
-interface Bend {
-  fromFaceIndex: number;
-  toFaceIndex: number;
-  innerFaceIndex: number;
-  outerFaceIndex: number;
-  radius: number;
-  width: number;
-  angleDegrees: number;
-  axis: Vec3Tuple;
-  axisOrigin: Vec3Tuple;
-  fromTangent: SegmentSpec;
-  toTangent: SegmentSpec;
-}
-type Result = { ok: true; thickness: number; panels: Panel[]; bends: Bend[] } | { ok: false; reason: Reason };
+/** The shape itself never yields `sourceChanged`; that is the Worker's fingerprint lookup. */
+type Reason = Exclude<SheetMetalRecognitionReason, 'sourceChanged'>;
+type Rim = SheetMetalRecognizedRim;
+type Panel = SheetMetalRecognizedPanel;
+type Bend = SheetMetalRecognizedBend;
+type Result = SheetMetalRecognition;
 interface Occurrence { edge: SolidEdgeInfo; reversed: boolean }
 type Face = SolidFaceInfo & { outer: Occurrence[]; holes: Occurrence[][] };
 type Plane = Face & { axis: Vec3Tuple };

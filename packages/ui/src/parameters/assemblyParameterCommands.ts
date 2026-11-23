@@ -22,6 +22,7 @@ import { addParameter, analyzeParameters, assemblyExpressionContext, expressionP
   removeParameter, renameParameter, reorderParameters, replaceParameter, type AssemblyDocument, type Mate,
   type Parameter, type PresentationStep } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { referencedByMessage, type ParameterCommandRejectionReason, type ParameterRow } from './parameterCommands.js';
 
 export type AssemblyParameterCommandOutcome =
@@ -215,7 +216,7 @@ export function commitReorderAssemblyParameters(document: AssemblyDocument, from
  */
 export function assemblyParameterRows(document: AssemblyDocument): readonly ParameterRow[] {
   const analysis = analyzeParameters(document.parameters, assemblyExpressionOwners(document).map(owner => owner.value));
-  const failures = new Map(analysis.failures.map(failure => [failure.name, failure.message] as const));
+  const failures = new Map(analysis.failures.map(failure => [failure.name, failureMessage(failure.text)] as const));
   const circular = new Set(analysis.circular), unused = new Set(analysis.unused);
   return document.parameters.map(parameter => ({
     name: parameter.name, source: parameter.value.source,

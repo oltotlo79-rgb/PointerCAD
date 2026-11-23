@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { plainText, plainTextValue } from '../failureText.js';
 import { evaluateExpression, mathScalarExpression, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import {
   createMathBackend,
@@ -136,7 +137,7 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
     const document = part([row('A', a), row('B', b)], a);
     const result = await evaluateDocumentMath(document, context(document));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failures.filter(failure => failure.message.includes('循環'))).toHaveLength(2);
+    if (!result.ok) expect(result.failures.filter(failure => (plainTextValue(failure.text) ?? '').includes('循環'))).toHaveLength(2);
   });
   it('削除済みIDを同名の新しい係数へ勝手に結び直さない', async () => {
     const value = math('coef("A")+1', [{ id: 'removed', label: 'A', decimal: '3' }]);
@@ -201,8 +202,7 @@ describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき�
     expect(result.ok).toBe(false);
     if (result.ok) return;
     const c = result.failures.find(failure => failure.ownerId === 'C');
-    expect(c?.message).not.toContain('決まっていない名前');
-    expect(c?.message).toContain('循環');
+    expect(c?.text).toEqual({ key: 'math.error.dependentCoefficient', parameters: { name: 'A', reason: plainText('係数の参照が循環しています。') } });
   });
 
   it('本当に存在しない名前を旧式で参照したときは、決まっていない名前のまま示す(回帰確認)', async () => {
@@ -211,8 +211,8 @@ describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき�
     expect(result.ok).toBe(false);
     if (result.ok) return;
     const c = result.failures.find(failure => failure.ownerId === 'C');
-    expect(c?.message).toContain('決まっていない名前');
-    expect(c?.message).toContain('Z');
+    expect(plainTextValue(c?.text)).toContain('決まっていない名前');
+    expect(plainTextValue(c?.text)).toContain('Z');
   });
 });
 
@@ -281,7 +281,7 @@ describe('数学係数の改名はIDと束縛変数と全構成を保つ', () =>
     if (!created.ok) throw new Error(created.reason);
     const before = JSON.stringify(created.document);
     const result = await renameDocumentMathParameter(created.document, 'i', '積分上限', context(created.document));
-    if (!result.ok) throw new Error(result.message);
+    if (!result.ok) throw new Error(JSON.stringify(result.text));
     expect(result.document.parameters.map(parameter => parameter.name)).toEqual(['積分上限', 'B']);
     expect(result.document.parameters[0].mathId).toBe('coefficient:1');
     expect(xValue(result.document).value).toBe(8);

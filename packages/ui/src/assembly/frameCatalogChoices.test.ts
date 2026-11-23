@@ -320,9 +320,9 @@ describe('資料 1 の引出の部品の族の選ぶ画面の文字', () => {
     ['drawer-part-box', 'catalog.frame.drawerPartBox.hint'],
   ] as const;
 
-  it('引出の部品の族は扉の部品の族の後・キャスターの族の前に並び、説明は 1 行、行の名前は呼びに行の簡略の印を添える', async () => {
+  it('引出の部品の族は扉の部品の族の後・ブラケットのそのほかの族の前に並び、説明は 1 行、行の名前は呼びに行の簡略の印を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(DRAWER_FAMILIES.map(([id]) => id));
-    expectRegisteredInOrder(DRAWER_FAMILIES.map(([id]) => id));
+    expectRegisteredInOrder(['door-part-box', ...DRAWER_FAMILIES.map(([id]) => id), 'bracket-part-box']);
     for (const [id, hint] of DRAWER_FAMILIES) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -334,6 +334,23 @@ describe('資料 1 の引出の部品の族の選ぶ画面の文字', () => {
         const marks = row.simplified ?? [];
         expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
       }
+    }
+  });
+});
+
+describe('資料 1 のブラケットのそのほかの族の選ぶ画面の文字', () => {
+  it('引出の部品の族の後・キャスターの族の前に並び、説明は 1 行、行の名前は呼びに行の簡略の印を添える', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['bracket-part-box']);
+    expectRegisteredInOrder(['drawer-part-box', 'bracket-part-box', 't-slot-caster']);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded('bracket-part-box');
+    if (family === undefined) throw new Error('bracket-part-box is not loaded');
+    expect(familyHintKey(family)).toBe('catalog.frame.bracketPartBox.hint');
+    expect(t('catalog.frame.bracketPartBox.hint')).not.toBe('catalog.frame.bracketPartBox.hint');
+    expect(t(familyKindKey(family.kindKey))).not.toBe(family.kindKey);
+    expect(family.rows.length).toBeGreaterThan(0);
+    for (const row of family.rows) {
+      const marks = row.simplified ?? [];
+      expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
     }
   });
 });

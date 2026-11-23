@@ -18,6 +18,7 @@ import {
 } from '@pointercad/model';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { AppState } from '../store/appState.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -156,7 +157,7 @@ export async function runMathGeometryRename(id: string, name: string,
     const result = await renameDocumentMathGeometry(document, id, name, { client, geometry,
       identity: { documentId: document.id, documentVersion: state.documentVersion }, signal: controller.signal, isCurrent });
     if (!isCurrent()) return stopped();
-    if (!result.ok) return { ok: false, reason: result.reason, message: refusalMessage(result.reason, result.message) };
+    if (!result.ok) return { ok: false, reason: result.reason, message: refusalMessage(result.reason, failureMessage(result.text)) };
     if (result.document !== document) useAppStore.getState().applyDocument(result.document);
     return { ok: true };
   } catch {

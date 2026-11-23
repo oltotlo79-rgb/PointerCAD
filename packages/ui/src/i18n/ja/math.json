@@ -291,5 +291,7 @@
   "math.declaration.type.symbolic": "その他の記号",
   "math.inspection.angleContext": "角度の読み方",
   "inspection.listSeparator": "、",
-  "inspection.positionSeparator": "："
+  "inspection.positionSeparator": "：",
+  "math.error.dependentCoefficient": "参照する係数「{name}」を計算できません: {reason}",
+  "math.error.lines": "{first}\n{rest}"
 }

@@ -1,4 +1,4 @@
-import { appearanceFromPreset, createSubShapeReference, type PartDocument, type SolidBody, type SubShapeOrigin, type SubShapeRef } from '@pointercad/model';
+import { appearanceFromPreset, createSubShapeReference, plainText, type PartDocument, type SolidBody, type SubShapeOrigin, type SubShapeRef } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useAppStore } from '../store/useAppStore.js';
 import { holeFeature, resetTestStore } from '../store/testing/createTestStore.js';
@@ -145,7 +145,7 @@ describe('番号交換と意味参照', () => {
     useAppStore.getState().applyDocument(document);
     useAppStore.setState({ isComputing: false, completedGeneration: 2, requestedGeneration: 2,
       mathGeometryResult: { document, generation: 2, evaluated: true, outcomes: new Map([['volume', {
-        id: 'volume', documentId: document.id, generation: 2, status: 'unresolved', reason: 'failed-geometry', message: '後続加工が未解決',
+        id: 'volume', documentId: document.id, generation: 2, status: 'unresolved', reason: 'failed-geometry', text: plainText('後続加工が未解決'),
       }]]) } });
     const impacts = referenceRepairImpacts(useAppStore.getState(), slot);
     expect(impacts.find(item => item.ownerId === 'downstream')).toBeDefined();

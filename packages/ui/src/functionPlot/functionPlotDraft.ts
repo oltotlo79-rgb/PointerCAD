@@ -6,6 +6,7 @@ import { FUNCTION_DEFINITION_FORMAT, FunctionPlotBounds, checkGeometryDerivedFun
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { prepareDocumentMathEnvironment } from '../math/prepareDocumentMathEditor.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 /**
  * the calculation tape has no `equal`; F in "F=0" is what a curve/surface samples, not
@@ -170,7 +171,7 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     if (derivedCoefficientIds.size === 0) return false;
     const issue = checkGeometryDerivedFunctionOperations(candidate, derivedCoefficientIds);
     if (issue === null) return false;
-    fields.set(issue.output ?? 'equation', issue.message);
+    fields.set(issue.output ?? 'equation', failureMessage(issue.text));
     return true;
   };
   if(draft.form==='implicit'){

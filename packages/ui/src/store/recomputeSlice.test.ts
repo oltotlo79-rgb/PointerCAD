@@ -235,7 +235,7 @@ describe('request-local JS accounting adoption', () => {
       readCachedBodies: unused, functionSketchCurves: unused, tessellateSketch: unused,
       offsetSketchCurves: unused, projectSketchCurves: unused, sectionSketchCurves: unused,
       hiddenLineViews: unused, sectionViews: unused, measure: unused, exportShapes: unused,
-      importShape: unused, inspectPrintability: unused,
+      importShape: unused, inspectPrintability: unused, recognizeSheetMetal: unused,
       recomputeSolids(request) {
         const localMesh = request.localMesh;
         if (localMesh === undefined) throw new Error('Missing production local mesh policy');

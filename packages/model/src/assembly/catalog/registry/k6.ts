@@ -164,6 +164,10 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   { id: 'drawer-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.drawerPartBox',
     hint: { key: 'catalog.frame.drawerPartBox.hint', rowLabel: 'simplified' },
     load: async () => (await import('../families/smallPartBoxCatalog.js')).DRAWER_PART_BOX_FAMILY },
+  // 資料 1 のブラケットのそのほか(外形を包む形。種類の語は統括が承認した一般の呼び。2026-11-22)。
+  { id: 'bracket-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.bracketPartBox',
+    hint: { key: 'catalog.frame.bracketPartBox.hint', rowLabel: 'simplified' },
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).BRACKET_PART_BOX_FAMILY },
   // 資料 1・2 のキャスター(取付けの板かねじ・簡略の箱のフォーク・車輪の円柱。利用者の回答 2026-11-18 15:5x の (1))。
   { id: 't-slot-caster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.caster',
     hint: { key: 'catalog.frame.caster.hint', rowLabel: 'simplified' },

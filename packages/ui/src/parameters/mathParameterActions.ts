@@ -5,6 +5,7 @@ import { mathGeometryInputsFor } from '../math/mathGeometryResults.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { commitRenameParameter } from './parameterCommands.js';
 
 export type MathParameterActionResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
@@ -38,7 +39,7 @@ export async function runMathParameterRename(from: string, to: string, options: 
     if (mathGeometryInputsFor(useAppStore.getState(), document) !== geometry) {
       return { ok: false, message: t('mathGeometry.editor.pending') };
     }
-    if (!result.ok) return result;
+    if (!result.ok) return { ok: false, message: failureMessage(result.text) };
     if (result.document !== document) useAppStore.getState().applyDocument(result.document);
     return { ok: true };
   } catch {

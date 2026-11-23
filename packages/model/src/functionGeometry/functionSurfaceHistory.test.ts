@@ -257,7 +257,7 @@ describe('関数曲面の原式を通常履歴から実CADまで再計算する'
     expect(collectExpressionOwners(document).some(owner => owner.ownerId === document.solids[0].id && owner.mathDefinition)).toBe(true);
     const math = options(document).math; if (!math) throw new Error('Expected math context');
     const changed = await renameDocumentMathParameter(document, '傾き', '勾配', math);
-    if (!changed.ok) throw new Error(changed.message);
+    if (!changed.ok) throw new Error(JSON.stringify(changed.text));
     const result = await compute(changed.document); expect(result.errors).toEqual([]);
     expect(result.bodies[0].area).toBeCloseTo(1.75 * Math.sqrt(3), 7);
     expect(JSON.stringify(changed.document.solids)).toContain('勾配');

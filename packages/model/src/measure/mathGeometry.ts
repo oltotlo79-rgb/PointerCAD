@@ -1,6 +1,6 @@
 /** Called only with this recomputation's final geometry; saved fingerprints never supply values. */
 import { withinMagnitude } from '../numericTolerance.js';
-import { plainTextValue } from '../failureText.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { resolveSubShapeReference, type KernelBridge, type MeasureTarget, type SolidBody } from '../kernelBridge.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { readReferenceBodies } from '../part/readReferenceBodies.js';
@@ -26,14 +26,14 @@ export { SUB_SHAPE_AMBIGUITY_MARGIN as MATH_GEOMETRY_AMBIGUITY_MARGIN } from '..
 
 interface Scalar { readonly value: number; readonly unit: 'mm' | 'mm2' | 'mm3' | 'degree' | 'radian' }
 class GeometryProblem extends Error {
-  constructor(readonly reason: Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'], message: string,
+  constructor(readonly reason: Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'], readonly text: FailureText,
     readonly code?: WorkerBrokenCode) {
-    super(message);
+    super('math geometry problem');
   }
 }
-const missing = (): never => { throw new GeometryProblem('missing-reference', '参照する現在の図形を確認できません。参照先を選び直してください。'); };
-const unsupported = (): never => { throw new GeometryProblem('unsupported', 'この種類の図形からは指定した量を求められません。'); };
-const ambiguous = (): never => { throw new GeometryProblem('ambiguous-reference', '形が変わり、参照先を1つに決められません。選び直してください。'); };
+const missing = (): never => { throw new GeometryProblem('missing-reference', plainText('参照する現在の図形を確認できません。参照先を選び直してください。')); };
+const unsupported = (): never => { throw new GeometryProblem('unsupported', plainText('この種類の図形からは指定した量を求められません。')); };
+const ambiguous = (): never => { throw new GeometryProblem('ambiguous-reference', plainText('形が変わり、参照先を1つに決められません。選び直してください。')); };
 const finitePoint = (point: Vec3): Vec3 => point.every(Number.isFinite) ? point : missing();
 const magnitude = (point: Vec3): number => Math.hypot(...point);
 const difference = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -69,7 +69,7 @@ async function currentBodies(requests: readonly MathGeometryRequest[], context: 
 }
 
 function body(context: MathGeometryContext, id: string): SolidBody {
-  if (context.failedIds.has(id)) throw new GeometryProblem('failed-geometry', '参照先の形を正しく計算できませんでした。');
+  if (context.failedIds.has(id)) throw new GeometryProblem('failed-geometry', plainText('参照先の形を正しく計算できませんでした。'));
   const found = context.bodies.filter(candidate => candidate.featureId === id && candidate.isValid);
   if (found.length !== 1 || !context.resolved.steps.some(step => step.featureId === id)) return missing();
   return found[0];
@@ -97,13 +97,13 @@ function coordinate(context: MathGeometryContext, quantity: Extract<MathGeometry
   const id = quantity.frame.featureId;
   const failure = context.resolved.references.errors.find(error => error.featureId === id);
   if (context.failedIds.has(id) || failure !== undefined) {
-    throw new GeometryProblem('failed-geometry', plainTextValue(failure?.text) ?? '参照先の座標系を正しく計算できませんでした。');
+    throw new GeometryProblem('failed-geometry', failure?.text ?? plainText('参照先の座標系を正しく計算できませんでした。'));
   }
   const frames = context.resolved.references.coordinateSystems.filter(frame => frame.featureId === id);
   if (frames.length !== 1) return missing();
   const frame = frames[0], axes = [frame.xAxis, frame.yAxis, frame.zAxis];
   if (![frame.origin, ...axes].every(vector => vector.every(Number.isFinite))) {
-    throw new GeometryProblem('failed-geometry', '座標系の原点と軸を正しく取得できませんでした。');
+    throw new GeometryProblem('failed-geometry', plainText('座標系の原点と軸を正しく取得できませんでした。'));
   }
   const delta = difference(position, frame.origin), axis = axes[component];
   return delta[0] * axis[0] + delta[1] * axis[1] + delta[2] * axis[2];
@@ -149,14 +149,14 @@ function circularCurve(context: MathGeometryContext, target: MathGeometryCurve):
     sweep = Math.abs(arc.endAngle - arc.startAngle);
   }
   if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(sweep) || sweep < 0) {
-    throw new GeometryProblem('failed-geometry', '円弧の半径と中心角を正しく取得できませんでした。');
+    throw new GeometryProblem('failed-geometry', plainText('円弧の半径と中心角を正しく取得できませんでした。'));
   }
   return { radius, sweep };
 }
 function contourLength(context: MathGeometryContext, target: { readonly sketchId: string; readonly featureId: string }): number {
   const curves = sketchCurves(context, target);
   if (curves.some(curve => curve.kind !== 'segment' && curve.kind !== 'arc')) {
-    throw new GeometryProblem('unsupported', '楕円や自由曲線を含む輪郭の長さには対応していません。');
+    throw new GeometryProblem('unsupported', plainText('楕円や自由曲線を含む輪郭の長さには対応していません。'));
   }
   return curves.reduce((total, curve) => total + resolvedCurveLength(curve), 0);
 }
@@ -198,7 +198,7 @@ function normalizedDirection(direction: Vec3): Vec3 {
 function planeNormal(context: MathGeometryContext, target: MathGeometryFace): Vec3 {
   const face = subShape(context, target);
   if (face.kind !== 'face' || face.surfaceKind !== 'plane') {
-    throw new GeometryProblem('unsupported', '平面でない面からは角度・平行・垂直を求められません。');
+    throw new GeometryProblem('unsupported', plainText('平面でない面からは角度・平行・垂直を求められません。'));
   }
   if (face.axis === null) return unsupported();
   return normalizedDirection(finitePoint(face.axis));
@@ -246,7 +246,7 @@ async function evaluate(context: MathGeometryContext, request: MathGeometryReque
     case 'congruent': case 'similar': {
       const result = compareMathGeometryCongruence(quantity.kind, comparisonShape(context, quantity.first),
         comparisonShape(context, quantity.second), request.tolerance);
-      if (!result.ok) throw new GeometryProblem(result.reason, result.message);
+      if (!result.ok) throw new GeometryProblem(result.reason, plainText(result.message));
       return result.value;
     }
     case 'volume': {
@@ -261,13 +261,13 @@ async function evaluate(context: MathGeometryContext, request: MathGeometryReque
       }
       const target = measureTarget(context, quantity.shape);
       const outcome = await context.bridge.measure(context.resolved.steps, [target], 'massProperties');
-      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message, outcome.code);
+      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', plainText(outcome.message), outcome.code);
       return outcome.kind === 'massProperties' ? { value: outcome.area, unit: 'mm2' } : missing();
     }
     case 'shape-distance': {
       const targets = [measureTarget(context, quantity.first), measureTarget(context, quantity.second)];
       const outcome = await context.bridge.measure(context.resolved.steps, targets, 'distance');
-      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message, outcome.code);
+      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', plainText(outcome.message), outcome.code);
       return outcome.kind === 'distance' ? { value: outcome.distance, unit: 'mm' } : missing();
     }
     case 'angle': case 'plane-angle': case 'parallel': case 'perpendicular': {
@@ -306,7 +306,7 @@ export async function evaluateMathGeometry(requests: readonly MathGeometryReques
     const identity = { id: request.id, documentId: context.documentId, generation: context.generation };
     try {
       if (!valid(request)) {
-        throw new GeometryProblem('invalid-request', '参照する文書・識別番号・許容差を確認してください。');
+        throw new GeometryProblem('invalid-request', plainText('参照する文書・識別番号・許容差を確認してください。'));
       }
       const value = await evaluate(context, request);
       if (context.shouldCancel()) return null;
@@ -314,14 +314,15 @@ export async function evaluateMathGeometry(requests: readonly MathGeometryReques
       if (typeof value === 'boolean') outcomes.push({ ...base, kind: 'boolean', value });
       else {
         if (!Number.isFinite(value.value) || (request.quantity.kind !== 'coordinate' && value.value < 0)) {
-          throw new GeometryProblem('failed-geometry', '図形から有限で妥当な測定値を取得できませんでした。');
+          throw new GeometryProblem('failed-geometry', plainText('図形から有限で妥当な測定値を取得できませんでした。'));
         }
         outcomes.push({ ...base, kind: 'real', ...value });
       }
     } catch (error) {
       if (context.shouldCancel()) return null;
       outcomes.push({ ...identity, status: 'unresolved', reason: error instanceof GeometryProblem ? error.reason : 'failed-geometry',
-        message: error instanceof Error ? error.message : '図形を測定できませんでした。',
+        text: error instanceof GeometryProblem ? error.text
+          : plainText(error instanceof Error ? error.message : '図形を測定できませんでした。'),
         ...(error instanceof GeometryProblem && error.code !== undefined ? { code: error.code } : {}) });
     }
   }

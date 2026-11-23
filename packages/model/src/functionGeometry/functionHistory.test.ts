@@ -248,7 +248,7 @@ describe('関数を通常の履歴として再計算する', () => {
     const math = options(document).math;
     if (!math) throw new Error('Expected math evaluator');
     const renamed = await renameDocumentMathParameter(document, '幅', '係数幅', math);
-    if (!renamed.ok) throw new Error(renamed.message);
+    if (!renamed.ok) throw new Error(JSON.stringify(renamed.text));
     const result = await recomputePart(renamed.document, bridge, options(renamed.document));
     expect(result.errors).toEqual([]); expect(result.sketches[0].resolved.splines).toHaveLength(1);
     expect(JSON.stringify(renamed.document.sketches)).toContain('係数幅');

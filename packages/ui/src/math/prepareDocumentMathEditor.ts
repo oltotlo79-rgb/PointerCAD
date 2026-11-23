@@ -11,6 +11,7 @@ import {
 
 import type { MathInsertGroup } from './MathEditorSurface.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { mathGeometryInputsFor, waitForCurrentMathGeometry } from './mathGeometryResults.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -23,11 +24,11 @@ export interface MathGeometryEditorTarget {
 export function mathGeometryEditorProblem(document: PartDocument): string | null {
   const analysis = analyzeMathGeometryDependencies(document);
   const dependencyProblem = analysis.unreadable ?? analysis.blocked.values().next().value;
-  if (dependencyProblem !== undefined) return dependencyProblem;
+  if (dependencyProblem !== undefined) return failureMessage(dependencyProblem);
   for (const parameter of document.parameters) {
     if (!analysis.geometryDerived.has(parameter.name) || parameter.value.mathDefinition === undefined) continue;
     const issue = checkGeometryDerivedOperations(parameter.value.mathDefinition.expression);
-    if (issue !== null) return issue.message;
+    if (issue !== null) return failureMessage(issue.text);
   }
   return null;
 }
@@ -163,7 +164,7 @@ export async function prepareDocumentMathEnvironment(document: PartDocument,
     { id: 'i', label: 'ⅈ', meaning: t('math.constant.i'), template: String.raw`\mathrm{i}` },
   ] }];
   return { prepared, coefficients, groups,
-    coefficientProblem: result.ok ? null : result.failures[0]?.message ?? t('math.coefficientsUnavailable') };
+    coefficientProblem: result.ok ? null : result.failures.map((failure) => failureMessage(failure.text))[0] ?? t('math.coefficientsUnavailable') };
 }
 
 export async function prepareDocumentMathEditor(document: PartDocument, value: ExpressionValue,

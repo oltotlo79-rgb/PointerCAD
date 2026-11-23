@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { plainText } from '../failureText.js';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { MATH_INPUT_FORMAT, type MathNode, type StoredMathExpression } from '@pointercad/expression/math/contracts';
 
@@ -134,10 +135,10 @@ function widthFromVolume(): Parameter {
 describe('付録C の理由の文(循環・順序・段数)', () => {
   it('計画書の文字列そのもの(全角括弧を含む)を組み立てる', () => {
     expect(mathGeometryCycleMessage('幅B', '箱1体積', '箱1'))
-      .toBe('係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。');
+      .toEqual(plainText('係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。'));
     expect(mathGeometryOrderMessage('箱1', '箱2', '箱2体積', '幅B'))
-      .toBe('「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。');
-    expect(mathGeometryTooDeepMessage()).toBe('図形の測定値を使う係数の連なりが上限（8段）を超えています。');
+      .toEqual(plainText('「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。'));
+    expect(mathGeometryTooDeepMessage()).toEqual(plainText('図形の測定値を使う係数の連なりが上限（8段）を超えています。'));
     expect(MATH_GEOMETRY_MAX_STAGES).toBe(8);
   });
 });
@@ -208,12 +209,12 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
       parameters: [widthFromVolume(), mathParameter('表示用', 2, operation('multiply', geometryNode('g-box1', '箱1体積'), numberNode('1')))],
       mathGeometry: [volumeOf('g-box1', '箱1体積', 'box-1')] };
     const analysis = analyzeMathGeometryDependencies(document);
-    const message = '係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。';
-    expect(analysis.cycles).toEqual([{ definitionIds: ['g-box1'], coefficientNames: ['幅B'], shapeIds: ['box-1'], message }]);
+    const message = plainText('係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。');
+    expect(analysis.cycles).toEqual([{ definitionIds: ['g-box1'], coefficientNames: ['幅B'], shapeIds: ['box-1'], text: message }]);
     // 循環の途中にない係数も、循環の値を使うので古い値で計算させない。
     expect(analysis.blocked).toEqual(new Map([
       ['幅B', message],
-      ['表示用', `図形の測定値「箱1体積」を測れないため、係数「表示用」を計算できません: ${message}`],
+      ['表示用', { key: 'mathGeometry.error.unresolved', parameters: { definition: '箱1体積', coefficient: '表示用', reason: message } }],
     ]));
     expect(analysis.stageOf.has('g-box1')).toBe(false);
     expect(analysis.stageCount).toBe(0);
@@ -231,8 +232,8 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
       mathGeometry: [volumeOf('g-volume', '押し出し体積', 'extrude-1')] };
     const analysis = analyzeMathGeometryDependencies(document);
     expect(analysis.ownerGeometry).toEqual(new Map([['p1', new Set(['g-volume'])]]));
-    expect(analysis.cycles.map(cycle => cycle.message)).toEqual([
-      '係数「L」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「L」を使って作られているため循環しています。',
+    expect(analysis.cycles.map(cycle => cycle.text)).toEqual([
+      plainText('係数「L」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「L」を使って作られているため循環しています。'),
     ]);
     expect(analysis.cycles[0]?.shapeIds).toEqual(['extrude-1']);
   });
@@ -246,7 +247,7 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
     const analysis = analyzeMathGeometryDependencies(document);
     expect(analysis.targets).toEqual(new Map([['g-line', new Set(['sketch-1'])]]));
     expect(analysis.cycles).toEqual([{ definitionIds: ['g-line'], coefficientNames: ['L'], shapeIds: ['sketch-1'],
-      message: '係数「L」は図形の測定値「線の長さ」を使っていますが、その測る形「スケッチ1」が「L」を使って作られているため循環しています。' }]);
+      text: plainText('係数「L」は図形の測定値「線の長さ」を使っていますが、その測る形「スケッチ1」が「L」を使って作られているため循環しています。') }]);
   });
 
   it('基準平面の距離経由: 作業平面の距離に係数を使い、その平面上のスケッチの押し出しを測ると循環', () => {
@@ -258,9 +259,9 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
       parameters: [mathParameter('H', 1, operation('divide', geometryNode('g-volume', '押し出し体積'), numberNode('1000')))],
       mathGeometry: [volumeOf('g-volume', '押し出し体積', 'extrude-1')] };
     const analysis = analyzeMathGeometryDependencies(document);
-    const message = '係数「H」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「H」を使って作られているため循環しています。';
+    const message = plainText('係数「H」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「H」を使って作られているため循環しています。');
     expect(analysis.ownerGeometry).toEqual(new Map([['referencePlane-1', new Set(['g-volume'])]]));
-    expect(analysis.cycles.map(cycle => cycle.message)).toEqual([message]);
+    expect(analysis.cycles.map(cycle => cycle.text)).toEqual([message]);
     expect(analysis.blocked).toEqual(new Map([['H', message]]));
   });
 
@@ -280,8 +281,8 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
     const before = JSON.stringify(document);
     const analysis = analyzeMathGeometryDependencies(document);
     expect(analysis.cycles.map(cycle => cycle.coefficientNames)).toEqual([['L']]);
-    expect(analysis.blocked.get('L')).toBe(
-      '係数「L」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「L」を使って作られているため循環しています。');
+    expect(analysis.blocked.get('L')).toEqual(
+      plainText('係数「L」は図形の測定値「押し出し体積」を使っていますが、その測る形「押し出し1」が「L」を使って作られているため循環しています。'));
     expect(JSON.stringify(document)).toBe(before);
   });
 
@@ -312,13 +313,13 @@ describe('循環の検出(形を作る前に理由付きで止める)', () => {
         mathParameter('P3', 3, geometryNode('g3', 'V3'))],
       mathGeometry: [volumeOf('g1', 'V1', 'box-1'), volumeOf('g2', 'V2', 'box-2'), volumeOf('g3', 'V3', 'box-3')] };
     const analysis = analyzeMathGeometryDependencies(document);
-    const p1 = '係数「P1」は図形の測定値「V1」を使っていますが、その測る形「箱1」が「P1」を使って作られているため循環しています。';
-    const p2 = '係数「P2」は図形の測定値「V2」を使っていますが、その測る形「箱2」が「P2」を使って作られているため循環しています。';
-    expect(analysis.cycles).toEqual([{ definitionIds: ['g1', 'g2'], coefficientNames: ['P1', 'P2'], shapeIds: ['box-1', 'box-2'], message: p2 }]);
+    const p1 = plainText('係数「P1」は図形の測定値「V1」を使っていますが、その測る形「箱1」が「P1」を使って作られているため循環しています。');
+    const p2 = plainText('係数「P2」は図形の測定値「V2」を使っていますが、その測る形「箱2」が「P2」を使って作られているため循環しています。');
+    expect(analysis.cycles).toEqual([{ definitionIds: ['g1', 'g2'], coefficientNames: ['P1', 'P2'], shapeIds: ['box-1', 'box-2'], text: p2 }]);
     expect(analysis.blocked).toEqual(new Map([
       ['P1', p1],
       ['P2', p2],
-      ['P3', `図形の測定値「V3」を測れないため、係数「P3」を計算できません: ${p2}`],
+      ['P3', { key: 'mathGeometry.error.unresolved', parameters: { definition: 'V3', coefficient: 'P3', reason: p2 } }],
     ]));
     expect(analysis.stageOf.size).toBe(0);
     expect(analysis.stageCount).toBe(0);
@@ -395,7 +396,7 @@ describe('数えないもの・循環ではないもの', () => {
   it('同じ識別番号に2つの名前がある式は読めない理由を返し、例外を投げない', () => {
     const broken = mathParameter('幅B', 1, operation('add', geometryNode('g-box1', '箱1体積'), geometryNode('g-box1', '別名')));
     const analysis = analyzeMathGeometryDependencies(appendixD(broken));
-    expect(analysis.unreadable).toBe('同じ係数の参照名が一致しません。');
+    expect(analysis.unreadable).toEqual(plainText('同じ係数の参照名が一致しません。'));
     expect(analysis.geometryDerived.size).toBe(0);
     expect(analysis.cycles).toEqual([]);
     expect(analysis.historyEdges.size).toBe(0);
@@ -444,8 +445,8 @@ describe('順序(Q7=O1: 測る形はその値を使う形より履歴の前)', (
 
   it('使う形が測る形より前なら、形の名前・定義名・係数名入りの理由で順序違反', () => {
     const analysis = analyzeMathGeometryDependencies(usesBeforeMeasured(false));
-    const message = '「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。';
-    expect(analysis.orderViolations).toEqual([{ featureId: 'box-1', targetFeatureId: 'box-2', definitionId: 'g-box2', coefficientName: '幅B', message }]);
+    const message = plainText('「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。');
+    expect(analysis.orderViolations).toEqual([{ featureId: 'box-1', targetFeatureId: 'box-2', definitionId: 'g-box2', coefficientName: '幅B', text: message }]);
     expect(analysis.blocked).toEqual(new Map([['幅B', message]]));
     expect(analysis.cycles).toEqual([]);
     expect(analysis.stageOf).toEqual(new Map([['g-box2', 1]]));
@@ -468,8 +469,8 @@ describe('順序(Q7=O1: 測る形はその値を使う形より履歴の前)', (
       parameters: [mathParameter('H', 1, geometryNode('g-line', '線の長さ'))],
       mathGeometry: [sketchLineLengthOf('g-line', '線の長さ', 'sketch-1', 'line-1')] };
     const analysis = analyzeMathGeometryDependencies(document);
-    const message = '「作業平面1」は、後ろにある「作業平面2」を測った値（図形の測定値「線の長さ」）を係数「H」から使っています。「作業平面2」より後ろへ移してください。';
-    expect(analysis.orderViolations.map(violation => violation.message)).toEqual([message]);
+    const message = plainText('「作業平面1」は、後ろにある「作業平面2」を測った値（図形の測定値「線の長さ」）を係数「H」から使っています。「作業平面2」より後ろへ移してください。');
+    expect(analysis.orderViolations.map(violation => violation.text)).toEqual([message]);
     expect(analysis.blocked).toEqual(new Map([['H', message]]));
     expect(analysis.historyEdges).toEqual(new Map([['referencePlane-1', ['referencePlane-2']]]));
   });
@@ -499,8 +500,8 @@ describe('順序(Q7=O1: 測る形はその値を使う形より履歴の前)', (
       mathGeometry: [sketchLineLengthOf('g-line', '線の長さ', 'sketch-1', 'line-1')] };
     const analysis = analyzeMathGeometryDependencies(document);
     expect(analysis.targets).toEqual(new Map([['g-line', new Set(['sketch-1'])]]));
-    expect(analysis.orderViolations.map(violation => violation.message)).toEqual([
-      '「箱1」は、後ろにある「箱2」を測った値（図形の測定値「線の長さ」）を係数「L」から使っています。「箱2」より後ろへ移してください。',
+    expect(analysis.orderViolations.map(violation => violation.text)).toEqual([
+      plainText('「箱1」は、後ろにある「箱2」を測った値（図形の測定値「線の長さ」）を係数「L」から使っています。「箱2」より後ろへ移してください。'),
     ]);
     expect(analysis.historyEdges).toEqual(new Map([['box-1', ['box-2']]]));
   });
@@ -522,7 +523,7 @@ describe('段数の上限(Q7=O1: 連なりは最大8段)', () => {
     expect(analysis.stageOf.get('g9')).toBe(9);
     expect(analysis.tooDeep).toEqual(['g9']);
     expect(analysis.stageCount).toBe(8);
-    expect(analysis.blocked).toEqual(new Map([['P9', '図形の測定値を使う係数の連なりが上限（8段）を超えています。']]));
+    expect(analysis.blocked).toEqual(new Map([['P9', plainText('図形の測定値を使う係数の連なりが上限（8段）を超えています。')]]));
     expect(analysis.cycles).toEqual([]);
   });
 });
@@ -568,7 +569,7 @@ describe('GR-10b 座標系を経由する図形の依存', () => {
     const base = frameDependencyPart(named('P'), via);
     const analysis = analyzeMathGeometryDependencies({ ...base, parameters: [mathParameter('P', 1, geometryNode('g-frame', '局所座標'))] });
     const message = mathGeometryCycleMessage('P', '局所座標', '測定座標系');
-    expect(analysis.cycles).toEqual([{ definitionIds: ['g-frame'], coefficientNames: ['P'], shapeIds: ['frame'], message }]);
+    expect(analysis.cycles).toEqual([{ definitionIds: ['g-frame'], coefficientNames: ['P'], shapeIds: ['frame'], text: message }]);
     expect(analysis.blocked).toEqual(new Map([['P', message]]));
     expect(analysis.stageOf.has('g-frame')).toBe(false);
     expect(analysis.historyEdges.size).toBe(0);
@@ -596,7 +597,7 @@ describe('GR-10b 座標系を経由する図形の依存', () => {
     const analysis = analyzeMathGeometryDependencies(document);
     const message = mathGeometryOrderMessage('利用先の平面', '測定座標系', '局所座標', 'Q');
     expect(analysis.orderViolations).toEqual([{ featureId: 'consumer', targetFeatureId: 'frame',
-      definitionId: 'g-frame', coefficientName: 'Q', message }]);
+      definitionId: 'g-frame', coefficientName: 'Q', text: message }]);
     expect(analysis.historyEdges).toEqual(new Map([['consumer', ['frame']]]));
     expect(analysis.blocked).toEqual(new Map([['Q', message]]));
     const moved = analyzeMathGeometryDependencies({ ...document, references: [...upstream, frame, consumer] });

@@ -23,9 +23,19 @@ export function plainText(text: string): FailureText {
 
 /**
  * 鍵と値が、計算部の文をそのまま出す鍵(plainText)なら、その文を返す。ほかの鍵・無い時は null(0b-3)。
- * 文しか持てない入れ物(数式の図形の測りの未解決の理由)へ写す所と、検査だけが使う。画面へ出す所は ui の partErrorMessage を通す。
+ * 検査だけが使う(数式の失敗の入れ物は 0b-3h2 で鍵と値になり、製品で文へ読み戻す所は無い)。画面へ出す所は ui の partErrorMessage を通す。
  */
 export function plainTextValue(text: FailureText | undefined): string | null {
   const value = text?.key === PLAIN_TEXT_KEY ? text.parameters.text : undefined;
   return typeof value === 'string' ? value : null;
+}
+
+/**
+ * 鍵と値の文を運ぶ例外(0b-3h2)。model の中で投げ、model の中の受け手が text をそのまま誤りへ入れる
+ * (関数の作図の入力の断りなど、Error で知らせる所)。画面の文は message に持たない。
+ */
+export class FailureTextError extends Error {
+  constructor(readonly text: FailureText) {
+    super('failure text');
+  }
 }

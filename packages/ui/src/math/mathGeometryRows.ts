@@ -16,6 +16,7 @@ import {
   type PartDocument,
 } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { formatMeasureValue } from '../solid/measureCommands.js';
 import { AREA_UNIT_KEYS, formatArea, formatVolume, VOLUME_UNIT_KEYS } from '../solid/measureFormatting.js';
 import type { AppState } from '../store/appState.js';
@@ -231,7 +232,7 @@ function rowValue(document: PartDocument, definition: MathGeometryDefinition,
   const outcome = current.outcomes.get(definition.id);
   if (outcome === undefined || outcome.id !== definition.id || outcome.documentId !== document.id
     || outcome.generation !== current.generation) return unavailable('mathGeometry.status.pending');
-  if (outcome.status === 'unresolved') return unavailable(MATH_GEOMETRY_REASON_KEYS[outcome.reason], outcome.message);
+  if (outcome.status === 'unresolved') return unavailable(MATH_GEOMETRY_REASON_KEYS[outcome.reason], failureMessage(outcome.text));
   const valueText = mathGeometryValueText(outcome, lengthUnit);
   if (valueText === null) return unavailable(MATH_GEOMETRY_REASON_KEYS['failed-geometry']);
   return { valueText, statusKey: null, statusText: null, real: outcome.kind === 'real', isBoolean: outcome.kind === 'boolean' };
@@ -272,7 +273,7 @@ export function mathGeometryRows(state: MathGeometryRowsState): readonly MathGeo
       usageCount: usageNames.length, usageNames,
       usageText: usageNames.length === 0 ? t('mathGeometry.unused') : `${String(usageNames.length)}${t('mathGeometry.usageSuffix')}`,
       circular: cycle !== undefined, cycleText: cycle === undefined ? null : t('mathGeometry.circular'),
-      cycleMessage: cycle?.message ?? null,
+      cycleMessage: cycle === undefined ? null : failureMessage(cycle.text),
       angleUnit: mathGeometryAngleUnitOf(definition.quantity),
       reselect: { ...reselect, quantity },
       remove: usageNames.length === 0 ? READY : disabled('mathGeometry.error.referencedBy',

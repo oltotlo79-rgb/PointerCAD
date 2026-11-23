@@ -189,7 +189,7 @@ describe('math geometry rows: values and status', () => {
     ['invalid-request', '定義の内容を確認してください。'],
     ['ambiguous-reference', '形が変わり、参照先を1つに決められません。選び直してください。'],
   ] as const)('shows the %s explanation and retains the model detail', (reason, text) => {
-    const result: MathGeometryOutcome = { id: 'g', documentId: 'part-1', generation: 7, status: 'unresolved', reason, message: '詳細' };
+    const result: MathGeometryOutcome = { id: 'g', documentId: 'part-1', generation: 7, status: 'unresolved', reason, text: plainText('詳細') };
     const row = mathGeometryRows(stateFor(documentWith(), [result]))[0];
     expect(row.statusKey).toBe(MATH_GEOMETRY_REASON_KEYS[reason]);
     expect(row.statusText).toBe(`${text} 詳細`);

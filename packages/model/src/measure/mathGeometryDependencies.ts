@@ -55,6 +55,7 @@ import {
 } from './mathGeometryCoefficients.js';
 import { mathGeometryTargetsOf, type MathGeometryTarget } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition } from './mathGeometryTypes.js';
+import { plainText, type FailureText } from '../failureText.js';
 
 /** 測る→係数→形→測る…の連なり(段)の上限。これを超える段の測定値は係数へ渡さない。 */
 export const MATH_GEOMETRY_MAX_STAGES = 8;
@@ -72,7 +73,7 @@ export interface MathGeometryCycle {
   /** 循環に含まれる測る形(立体・スケッチ)の id。 */
   readonly shapeIds: readonly string[];
   /** 循環の文(代表の 1 組)。 */
-  readonly message: string;
+  readonly text: FailureText;
 }
 
 /** 順序規則の違反 1 件。F が T より前にあり、T を測った値を係数から使っている。 */
@@ -83,7 +84,7 @@ export interface MathGeometryOrderViolation {
   readonly targetFeatureId: string;
   readonly definitionId: string;
   readonly coefficientName: string;
-  readonly message: string;
+  readonly text: FailureText;
 }
 
 export interface MathGeometryDependencyAnalysis {
@@ -109,7 +110,7 @@ export interface MathGeometryDependencyAnalysis {
   /** 段が上限(`MATH_GEOMETRY_MAX_STAGES`)を超えた定義ID(文書の並び)。 */
   readonly tooDeep: readonly string[];
   /** 係数名 → その係数を計算させない理由(循環・循環の値・段数超過・順序違反。表の並び)。 */
-  readonly blocked: ReadonlyMap<string, string>;
+  readonly blocked: ReadonlyMap<string, FailureText>;
   /** 係数から使われ、1 つに決まる定義ID。 */
   readonly usedDefinitionIds: ReadonlySet<string>;
   /**
@@ -118,7 +119,7 @@ export interface MathGeometryDependencyAnalysis {
    */
   readonly historyEdges: ReadonlyMap<string, readonly string[]>;
   /** 式の係数参照を読めなかった理由(同じ識別番号に 2 つの名前がある式など)。このとき依存は空。 */
-  readonly unreadable?: string;
+  readonly unreadable?: FailureText;
 }
 
 /* ---------------------------------------------------------------------------
@@ -126,16 +127,16 @@ export interface MathGeometryDependencyAnalysis {
  * `mathGeometryCoefficients.ts` にあり、ここには循環・順序・段数の 3 つだけを置く。
  * ------------------------------------------------------------------------- */
 
-export function mathGeometryCycleMessage(coefficient: string, definition: string, shape: string): string {
-  return `係数「${coefficient}」は図形の測定値「${definition}」を使っていますが、その測る形「${shape}」が「${coefficient}」を使って作られているため循環しています。`;
+export function mathGeometryCycleMessage(coefficient: string, definition: string, shape: string): FailureText {
+  return plainText(`係数「${coefficient}」は図形の測定値「${definition}」を使っていますが、その測る形「${shape}」が「${coefficient}」を使って作られているため循環しています。`);
 }
 
-export function mathGeometryOrderMessage(feature: string, target: string, definition: string, coefficient: string): string {
-  return `「${feature}」は、後ろにある「${target}」を測った値（図形の測定値「${definition}」）を係数「${coefficient}」から使っています。「${target}」より後ろへ移してください。`;
+export function mathGeometryOrderMessage(feature: string, target: string, definition: string, coefficient: string): FailureText {
+  return plainText(`「${feature}」は、後ろにある「${target}」を測った値（図形の測定値「${definition}」）を係数「${coefficient}」から使っています。「${target}」より後ろへ移してください。`);
 }
 
-export function mathGeometryTooDeepMessage(limit: number = MATH_GEOMETRY_MAX_STAGES): string {
-  return `図形の測定値を使う係数の連なりが上限（${String(limit)}段）を超えています。`;
+export function mathGeometryTooDeepMessage(limit: number = MATH_GEOMETRY_MAX_STAGES): FailureText {
+  return plainText(`図形の測定値を使う係数の連なりが上限（${String(limit)}段）を超えています。`);
 }
 
 /* ---------------------------------------------------------------------------
@@ -417,7 +418,7 @@ export function analyzeMathGeometryDependencies(document: PartDocument): MathGeo
     return analyze(document, index);
   } catch (error) {
     if (!(error instanceof MathInputProblem)) throw error;
-    return { ...emptyAnalysis(index), unreadable: error.message };
+    return { ...emptyAnalysis(index), unreadable: plainText(error.message) };
   }
 }
 
@@ -594,7 +595,7 @@ interface CycleResult {
   /** 循環に含まれる定義ID → その循環。 */
   readonly cyclic: ReadonlyMap<string, MathGeometryCycle>;
   /** 循環の途中で値を渡す係数 → その係数を名指しした循環の文。 */
-  readonly coefficientMessages: ReadonlyMap<string, string>;
+  readonly coefficientMessages: ReadonlyMap<string, FailureText>;
   readonly components: readonly (readonly string[])[];
 }
 
@@ -607,7 +608,7 @@ function findCycles(index: DocumentIndex, graph: DefinitionGraph): CycleResult {
   const nameOf = new Map(index.definitions.map(definition => [definition.id, definition.name]));
   const list: MathGeometryCycle[] = [];
   const cyclic = new Map<string, MathGeometryCycle>();
-  const coefficientMessages = new Map<string, string>();
+  const coefficientMessages = new Map<string, FailureText>();
   for (const component of components) {
     const first = component[0];
     if (component.length === 1 && graph.edges.get(first)?.has(first) !== true) continue;
@@ -618,7 +619,7 @@ function findCycles(index: DocumentIndex, graph: DefinitionGraph): CycleResult {
       for (const [next, witness] of graph.edges.get(id) ?? []) if (inside.has(next)) return witness.shape;
       return null;
     };
-    const messages: string[] = [];
+    const messages: FailureText[] = [];
     const coefficients = new Set<string>();
     for (const member of members) {
       for (const [next, witness] of graph.edges.get(member) ?? []) {
@@ -636,7 +637,7 @@ function findCycles(index: DocumentIndex, graph: DefinitionGraph): CycleResult {
       return shape === null ? [] : [shape.id];
     }))];
     const cycle: MathGeometryCycle = { definitionIds: members, coefficientNames: inOrder(coefficients, index.parameterOrder),
-      shapeIds, message: messages[0] ?? '' };
+      shapeIds, text: messages[0] ?? plainText('') };
     list.push(cycle);
     for (const member of members) cyclic.set(member, cycle);
   }
@@ -730,7 +731,7 @@ function orderAndEdges(
               if (reported.has(key)) continue;
               reported.add(key);
               violations.push({ featureId, targetFeatureId: targetId, definitionId, coefficientName: use.coefficientName,
-                message: mathGeometryOrderMessage(index.names.get(featureId) ?? featureId, index.names.get(targetId) ?? targetId,
+                text: mathGeometryOrderMessage(index.names.get(featureId) ?? featureId, index.names.get(targetId) ?? targetId,
                   nameOf.get(definitionId) ?? definitionId, use.coefficientName) });
             }
           }
@@ -758,10 +759,10 @@ function blockedCoefficients(
   cycles: CycleResult,
   stages: StageResult,
   violations: readonly MathGeometryOrderViolation[],
-): ReadonlyMap<string, string> {
+): ReadonlyMap<string, FailureText> {
   const nameOf = new Map(index.definitions.map(definition => [definition.id, definition.name]));
   const tooDeep = new Set(stages.tooDeep);
-  const blocked = new Map<string, string>();
+  const blocked = new Map<string, FailureText>();
   for (const name of index.parameterOrder.keys()) {
     const onCycle = cycles.coefficientMessages.get(name);
     if (onCycle !== undefined) {
@@ -772,12 +773,12 @@ function blockedCoefficients(
     const unavailable = used.find(id => stages.blockedBy.has(id));
     const cause = unavailable === undefined ? undefined : stages.blockedBy.get(unavailable);
     if (unavailable !== undefined && cause !== undefined) {
-      blocked.set(name, mathGeometryUnresolvedMessage(nameOf.get(unavailable) ?? unavailable, name, cause.message));
+      blocked.set(name, mathGeometryUnresolvedMessage(nameOf.get(unavailable) ?? unavailable, name, cause.text));
     } else if (used.some(id => tooDeep.has(id))) {
       blocked.set(name, mathGeometryTooDeepMessage());
     } else {
       const violation = violations.find(entry => entry.coefficientName === name);
-      if (violation !== undefined) blocked.set(name, violation.message);
+      if (violation !== undefined) blocked.set(name, violation.text);
     }
   }
   return blocked;

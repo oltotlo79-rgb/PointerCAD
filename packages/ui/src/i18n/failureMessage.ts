@@ -7,10 +7,20 @@ import type { FailureText } from '@pointercad/model';
 
 import { MESSAGE_KEYS, t, type MessageKey } from './t.js';
 
+/** 文言の表の差し込みの目印(名前は英字と数字だけ)。 */
+const PLACEHOLDER = /\{([A-Za-z0-9]+)\}/gu;
+
+/**
+ * 鍵の文の目印 {名前} を、差し込む値で 1 回で置き換える(0b-3h2)。差し込んだ値の中の {…}(利用者の名前・計算部の文の波かっこ)は
+ * 読み直さないので、別の値に置き換わらない。値の無い目印はそのまま残す。
+ */
 export function failureMessage(text: FailureText): string {
   const key: MessageKey = MESSAGE_KEYS.find((candidate) => candidate === text.key) ?? 'assembly.error.internal';
-  return Object.entries(text.parameters).reduce((message, [name, value]) =>
-    message.split(`{${name}}`).join(typeof value === 'string' ? value : failureMessage(value)), t(key));
+  return t(key).replace(PLACEHOLDER, (placeholder: string, name: string) => {
+    const value = Object.hasOwn(text.parameters, name) ? text.parameters[name] : undefined;
+    if (value === undefined) return placeholder;
+    return typeof value === 'string' ? value : failureMessage(value);
+  });
 }
 
 /** 鍵と差し込む値の組を、画面の文にする(値が無い時は鍵の文のまま)。読めなかった理由の知らせ(FileMessage・復元の案内)が使う。 */

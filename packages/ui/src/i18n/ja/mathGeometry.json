@@ -122,5 +122,6 @@
   "controlGuide.mathGeometry.toleranceAngular": "判定するときの角度の幅を度で入力します。保存はラジアンで行います。",
   "controlGuide.mathGeometry.toleranceApply": "入力した比べる幅をこの測定値に設定します。Undo で戻せます。",
   "controlGuide.mathGeometry.toleranceReset": "比べる幅を既定（長さ 0.000001 mm、角度 0.000001 ラジアン）に戻します。",
-  "mathGeometry.functionSlider.derived": "図形の測定値から計算する係数は、つまみでは動かせません。形を変えると値が変わります。"
+  "mathGeometry.functionSlider.derived": "図形の測定値から計算する係数は、つまみでは動かせません。形を変えると値が変わります。",
+  "mathGeometry.error.unresolved": "図形の測定値「{definition}」を測れないため、係数「{coefficient}」を計算できません: {reason}"
 }

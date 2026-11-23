@@ -34,6 +34,8 @@ function createFakeKernelApi(measureImpl: (request: MeasureRequest) => Promise<M
     hiddenLineViews: () => unimplemented('hiddenLineViews'),
     sectionViews: () => unimplemented('sectionViews'),
     measure: measureImpl,
+    // M-08 で加わった板金の認識の照会。この検査は測定の橋渡ししか確かめないので、呼ばれない前提にする。
+    recognizeSheetMetal: () => unimplemented('recognizeSheetMetal'),
     // P6 タスク10 で KernelApi に加わった 2 本(FR-802、FR-803)。この検査は測定の橋渡ししか
     // 確かめないので、他のメソッドと同じく呼ばれない前提にする。
     exportShapes: () => unimplemented('exportShapes'),

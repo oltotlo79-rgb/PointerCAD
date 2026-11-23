@@ -31,7 +31,8 @@ type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChann
   | 'movableBox' | 'accessoryBox' | 'pipeElbow' | 'pipeTee' | 'pipeSocket' | 'pipeCap' | 'pipePlug' | 'pipeNipple' | 'pipeBushing' | 'pipeFlange' | 'blockBracket'
   | 'sliderBox' | 'capAccessoryBox' | 'footPartBox' | 'slotLongPart'
   | 'doorPartBox'
-  | 'drawerPartBox';
+  | 'drawerPartBox'
+  | 'bracketPartBox';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**

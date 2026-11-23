@@ -137,6 +137,7 @@ function version24FieldMessage(document: unknown): string | null {
     return '滑らかなつなぎを読むには保存形式の版24が必要です。';
   }
   if (solids.some(feature => feature['kind'] === 'thicken')) return '厚み付けを読むには保存形式の版24が必要です。';
+  if (solids.some(feature => feature['kind'] === 'sheetConvert')) return '板金への変換を読むには保存形式の版24が必要です。';
   if (solids.some(feature => feature['kind'] === 'surface' && isRecord(feature['operation']) && feature['operation']['kind'] === 'offsetBody')) {
     return '面全体のオフセットを読むには保存形式の版24が必要です。';
   }
@@ -157,6 +158,9 @@ function assertVersion24Fields(document: PartDocument): void {
   }
   if (document.solids.some(feature => feature.kind === 'thicken')) {
     throw new RangeError('厚み付けを保存するには保存形式の版24が必要です。');
+  }
+  if (document.solids.some(feature => feature.kind === 'sheetConvert')) {
+    throw new RangeError('板金への変換を保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'surface' && feature.operation.kind === 'offsetBody')) {
     throw new RangeError('面全体のオフセットを保存するには保存形式の版24が必要です。');

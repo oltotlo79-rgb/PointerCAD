@@ -180,6 +180,22 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "^mcp__computer-use__.*$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "-B",
+              "-X",
+              "utf8",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/orchestrator_desktop_guard.py"
+            ],
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -2466,10 +2466,13 @@ class ProductConsumerTests(NewChecksBase):
         errors = self.product_errors(make_instruction(self.PRODUCT, body))
         self.assertEqual(len(errors), 1, errors)
         self.assertEqual(self.missing(errors[0]), [self.FAR, self.LIFECYCLE])
-        self.assertIn("x.md 行3:", errors[0])
-        self.assertIn("全 3 本", errors[0])
-        self.assertIn("ui の単体を全件", errors[0])
-        self.assertIn("§10.458", errors[0])
+        expected = (
+            f"{self.MARK} {self.PRODUCT} の変更を許すのに、それを相対 import する同じパッケージの検査 2 本が"
+            f"「## 2」以降の本文に実パスで無い: {self.FAR}、{self.LIFECYCLE}(今の検査ファイル 全 3 本、対象 ui)。"
+            "当たる検査の実パスを合格条件に書き、検査計画に含める(rules/03 §7.3、rules/06 §10.458)。"
+            "この検査は起動の前の列挙漏れを防ぐだけで、試験を実行せず結果を合格と認定しない"
+        )
+        self.assertEqual(errors[0], f"x.md 行3: {expected}")
         content = make_instruction(self.PRODUCT, body)
         self.materialize(content)
         self.write("scratchpad/claude/instructions/product.md", content)
@@ -2477,9 +2480,9 @@ class ProductConsumerTests(NewChecksBase):
             "prompt": "`scratchpad/claude/instructions/product.md` を読む。", "description": "t"}}
         result = guard.hook(payload, self.now, root=self.root)
         self.assertIsNotNone(result)
-        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn(self.MARK, reason)
-        self.assertIn(self.LIFECYCLE, reason)
+        output = result["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], "deny")
+        self.assertIn(f"scratchpad/claude/instructions/product.md 行3: {expected}", output["permissionDecisionReason"])
 
     # 全件指定: 「<pkg> の単体を全件」「packages/<pkg> の全検査」なら通る。否定・別のパッケージは数えない
 
@@ -2843,7 +2846,8 @@ class E2eCoverageTests(NewChecksBase):
         message = errors[0]
         self.assertTrue(message.startswith("x.md 行3: "), message)
         self.assertIn("③が e2e/tests/x.ts の変更を許すのに、「## 2」以降の本文に e2e_coverage の語が無い。", message)
-        self.assertIn("`python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` の結果が足りない組 0", message)
+        self.assertIn("e2e_coverage の照合と手元で確かめる対象", message)
+        self.assertIn("rules/03 §7.3", message)
         self.assertIn("残る組の一覧を final に書く", message)
         self.assertIn("rules/06 §10.491", message)
 

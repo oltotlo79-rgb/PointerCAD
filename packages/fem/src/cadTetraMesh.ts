@@ -1,6 +1,7 @@
 import { exceedsMagnitude, withinMagnitude, analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import { FemClient, type FemOptions } from './client.js';
+import { femRefusalField, type FemRefusalCode } from './femCodedError.js';
 import { readSolidCadSavedInput, solidCadFaceKey, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
@@ -117,7 +118,8 @@ export function bindCadBoundaryIdentity(input: TetraMeshInput, context: CadTetra
 }
 export type CadTetraOutcome =
   | { readonly kind: 'result'; readonly mesh: TetraMeshResult; readonly regions: readonly CadTetraRegion[]; readonly quality?: TetraMeshQuality }
-  | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly quality?: TetraMeshQuality }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly quality?: TetraMeshQuality;
+      readonly refusal?: FemRefusalCode }
   | { readonly kind: 'cancelled'; readonly reason: 'abort' | 'superseded' | 'disposed' };
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : 'CAD mesh preparation failed'; }
@@ -241,7 +243,7 @@ export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>,
     }
     return { kind: 'result', mesh: completion.result, regions: prepared.regions,
       ...(quality === undefined ? {} : { quality }) };
-  } catch (error) { return cancelled() ?? { kind: 'failed', code: 'cad-mesh', message: errorMessage(error) }; }
+  } catch (error) { return cancelled() ?? { kind: 'failed', code: 'cad-mesh', message: errorMessage(error), ...femRefusalField(error) }; }
   finally {
     options.signal?.removeEventListener('abort', abort);
     releaseCadMeshRequest(client, owner);

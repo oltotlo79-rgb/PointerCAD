@@ -655,7 +655,7 @@ export interface SketchResolveOptions {
    *
    * スケッチ 1 本は立体を知らないので、`ResolveContext.sphere` と同じ口をここでも外から
    * 受け取る(`subShape` と同じ考え方)。渡されなければ球を 1 つも知らない扱いになり、
-   * `sphereGrid` の点は `resolveCoordinate.ts` の `MISSING_SPHERE_MESSAGE` で断る。
+   * `sphereGrid` の点は `resolveCoordinate.ts` の `MISSING_SPHERE_TEXT` で断る。
    * 球を引くのは部品文書の側(`resolvePart.ts`)の役目である。
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;

@@ -1875,8 +1875,8 @@ PRODUCT_FOLDER_RUN_PATTERN = (
     r"(?<![A-Za-z0-9_@.\-/])((?:\./)?packages/[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)*)/?[ \t]*の[ \t]*(?:単体を全件|全検査)")
 PRODUCT_CONSUMER_MESSAGE = (
     "{display} 行{line}: 製品ファイルの直接の検査: ③が {target} の変更を許すのに、それを相対 import する同じパッケージの検査 {count} 本が"
-    "「## 2」以降の本文に実パスで無い: {missing}(今の検査ファイル 全 {total} 本){note}。実パスを書いて同じ RUN で流すか、全件を流すなら"
-    "「{pkg} の単体を全件」と書く(rules/06 §10.458。gate 20261107-010320 の ViewportCanvasLifecycle.test.ts)。この検査は起動の前の"
+    "「## 2」以降の本文に実パスで無い: {missing}(今の検査ファイル 全 {total} 本、対象 {pkg}){note}。当たる検査の実パスを合格条件に書き、検査計画に含める"
+    "(rules/03 §7.3、rules/06 §10.458)。この検査は起動の前の"
     "列挙漏れを防ぐだけで、試験を実行せず結果を合格と認定しない")
 
 
@@ -2192,8 +2192,8 @@ E2E_COVERAGE_SHOWN = 3
 E2E_ROOT_FOLDER_PATTERN = r"(?<![A-Za-z0-9_@.\-/*?])(?:\./)?e2e/(?![A-Za-z0-9_@.\-*?/])"
 E2E_COVERAGE_MESSAGE = (
     "{display} 行{line}: 画面検査の証拠の照合: ③が {targets} の変更を許すのに、「## 2」以降の本文に e2e_coverage の語が無い{note}。"
-    "合格条件に「`python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` の結果が足りない組 0、"
-    "または残る組の一覧を final に書く」を足す(rules/06 §10.491。2026-11-12 01:19、e2e/tests/saveResponsivenessFlow.ts を変えた"
+    "合格条件に e2e_coverage の照合と手元で確かめる対象を書く。枝の外部検査に回す場合は残る組の一覧を final に書く。"
+    "写しの照合は rules/03 §7.3 に従う(rules/06 §10.491。2026-11-12 01:19、e2e/tests/saveResponsivenessFlow.ts を変えた"
     "包みの合格条件にこの照合が無く、送信の直前に 129 組の不足が出た)。この検査は起動の前の書き漏れを防ぐだけで、照合を実行せず"
     "結果を合格と認定しない")
 
@@ -2274,8 +2274,7 @@ TEST_UTILS_MESSAGE = (
     "{display} 行{line}: test-utils の規約の検査: ③が製品のコード {targets} の変更を許すのに、「## 2」以降の本文に"
     "「test-utils の単体を全件」が無い{note}。命名・行数・複雑さ・境界の規約の検査は test-utils の単体にあり"
     "(packages/test-utils/src/compoundNamingPolicy.test.ts など)、packages/ と apps/ の製品のコードの変更で落ちる。"
-    "合格条件に「test-utils の単体を全件」を足す(rules/06 §10.492。全体検査 20261112-094802 が局所の名前 epochRestarts で"
-    "落ちた)。この検査は起動の前の書き漏れを防ぐだけで、試験を実行せず結果を合格と認定しない")
+    "合格条件に「写しの前に統括が test-utils の単体を全件、1 回確認する」と書く(rules/03 §7.3、rules/06 §10.492)。この検査は起動の前の書き漏れを防ぐだけで、試験を実行せず結果を合格と認定しない")
 
 
 def _test_utils_product_entry(body: str) -> bool:

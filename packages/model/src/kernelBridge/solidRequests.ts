@@ -6,7 +6,11 @@ import { toSubShapeQuery } from './subShapeQuery.js';
 
 /** 和・差の工具。並べる(M-04)ときは配置の並びも渡す(計算部の BooleanStepSpec.transforms)。 */
 function booleanToolRequest(plan: Extract<SolidStepPlan, { readonly kind: 'boolean' }>) {
-  return { toolKey: plan.toolKey, ...(plan.transforms === undefined ? {} : { transforms: plan.transforms }) };
+  return {
+    toolKey: plan.toolKey,
+    ...(plan.transforms === undefined ? {} : { transforms: plan.transforms }),
+    ...(plan.patternTool === undefined ? {} : { patternTool: plan.patternTool }),
+  };
 }
 
 function surfaceStepSpec(plan: Extract<SolidStepPlan, { kind: 'surface' | 'blend' }>): SurfaceStepSpec | BlendSurfaceStepSpec {

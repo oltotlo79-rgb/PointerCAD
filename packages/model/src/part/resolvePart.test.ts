@@ -1,4 +1,4 @@
-import { plainText, plainTextValue } from '../failureText.js';
+import { plainTextValue } from '../failureText.js';
 import { allocatePatternPointSlots } from './patternPointSlots.js';
 import { buildHoleSchedule } from '../drawing/holeSchedule.js';
 import {
@@ -74,7 +74,6 @@ import {
 } from './createPartDocument.js';
 import { affectsShape } from './documentChange.js';
 import {
-  IMPORTED_MESH_TARGET_MESSAGE,
   referencedSketchIds,
   resolveHoleCenters,
   resolveMachiningTarget,
@@ -199,6 +198,17 @@ function addFace(
     color: DEFAULT_FACE_COLOR,
   };
   return { sketch: appendFeature(sketch, face), faceId: face.id };
+}
+
+/** 全文書を再計算するパターン試験の、40×30 の正常な押し出し断面。 */
+function patternPlateFixture(): { document: PartDocument; face: SketchFaceRef } {
+  const initial = createEmptyPartDocument();
+  const corners = addPoints(initial.sketches[0], [[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]);
+  const face = addFace(corners.sketch, corners.pointIds);
+  return {
+    document: replaceSketch(initial, face.sketch),
+    face: { sketchId: face.sketch.id, faceFeatureId: face.faceId },
+  };
 }
 
 interface Fixture {
@@ -3259,7 +3269,7 @@ describe('作成行と対になった和・差のパターン', () => {
     for (const row of wrong) {
       const rejected = errors(plate, tool, row);
       expect(rejected.map(error => error.code)).toEqual(['invalidValue']);
-      expect(plainTextValue(rejected[0].text)).toContain('対になった');
+      expect(rejected[0].text).toEqual({ key: 'partError.pattern.invalidSource', parameters: {} });
     }
     expect(errors(plate, tool, extrudeFeature('other', fixture.faceA), seed)).toMatchObject([{ code: 'invalidValue' }]);
     const missing = errors(tool, seed);
@@ -3339,6 +3349,28 @@ describe('作成行と対になった和・差のパターン', () => {
     it('直線 5 個の差(深さ 3 の 2×2 を間隔 8)は 24,940 mm³', async () => {
       const [cold] = await visibleBodies([patternedPart('subtract')]);
       expectVisible(cold, 'array', 24_940);
+    }, 180_000);
+
+    it('離れて失敗したパターンは冷えた再計算でも元の立体を返し、間隔を直すと結果へ置き換わる', async () => {
+      const fixture = patternPlateFixture();
+      const plate = extrudeFeature('plate', fixture.face);
+      const document = (spacing: string, count: string): PartDocument => withSolids(fixture.document, plate,
+        patternFeature('array', plate.id, linearPlacement({ spacing, count })));
+      const cache = createShapeCache<CachedSolid>(64);
+      const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode, cache));
+      try {
+        const rejected = await recomputePart(document('45', '2'), bridge);
+        expect(rejected.errors).toHaveLength(1);
+        expect(rejected.errors[0]).toMatchObject({ featureId: 'array', code: 'kernelFailed' });
+        expect(plainTextValue(rejected.errors[0].text)).toContain('元の立体から離れています');
+        expectVisible(rejected.bodies.map(body => [body.featureId, body.volume] as const), 'plate', 12_000);
+        const corrected = await recomputePart(document('5', '3'), bridge);
+        expect(corrected.errors).toEqual([]);
+        expectVisible(corrected.bodies.map(body => [body.featureId, body.volume] as const), 'array', 15_000);
+      } finally {
+        bridge.dispose();
+        cache.clear();
+      }
     }, 180_000);
 
     it('単独の立体(40×30×10)を間隔 10 で 3 個並べると自分の写しと和になり 60×30×10 = 18,000 mm³', async () => {
@@ -4705,7 +4737,7 @@ describe('スケッチの球面上の点(FR-431、P5 タスク19b: resolvePart �
     expect(resolved.points).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(plainTextValue(resolved.errors[0].text)).toBe('球が見つかりません。球を選び直してください。');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.coordinate.missingSphere', parameters: {} });
   });
 });
 
@@ -6181,6 +6213,44 @@ describe('リブ(FR-420、P5 タスク46)', () => {
     expect(resolvePart(ribDocument(fixture.flat)).liveBodyIds).toEqual(['rib-1']);
   });
 
+  it('直線パターンは温まったリブのキャッシュから追加分だけを写し、厚みの編集にも追従する', async () => {
+    const fixture = patternPlateFixture();
+    const line = addLine(fixture.document.sketches[0], [10, 15, 20], [30, 15, 20], 'xz');
+    const profile = { sketchId: line.sketch.id, curveIds: [line.id] };
+    const base = replaceSketch(fixture.document, line.sketch);
+    const plate = extrudeFeature('plate', fixture.face);
+    const ribbed = withSolids(base, plate, ribFeature('rib-1', plate.id, profile));
+    const pattern = patternFeature('array', 'rib-1',
+      linearPlacement({ direction: { kind: 'world', axis: 'y' }, spacing: '8', count: '2' }));
+    const patterned = withSolids(ribbed, pattern);
+    const revised = withSolids(base, plate, ribFeature('rib-1', plate.id, profile, { thickness: '4' }), pattern);
+    const cache = createShapeCache<CachedSolid>(64);
+    const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode, cache));
+    try {
+      for (const [document, id, volume] of [
+        [ribbed, 'rib-1', 12_600], [patterned, 'array', 13_200],
+        [revised, 'array', 13_600], [ribbed, 'rib-1', 12_600], [patterned, 'array', 13_200],
+      ] as const) {
+        const result = await recomputePart(document, bridge);
+        expect(result.errors).toEqual([]);
+        expect(result.bodies.map(body => body.featureId)).toEqual([id]);
+        expect(Math.abs(result.bodies[0].volume - volume) / volume).toBeLessThanOrEqual(1e-9);
+        if (document === patterned) expect(result.cacheHits).toBeGreaterThanOrEqual(2);
+      }
+      const resolved = resolvePart(patterned);
+      const ribKey = resolved.steps[1].key;
+      const request = toSolidRecomputeRequest(resolved.steps, {});
+      expect(request.steps[2].step).toMatchObject({
+        kind: 'boolean', targetKey: ribKey, toolKey: ribKey, patternTool: 'rib',
+        transforms: [{ translation: [0, 8, 0] }],
+      });
+      expect(resolvePart(revised).steps[2].key).not.toBe(resolved.steps[2].key);
+    } finally {
+      bridge.dispose();
+      cache.clear();
+    }
+  }, 180_000);
+
   it('厚みを変えれば鍵が変わり、同じ入力なら同じ鍵', () => {
     const fixture = curveFixture();
     const build = (thickness: string): string =>
@@ -7646,12 +7716,9 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       {
         featureId: 'hole-1',
         code: 'invalidValue',
-        text: plainText('読み込んだ三角形の形には、穴あけや面取りはできません。'),
+        text: { key: 'partError.importedMesh.notMachinable', parameters: {} },
       },
     ]);
-    expect(IMPORTED_MESH_TARGET_MESSAGE).toBe(
-      '読み込んだ三角形の形には、穴あけや面取りはできません。',
-    );
   });
 
   it('R 面取り・くり抜きの対象にしても同じ理由で断る', () => {
@@ -7672,9 +7739,9 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       shell,
     );
     const resolved = resolvePart(document);
-    expect(resolved.errors.map((error) => plainTextValue(error.text))).toEqual([
-      IMPORTED_MESH_TARGET_MESSAGE,
-      IMPORTED_MESH_TARGET_MESSAGE,
+    expect(resolved.errors.map((error) => error.text)).toEqual([
+      { key: 'partError.importedMesh.notMachinable', parameters: {} },
+      { key: 'partError.importedMesh.notMachinable', parameters: {} },
     ]);
     expect(resolved.errors.map((error) => error.code)).toEqual(['invalidValue', 'invalidValue']);
   });
@@ -7690,7 +7757,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       ),
     );
     expect(asTarget.errors).toEqual([
-      { featureId: 'boolean-1', code: 'invalidValue', text: plainText(IMPORTED_MESH_TARGET_MESSAGE) },
+      { featureId: 'boolean-1', code: 'invalidValue', text: { key: 'partError.importedMesh.notMachinable', parameters: {} } },
     ]);
     const asTool = resolvePart(
       withSolids(
@@ -7701,7 +7768,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       ),
     );
     expect(asTool.errors).toEqual([
-      { featureId: 'boolean-1', code: 'invalidValue', text: plainText(IMPORTED_MESH_TARGET_MESSAGE) },
+      { featureId: 'boolean-1', code: 'invalidValue', text: { key: 'partError.importedMesh.notMachinable', parameters: {} } },
     ]);
   });
 

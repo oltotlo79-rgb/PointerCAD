@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { plainText, plainTextValue } from '../failureText.js';
+import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, mathScalarExpression, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import {
   createMathBackend,
@@ -137,7 +137,7 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
     const document = part([row('A', a), row('B', b)], a);
     const result = await evaluateDocumentMath(document, context(document));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failures.filter(failure => (plainTextValue(failure.text) ?? '').includes('循環'))).toHaveLength(2);
+    if (!result.ok) expect(result.failures.filter(failure => failure.text.key === 'math.error.circular')).toHaveLength(2);
   });
   it('削除済みIDを同名の新しい係数へ勝手に結び直さない', async () => {
     const value = math('coef("A")+1', [{ id: 'removed', label: 'A', decimal: '3' }]);
@@ -202,7 +202,7 @@ describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき�
     expect(result.ok).toBe(false);
     if (result.ok) return;
     const c = result.failures.find(failure => failure.ownerId === 'C');
-    expect(c?.text).toEqual({ key: 'math.error.dependentCoefficient', parameters: { name: 'A', reason: plainText('係数の参照が循環しています。') } });
+    expect(c?.text).toEqual({ key: 'math.error.dependentCoefficient', parameters: { name: 'A', reason: { key: 'math.error.circular', parameters: {} } } });
   });
 
   it('本当に存在しない名前を旧式で参照したときは、決まっていない名前のまま示す(回帰確認)', async () => {

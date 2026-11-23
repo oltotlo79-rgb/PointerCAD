@@ -40,6 +40,8 @@ function rebuild(feature: SheetMetalFeature, map: ValueMapper): SheetMetalFeatur
       return { ...feature, angle: map(feature.angle), rule: mapOverride(feature.rule, map) };
     case 'sheetRelief':
       return { ...feature, position: map(feature.position), width: map(feature.width), depth: map(feature.depth) };
+    case 'sheetConvert':
+      return { ...feature, rule: { innerRadius: map(feature.rule.innerRadius), kFactor: map(feature.rule.kFactor) } };
   }
 }
 
@@ -70,6 +72,8 @@ export function sheetFeatureDependencies(feature: SheetMetalFeature): SheetFeatu
       return { bodyIds: [feature.targetFeatureId], sketchItems: [{ sketchId: feature.line.sketchId, featureId: feature.line.lineFeatureId }] };
     case 'sheetRelief':
       return { bodyIds: [feature.targetFeatureId], sketchItems: [] };
+    case 'sheetConvert':
+      return { bodyIds: [feature.sourceFeatureId], sketchItems: [] };
   }
 }
 

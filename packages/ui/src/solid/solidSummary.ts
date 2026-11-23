@@ -65,6 +65,7 @@ import {
   type RibSide,
   type RuledSphereSegments,
   type ScaleFeature,
+  type SheetConvertFeature,
   type SolidFeature,
   type SpringDerived,
   type SpringFeature,
@@ -765,6 +766,12 @@ function withPlaneTiltRange(field: SolidFieldSummary): SolidFieldSummary {
   return field.key === 'tiltAngle' ? { ...field, range: PLANE_TILT_RANGE } : field;
 }
 
+/** 立体を板金へ変える行(M-08)の欄: 内半径・K 係数と、元の立体。 */
+function sheetConvertParts(document: PartDocument, feature: SheetConvertFeature): Pick<SolidSummary, 'fields' | 'toggles' | 'choices' | 'references' | 'subShapeCounts'> {
+  return { fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
+    toggles: [], choices: [], references: [bodyReference(document, 'propertyPanel.targetBody', feature.sourceFeatureId)], subShapeCounts: [] };
+}
+
 /** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
 export function summarizeSolid(
   document: PartDocument,
@@ -788,13 +795,13 @@ export function summarizeSolid(
       toggles: [], choices: [{ key: 'sheetReliefShape', labelKey: 'sheetMetal.reliefShape', value: feature.shape, presentation: 'menu',
         options: [{ value: 'rectangle', labelKey: 'sheetMetal.rectangle' }, { value: 'slot', labelKey: 'sheetMetal.reliefSlot' }] }],
       references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)], subShapeCounts: [] };
+    case 'sheetConvert': return { ...base, ...sheetConvertParts(document, feature) };
     case 'sheetBend': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
       toggles: [], choices: [{ key: 'sheetFixedSide', labelKey: 'sheetMetal.fixedSide', value: feature.fixedSide, presentation: 'menu',
         options: [{ value: 'right', labelKey: 'sheetMetal.fixedRight' }, { value: 'left', labelKey: 'sheetMetal.fixedLeft' }] }],
       references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)], subShapeCounts: [] };
     case 'sheetBase': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
-      toggles: [toggleSummary('reversed', feature.reversed)], choices: [],
-      references: [feature.profile, ...feature.holes].map((ref) => profileReference(document, ref)), subShapeCounts: [] };
+      toggles: [toggleSummary('reversed', feature.reversed)], choices: [], references: [feature.profile, ...feature.holes].map((ref) => profileReference(document, ref)), subShapeCounts: [] };
     case 'sheetFlange': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
       toggles: [], choices: feature.profile === null ? [{ key: 'sheetLengthBasis', labelKey: 'sheetMetal.lengthBasis', value: feature.lengthBasis, presentation: 'menu',
         options: [{ value: 'tangent', labelKey: 'sheetMetal.basisTangent' }, { value: 'outer', labelKey: 'sheetMetal.basisOuter' }, { value: 'inner', labelKey: 'sheetMetal.basisInner' }] }] : [],
@@ -1288,7 +1295,7 @@ export function setSolidField(
   options: Omit<EvaluateOptions, 'variables'> & { readonly cylindricalLocationIndex?: number; readonly planarLocationIndex?: number } = {},
 ): SolidFeature {
   switch (feature.kind) {
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return setSheetField(feature, key, value);
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert': return setSheetField(feature, key, value);
     case 'extrude':
       return setExtrudeField(feature, key, value);
     case 'revolve':

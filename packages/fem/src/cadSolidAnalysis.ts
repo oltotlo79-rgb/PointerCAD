@@ -6,6 +6,7 @@ import { meshCadCurvedBoundary, type CurvedCadTetraOptions } from './cadCurvedTe
 import { isTetraMeshResult, type TetraMeshResult, type TetraMeshingControls } from './tetraMesh.js';
 import { solidArray, solidVector, translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidMaterial, SolidVector3 } from './solidAnalysisModel.js';
+import { femRefusalField, FemRefusalError, type FemRefusalCode } from './femCodedError.js';
 
 /** One current solid. Surface traction is a global vector in N/mm^2, not a resultant force. */
 export interface CadSolidSettings {
@@ -41,11 +42,12 @@ export interface CadSolidPrepared {
 export type CadSolidOutcome =
   | { readonly kind: 'result'; readonly result: SolidAnalysisResult; readonly prepared: CadSolidPrepared;
       readonly mesh: TetraMeshResult }
-  | { readonly kind: 'failed'; readonly code: string; readonly message: string }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly refusal?: FemRefusalCode }
   | { readonly kind: 'cancelled'; readonly reason: 'abort' | 'superseded' | 'disposed' };
 
-function requireInput(condition: boolean, message: string): asserts condition {
-  if (!condition) throw new Error(message);
+/** 断りの符号(refusal)を渡した時は、その符号を持つ誤り(文は同じ。0b-4)。 */
+function requireInput(condition: boolean, message: string, refusal?: FemRefusalCode): asserts condition {
+  if (!condition) throw refusal === undefined ? new Error(message) : new FemRefusalError(refusal, message);
 }
 function requireFields(value: unknown, names: readonly string[], message: string): void {
   requireInput(value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -76,7 +78,7 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
   const step = context.steps.find(value => value.featureId === context.body.featureId);
   requireInput(mesh.input.source.documentId === context.documentId && mesh.input.source.revision === context.revision
     && mesh.input.source.featureId === context.body.featureId && mesh.input.source.bodyKey === step?.key,
-  'Mesh belongs to another CAD revision');
+  'Mesh belongs to another CAD revision', 'stale-source');
   requireInput(regions.length === context.body.faces.length && regions.length > 0, 'Incomplete CAD region table');
   requireInput(labelFaces.length === mesh.input.tagCount && labelFaces.every(face => Number.isSafeInteger(face)
     && context.body.faces.some(current => current.index === face)), 'Invalid native label to CAD face map');
@@ -123,7 +125,8 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
     const hasPrescribed = Object.hasOwn(support, 'prescribedMm');
     requireFields(support, ['face', 'fixed', ...(hasPrescribed ? ['prescribedMm'] : [])], 'Unsupported CAD support fields');
     const flags = solidArray(support.fixed, 3, 3);
-    requireInput(flags.every(flag => typeof flag === 'boolean') && flags.some(flag => flag === true), 'Invalid translation restraints');
+    requireInput(flags.every(flag => typeof flag === 'boolean') && flags.some(flag => flag === true), 'Invalid translation restraints',
+      'support-all-free');
     const prescribed = hasPrescribed ? solidVector(support.prescribedMm) : undefined;
     requireInput(prescribed === undefined || prescribed.every((value, axis) => flags[axis] || value === 0),
       'Prescribed displacement on an unrestrained axis');
@@ -134,7 +137,7 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
         if (!flags[axis]) continue;
         const displacement = prescribed?.[axis] ?? 0;
         requireInput(!merged.fixed[axis] || (merged.prescribedMm?.[axis] ?? 0) === displacement,
-          'Conflicting prescribed displacement on a shared node');
+          'Conflicting prescribed displacement on a shared node', 'support-conflict');
         merged.fixed[axis] = true;
         if (prescribed !== undefined) merged.prescribedMm ??= [0, 0, 0];
         if (merged.prescribedMm !== undefined) merged.prescribedMm[axis] = displacement;
@@ -183,6 +186,13 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
   return { input: translated.input, loadedAreaMm2: area, totalForceN };
 }
 
+/** 解析の間に CAD の元(cadSolidSourceKey)が変わった時の断り。静解析と ui の座屈で同じ文・同じ符号(stale-source。0b-4)。 */
+export function currentCadSolidSource(readCurrent: () => CadTetraContext, signature: string): CadTetraContext {
+  const value = readCurrent();
+  requireInput(cadSolidSourceKey(value) === signature, 'CAD source changed during analysis', 'stale-source');
+  return value;
+}
+
 /** Whole CAD pipeline stages; Worker loading/solving phases remain separate. */
 export type CadSolidStage = 'preparing' | 'meshing' | 'solving';
 export interface CadSolidOptions extends FemOptions {
@@ -208,11 +218,7 @@ export async function analyzeCadSolid(client: Pick<FemClient, 'meshTetrahedra' |
     ? { kind: 'cancelled', reason: 'superseded' } : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
   try {
     const settings = structuredClone(requested), initial = readCurrent(), signature = cadSolidSourceKey(initial);
-    const current = (): CadTetraContext => {
-      const value = readCurrent();
-      requireInput(cadSolidSourceKey(value) === signature, 'CAD source changed during analysis');
-      return value;
-    };
+    const current = (): CadTetraContext => currentCadSolidSource(readCurrent, signature);
     const early = cancellation();
     if (early) return early;
     options.onStage?.('preparing');
@@ -235,7 +241,8 @@ export async function analyzeCadSolid(client: Pick<FemClient, 'meshTetrahedra' |
     if (completion.kind === 'failed') return { kind: 'failed', ...completion.failure };
     return { kind: 'result', result: completion.result, prepared, mesh: mesh.mesh };
   } catch (error) {
-    return cancellation() ?? { kind: 'failed', code: 'cad-solid', message: error instanceof Error ? error.message : 'Invalid CAD solid analysis' };
+    return cancellation() ?? { kind: 'failed', code: 'cad-solid', message: error instanceof Error ? error.message : 'Invalid CAD solid analysis',
+      ...femRefusalField(error) };
   } finally {
     options.signal?.removeEventListener('abort', abort);
     if (owners.get(client) === owner) owners.delete(client);

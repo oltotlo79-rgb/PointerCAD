@@ -93,7 +93,8 @@ describe('toolbar command catalog', () => {
         group: 'solidMachining', labelKey: 'toolbar.machining.faceOffset' }),
     ]);
     expect(new Set(TOOLBAR_COMMAND_CATALOG.map((entry) => entry.id)).size).toBe(TOOLBAR_COMMAND_CATALOG.length);
-    expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'sheetMetal')).toHaveLength(5);
+    // M-08 が板金へ「板金へ変換」の 1 項目を足したので 5 → 6。
+    expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'sheetMetal')).toHaveLength(6);
     expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'drawing').length).toBeGreaterThan(35);
     expect(TOOLBAR_COMMAND_CATALOG.find((entry) => entry.id === 'file.save')?.labelKey).toBe('toolbar.file.save');
     expect(TOOLBAR_COMMAND_CATALOG.find((entry) => entry.id === 'file.saveAs')?.sourceId).toBe('saveAs');

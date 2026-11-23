@@ -10,6 +10,7 @@ import { isBeamWeldSpanContactResult, beamWeldSpanContactResultMatches, type Bea
 import { readNativeBoltPreloadWireInput, prepareNativeBoltPreloadJob, nativeBoltPreloadOwnedMatches, type NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
 import { FEM_PROTOCOL, isBeamProof, isIdentity, isReply, sameIdentity, type BeamProofResult,
   type FemFailure, type FemIdentity, type FemPhase, type FemRequest, type FemResult } from './protocol.js';
+import { nativeRefusal } from './femCodedError.js';
 import type { BeamAnalysisResult, BeamModalResult } from './analysisModel.js';
 import type { BeamBucklingResult } from './bucklingModel.js';
 import { bucklingInputSha256, translateBeamBuckling } from './bucklingTranslation.js';
@@ -104,6 +105,14 @@ export interface FemSolidFinitePreparation {
 /** Mesh-only projection of the existing client-owned CAD reservation. */
  type FemTetraMeshPreparation = Pick<FemSolidFinitePreparation,
   'signal' | 'cancellation' | 'meshTetrahedra' | 'release'>;
+
+/** 断りの符号(refusal)の欄が無い返事(欄を足す前の Worker)は、文から 1 度だけ読む(境目の 1 か所 nativeRefusal。0b-4)。
+ * 欄がある返事・読めない文はそのまま。 */
+function withRefusal(failure: FemFailure): FemFailure {
+  if (failure.refusal !== undefined) return failure;
+  const refusal = nativeRefusal(failure.message);
+  return refusal === undefined ? failure : { ...failure, refusal };
+}
 
 /** Same capability surface, but sequential meshes belong to one assembly invocation. */
 const assemblyMeshPreparationBrand = Symbol('FemAssemblyTetraMeshPreparation');
@@ -763,7 +772,7 @@ export class FemClient {
           }
           try { options.onPhase?.(event.data.phase); }
           catch (error) { fail('worker-failed', error instanceof Error ? error.message : 'FEM phase observer failed'); }
-        } else if (event.data.kind === 'failure') finish({ kind: 'failed', identity, failure: event.data.failure });
+        } else if (event.data.kind === 'failure') finish({ kind: 'failed', identity, failure: withRefusal(event.data.failure) });
         else void accept(event.data.result).then(result=>{
           if(finished || this.active?.identity!==identity) return;
           if(result===null) fail('invalid-protocol','Analysis kind, input digest, source revision or result association differs');

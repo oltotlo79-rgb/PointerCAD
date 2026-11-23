@@ -15,6 +15,7 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   sheetFlange: 'sheetMetal.flange',
   sheetBend: 'sheetMetal.lineBend',
   sheetRelief: 'sheetMetal.relief',
+  sheetConvert: 'sheetMetal.convert',
   extrude: 'toolbar.solid.extrude',
   revolve: 'toolbar.solid.revolve',
   sew: 'toolbar.solid.sew',

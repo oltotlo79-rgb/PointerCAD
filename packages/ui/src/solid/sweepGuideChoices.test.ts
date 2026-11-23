@@ -46,8 +46,30 @@ describe('P11b 案内線の選択・作成・再編集', () => {
     useAppStore.setState({ document, selection: ['face', 'path'], pickAnchor: [100, 100] });
     runSolidTool('sweep', { ready: true, reasonKey: null });
     const input = useAppStore.getState().numericInput;
-    expect(input?.choices).toEqual([expect.objectContaining({ key: 'sweepGuide', value: 'none', presentation: 'menu',
-      options: [expect.objectContaining({ value: 'none' }), expect.objectContaining({ label: `${document.sketches[0].name} / 案内線` })] })]);
+    if (input === null) throw new Error('スイープの数値欄が開いていない');
+    const reference = { sketchId: document.activeSketchId, curveIds: ['guide'] };
+    const guideId = JSON.stringify([reference.sketchId, 'guide']);
+    expect(input.choices).toStrictEqual([
+      {
+        key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', value: 'none', presentation: 'menu',
+        options: [
+          { value: 'none', labelKey: 'numericInput.sweepGuide.none' },
+          { value: guideId, label: `${document.sketches[0].name} / 案内線`, reference },
+        ],
+      },
+      {
+        key: 'extrudeOperation', labelKey: 'numericInput.choice.solidOperation', value: 'new',
+        options: [{ value: 'new', labelKey: 'numericInput.solidOperation.new' }],
+      },
+      {
+        key: 'extrudeTarget', labelKey: 'numericInput.choice.solidTarget', value: '', presentation: 'menu',
+        options: [{ value: '', labelKey: 'numericInput.extrudeTarget.none' }],
+      },
+    ]);
+    const selected = reduceNumericInput(input, { type: 'choose', key: 'sweepGuide', value: guideId });
+    expect(selected.choices[0].value).toBe(guideId);
+    const cleared = reduceNumericInput(selected, { type: 'choose', key: 'sweepGuide', value: 'none' });
+    expect(cleared.choices).toStrictEqual(input.choices);
   });
   it('案内ありでは効かない向き切替を無効にしてTabから除外し、なしへ戻すと値を保つ', () => {
     const { guide } = create(true);

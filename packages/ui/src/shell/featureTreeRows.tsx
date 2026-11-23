@@ -54,6 +54,8 @@ const KIND_ICONS: Readonly<
   sheetFlange: SheetFlangeIcon,
   sheetBend: SheetLineBendIcon,
   sheetRelief: SheetReliefIcon,
+  // 立体を板金へ変える行(M-08)はメニューと同じ絵(sheetMetalMenuItems.ts)。
+  sheetConvert: SheetBaseIcon,
   point: PlotPointIcon,
   line: LineToolIcon,
   arc: ArcToolIcon,

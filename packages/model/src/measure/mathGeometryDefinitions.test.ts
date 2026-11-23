@@ -90,7 +90,7 @@ describe('addMathGeometryDefinition', () => {
     const document = createEmptyPartDocument();
     const result = addMathGeometryDefinition(document, input({ name }), 'def-1');
     expect(result).toMatchObject({ ok: false, reason });
-    if (result.ok) throw new Error('unreachable');
+    if (result.ok || result.reason === 'invalidTolerance') throw new Error('unreachable');
     expect(result.message.length).toBeGreaterThan(0);
   });
 
@@ -315,29 +315,27 @@ describe('validateMathGeometryTolerance(GR-03b、比べる幅の欄ごとの検�
 });
 
 describe('比べる幅の拒否文(付録C、GR-03b。角度は45度と書く)', () => {
-  const LINEAR_MESSAGE = '長さの比べる幅は0より大きい有限の数にしてください。';
-  const ANGULAR_MESSAGE = '角度の比べる幅は0より大きく45度より小さい数にしてください。';
+  const LINEAR_TEXT = { key: 'mathGeometry.error.definitionTolerance.linear', parameters: {} };
+  const ANGULAR_TEXT = { key: 'mathGeometry.error.definitionTolerance.angular', parameters: {} };
 
   it('setMathGeometryTolerance は長さの欄の誤りを長さの文で断る', () => {
     const document = documentWith({ mathGeometry: [definition('def-1', '体積1')] });
     expect(setMathGeometryTolerance(document, 'def-1', { linearMm: -1, angularRadians: 1e-6 }))
-      .toEqual({ ok: false, reason: 'invalidTolerance', message: LINEAR_MESSAGE });
+      .toEqual({ ok: false, reason: 'invalidTolerance', text: LINEAR_TEXT });
   });
 
   it('setMathGeometryTolerance は角度の欄の誤りを45度の文で断り、90度とは書かない', () => {
     const document = documentWith({ mathGeometry: [definition('def-1', '体積1')] });
     const result = setMathGeometryTolerance(document, 'def-1', { linearMm: 1e-6, angularRadians: Math.PI / 4 });
-    expect(result).toEqual({ ok: false, reason: 'invalidTolerance', message: ANGULAR_MESSAGE });
-    if (result.ok) throw new Error('unreachable');
-    expect(result.message).not.toContain('90度');
+    expect(result).toEqual({ ok: false, reason: 'invalidTolerance', text: ANGULAR_TEXT });
   });
 
   it.each([
-    ['長さ', { linearMm: Number.NaN, angularRadians: 1e-6 }, LINEAR_MESSAGE],
-    ['角度', { linearMm: 1e-6, angularRadians: 0 }, ANGULAR_MESSAGE],
-  ] as const)('addMathGeometryDefinition も%sの欄の誤りを同じ文で断る', (_label, tolerance, message) => {
+    ['長さ', { linearMm: Number.NaN, angularRadians: 1e-6 }, LINEAR_TEXT],
+    ['角度', { linearMm: 1e-6, angularRadians: 0 }, ANGULAR_TEXT],
+  ] as const)('addMathGeometryDefinition も%sの欄の誤りを同じ文で断る', (_label, tolerance, text) => {
     expect(addMathGeometryDefinition(createEmptyPartDocument(), input({ tolerance }), 'def-1'))
-      .toEqual({ ok: false, reason: 'invalidTolerance', message });
+      .toEqual({ ok: false, reason: 'invalidTolerance', text });
   });
 });
 

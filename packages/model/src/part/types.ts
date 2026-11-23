@@ -23,7 +23,7 @@ import type { SolidFeatureBase } from './featureIdentity.js';
 import type { HoleTranslateFeature, FaceRotateFeature } from './directEditOperations.js';
 import type { FaceOffsetFeature } from './directFaceEdit.js';
 import type { FunctionSurfaceFeature } from '../functionGeometry/functionSurfaceFeature.js';
-import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
+import type { SheetBaseFeature, SheetConvertFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
 import type { SketchFaceRef, SketchCurveRef, SketchLineRef, SketchPointRef } from './featureReferences.js';
 import type { Configuration } from './configurations.js';
 import type { NamedView } from './namedViews.js';
@@ -126,6 +126,7 @@ export type SolidFeatureKind =
   | 'sheetFlange'
   | 'sheetBend'
   | 'sheetRelief'
+  | 'sheetConvert'
   | 'extrude'
   | 'revolve'
   | 'sew'
@@ -1335,6 +1336,7 @@ export type SolidFeature =
   | SheetFlangeFeature
   | SheetBendFeature
   | SheetReliefFeature
+  | SheetConvertFeature
   | ExtrudeFeature
   | RevolveFeature
   | SewFeature

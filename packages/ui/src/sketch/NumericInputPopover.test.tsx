@@ -15,6 +15,8 @@ import { confirmExtrusion } from '../solid/extrudePreview.js';
 import { withExtrudeSuggestions } from '../solid/extrudeSuggestion.js';
 import { NumericMathDialog } from './NumericMathDialog.js';
 import { EdgeDistanceHoleInfo } from './EdgeDistanceHoleInfo.js';
+import { distanceHandleScreenRect } from '../viewport/distanceHandleScreenRect.js';
+import { HANDLE_PICK_RADIUS_PIXELS } from '../viewport/sectionHandleDrag.js';
 
 interface KeyInput {
   readonly key: string;
@@ -294,6 +296,22 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
     const markup = renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
     expect(markup).toContain(`data-placement="${placement}"`);
     expect(markup).toContain(`left:${String(left)}px;top:${String(top)}px`);
+  });
+
+  /*
+   * 押し出しのつまみの外形を避ける(M-05 4-2b)。e2e の extrude-operation.spec.ts:59 と同じ形をホーム視点・画面 920×803 で
+   * 写した点(根もと (567, 410)・先端 (571, 374))から、ビューポートと同じ distanceHandleScreenRect で箱を作る。
+   * 窓は箱の右(左端 603)に開き、先端の掴める範囲(571 ± 18)を覆わない。
+   */
+  it('opens right of the extrude handle outline without covering the grip', () => {
+    const avoid = distanceHandleScreenRect({ base: [567, 410, 0], origin: [571, 374, 0] }, (point) => [point[0], point[1]]);
+    useAppStore.setState({ numericInputAnchor: [460, 402], numericInputAvoid: avoid });
+    const markup = renderToStaticMarkup(<NumericInputPopover viewportWidth={920} viewportHeight={803} />);
+    expect(markup).toContain('data-placement="right"');
+    expect(markup).toContain('left:603px;top:416px');
+    // 描いた窓の左端が、先端の掴める範囲の右より右にある(窓がつまみを覆わない)。
+    const left = Number(/left:(\d+)px/u.exec(markup)?.[1]);
+    expect(left).toBeGreaterThan(571 + HANDLE_PICK_RADIUS_PIXELS);
   });
 
   it('Enter without the geometry scheduler keeps the input, document and Undo, and explains what to do', () => {

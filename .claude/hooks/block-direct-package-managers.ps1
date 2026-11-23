@@ -1,6 +1,6 @@
 ﻿# PointerCAD 規約フック: 統括による pnpm / npm / npx / yarn の直接実行を拒否する。
 # 根拠: rules/01-役割と委譲.md §1、rules/02-禁止事項.md。
-# 検査は scripts/check.ps1 を使い、それ以外は作業担当へ委譲する。
+# 通常の検査と送信は rules/03 §7.3 に従う。
 # フック自身が判定不能な場合は警告を出して通す(fail-open。rules/00-施行の仕組み.md)。
 $ErrorActionPreference = 'Stop'
 function Get-ElementText {
@@ -281,7 +281,7 @@ try {
             permissionDecisionReason = (
                 '規約(rules/01-役割と委譲.md §1、rules/02-禁止事項.md)により、' +
                 '統括は pnpm / npm / npx / yarn を直接実行できません。' +
-                '検査は scripts/check.ps1 を使い、それ以外は作業担当へ委譲して結果を報告させてください。'
+                '通常の検査と送信には rules/03 §7.3 の切符・写し前の照合・枝の外部検査の入口を使ってください。'
             )
         }
     }

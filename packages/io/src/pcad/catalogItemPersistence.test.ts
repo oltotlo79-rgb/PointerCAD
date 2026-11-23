@@ -9,9 +9,9 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  addComponent, buildStandardPartFromSource, CHANNEL_TABLE, createAssemblyDocument, createComponentFor,
+  addComponent, buildStandardPartFromSource, CHANNEL_TABLE, createAssemblyDocument, createCatalogItemSource, createComponentFor,
   createStandardPartSource, DEEP_GROOVE_BALL_BEARINGS, EQUAL_ANGLE_TABLE, H_BEAM_TABLE, HEX_BOLT_TABLE, HEX_NUT_TABLE,
-  PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE, resolveAssembly, SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_TABLE,
+  PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE, PRODUCT_CATALOG_REGISTRY, resolveAssembly, SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_TABLE,
   STEEL_PRODUCTS, steelProductOptions, type AssemblyDocument, type StandardCatalogId, type StandardPartSource,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -112,6 +112,35 @@ async function reopenBoth(document: AssemblyDocument): Promise<readonly Assembly
   }
   return [json.document, zip.document];
 }
+
+it('扉の部品・折戸のスライダ・通し穴付きベース板を開き直すと、同じ呼びと形に戻る', async () => {
+  const examples = {
+    'door-part-box': ['magnet-catch-51x22x20-sus', 'magnet-catch-48x21x13-resin-sus', 'magnet-catch-38x11x9-resin-sus',
+      'folding-magnet-catch-bracket-51x50x25-al', 'flat-hinge-plate-nut-15x3x40-sus', 'flat-hinge-plate-nut-15x5x40-al',
+      'flat-hinge-plate-nut-15x3x45-sus', 'flat-hinge-plate-nut-15x5x45-al', 'flat-hinge-plate-nut-15x5x55-al',
+      'flat-hinge-plate-nut-15x3x63-sus', 'flat-hinge-plate-nut-15x5x63-al', 'flag-hinge-plate-nut-15x5x35-al',
+      'flag-hinge-plate-nut-15x5x40-al'],
+    'slider-box': ['folding-door-slider-23x13x57.5-resin-sus', 'folding-door-slider-20x13x61.5-resin-sus'],
+    't-slot-foot-base': ['adjuster-165x165x12-h10-d9-steel', 'adjuster-165x165x12-h10-d9-stainless'],
+  };
+  await PRODUCT_CATALOG_REGISTRY.ensure(Object.keys(examples));
+  const sources = Object.entries(examples).flatMap(([id, keys]) => keys.map((key) => {
+    const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+    const row = family?.rows.find((candidate) => candidate.key === key);
+    if (family === undefined || row === undefined) throw new Error(`Missing catalog row ${id}/${key}`);
+    return createCatalogItemSource(family, row);
+  }));
+  const document = assemblyOf(sources, '扉と足回りの規格部品');
+  for (const reopened of await reopenBoth(document)) {
+    const saved = reopened.components.map((component) => component.source);
+    expect(saved).toEqual(sources);
+    for (const source of saved) {
+      if (source.kind !== 'standardPart') throw new Error('Expected a catalog part');
+      expect(standardPartRejection(source)).toBeNull();
+      expect(buildStandardPartFromSource(source)?.name, source.size).toBe(source.size);
+    }
+  }
+});
 
 // 2026-11-18: 出どころの表記から発行元の名前と URL を外した移行で、鋼材 19 品目（SS400 の平鋼 5・丸鋼 5・等辺山形鋼 3・溝形鋼 3・H 形鋼 3）の
 // 出どころの欄が変わった（平鋼・丸鋼は productStandard から会社名を外し、山形・溝形・H 形は evidence の鍵（会社名の物）を一般名の

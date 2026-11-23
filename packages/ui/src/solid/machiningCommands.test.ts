@@ -644,11 +644,56 @@ describe('commitPattern(FR-411、FR-412、§0.a-0.20)', () => {
     }
   });
 
-  it('押し出しを選ぶと sourceNotHole', () => {
+  it('リブの行を選んで直線パターンを作る', () => {
+    const base = documentWithBodies(['extrude-1']);
+    const document = appendSolid(base, {
+      id: 'rib-1', name: 'リブ1', kind: 'rib', suppressed: false, targetFeatureId: 'extrude-1',
+      profile: { sketchId: base.sketches[0].id, curveIds: ['line-1'] },
+      thickness: expressionValueFromNumber(3), side: 'both', extendToBody: true,
+    });
+    const outcome = commitPattern({ document, bodies: [], selection: ['rib-1'] }, { placement: LINEAR_PLACEMENT });
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    expect(requireFeature(outcome.document, outcome.featureId)).toMatchObject({
+      kind: 'pattern', sourceFeatureId: 'rib-1', placement: LINEAR_PLACEMENT,
+    });
+  });
+
+  it('独立した押し出しを直線に並べる', () => {
     const document = documentWithBodies(['extrude-1']);
     const context: MachiningContext = { document, bodies: [], selection: ['extrude-1'] };
     const outcome = commitPattern(context, { placement: LINEAR_PLACEMENT });
-    expect(outcome).toEqual({ ok: false, reasonKey: 'machiningError.sourceNotHole' });
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    expect(requireFeature(outcome.document, outcome.featureId)).toMatchObject({
+      kind: 'pattern', sourceFeatureId: 'extrude-1', placement: LINEAR_PLACEMENT,
+    });
+  });
+
+  it.each(['union', 'subtract'] as const)('%s の結果を円形に並べる', operation => {
+    const base = documentWithBodies(['extrude-1', 'tool-1']);
+    const document = appendSolid(base, {
+      id: 'result', name: 'Result', suppressed: false, kind: 'boolean', operation,
+      targetFeatureId: 'extrude-1', toolFeatureId: 'tool-1',
+    });
+    const placement = {
+      kind: 'circular' as const, axis: { kind: 'world' as const, axis: 'z' as const },
+      angle: expressionValueFromNumber(360), count: expressionValueFromNumber(20), fullCircle: true,
+    };
+    const outcome = commitPattern({ document, bodies: [], selection: ['result'] }, { placement });
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    expect(requireFeature(outcome.document, outcome.featureId)).toMatchObject({
+      kind: 'pattern', sourceFeatureId: 'result', placement,
+    });
+    expect(commitPattern({ document, bodies: [], selection: ['tool-1'] }, { placement }))
+      .toEqual({ ok: false, reasonKey: 'machiningError.noPatternSource' });
+  });
+
+  it('共通部分の結果は並べる元にできない', () => {
+    const document = appendSolid(documentWithBodies(['extrude-1', 'tool-1']), {
+      id: 'result', name: 'Result', suppressed: false, kind: 'boolean', operation: 'intersect',
+      targetFeatureId: 'extrude-1', toolFeatureId: 'tool-1',
+    });
+    expect(commitPattern({ document, bodies: [], selection: ['result'] }, { placement: LINEAR_PLACEMENT }))
+      .toEqual({ ok: false, reasonKey: 'machiningError.invalidPatternSource' });
   });
 
   it('何も選ばなければ noPatternSource', () => {

@@ -1,11 +1,11 @@
-/** 部品履歴との境界。成功した板金だけを下流の曲げ元として貸す。 */
+/** 部品履歴との境界。成功した板金だけを下流の曲げ元として貸す。立体からの変換(M-08)は planSheetConvert.ts が受ける。 */
 import { resolveSheetBase, resolveSheetFlange, type ResolvedSheetBody, type SheetFaceResolver, type SheetGeometryPlan } from './resolveSheetGeometry.js';
 import type { SheetGeometryResult } from './panelGeometry.js';
 import type { SheetMetalFeature } from './types.js';
 import { resolveSheetLineBend, type SheetLineResolver } from './resolveLineBend.js';
 import { resolveSheetRelief } from './resolveSheetRelief.js';
 
-export function planSheetFeature(feature: SheetMetalFeature, face: SheetFaceResolver,
+export function planSheetFeature(feature: Exclude<SheetMetalFeature, { kind: 'sheetConvert' }>, face: SheetFaceResolver,
   bodyKeys: ReadonlyMap<string, string>, consumed: ReadonlySet<string>, sheetBodies: ReadonlyMap<string, ResolvedSheetBody>,
   line: SheetLineResolver = () => undefined): SheetGeometryResult<SheetGeometryPlan> {
   if (feature.kind === 'sheetBase') return resolveSheetBase(feature, face);

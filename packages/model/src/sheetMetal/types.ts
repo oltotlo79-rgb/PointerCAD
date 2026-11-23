@@ -2,6 +2,7 @@
 import type { ExpressionValue } from '@pointercad/expression';
 import type { SketchFaceRef, SketchLineRef } from '../part/featureReferences.js';
 import type { SolidFeatureBase } from '../part/featureIdentity.js';
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
 
 export interface SheetMetalRule {
   readonly thickness: ExpressionValue;
@@ -68,10 +69,23 @@ export interface SheetReliefFeature extends SolidFeatureBase {
   readonly seamConnectionIds?: readonly string[];
 }
 
+/**
+ * 板厚が一定の立体を板金へ変える(M-08)。板厚・板・曲げは再計算のたびに元の立体から読み、保存しない。
+ * 変換に成功した時だけ元の立体を消費する。保存の欄は、後から任意の欄(板・縁の指紋など)を足しても読める形に保つ。
+ */
+export interface SheetConvertFeature extends SolidFeatureBase {
+  readonly kind: 'sheetConvert';
+  readonly sourceFeatureId: string;
+  /** 板厚の始点側にする平らな面。指紋で選び直す。 */
+  readonly referenceFace: SubShapeRef;
+  /** 内半径は後から足すフランジ・指定線の曲げの既定(読んだ曲げの半径は形のまま)。K 係数は展開に使う。 */
+  readonly rule: { readonly innerRadius: ExpressionValue; readonly kFactor: ExpressionValue };
+}
+
 /** 展開条件は幾何の入力。カメラや折曲げ/展開の表示モードは保存しない。 */
 export interface SheetUnfoldDefinition {
   readonly sourceFeatureId: string;
   readonly fixedPanelId: string;
   readonly seamConnectionIds: readonly string[];
 }
-export type SheetMetalFeature = SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature;
+export type SheetMetalFeature = SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature | SheetConvertFeature;

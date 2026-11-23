@@ -26,6 +26,7 @@ import {
   type ResolvedCurve,
   type ResolvedSolidStep,
   type ResolvePartOptions,
+  type SheetRecognitionPass,
   type SubShapeCache,
 } from '@pointercad/model';
 
@@ -43,6 +44,11 @@ export interface CachedResolveDeps {
    * ここでも**呼ばれるたびに**読む(読み込みのたびに増えるため)。
    */
   readonly importedShapes?: () => ImportedShapeBytes;
+  /**
+   * 立体を板金へ変える行(M-08)の認識の答え(再計算が持ち回る覚え書き)。渡さないと変換の行は段を作らず、
+   * 変換した板金とその後段は測れも書き出せもしない(元の立体が消費されないまま残る)。
+   */
+  readonly sheetRecognitions?: Pick<SheetRecognitionPass, 'lookup'>;
 }
 
 /**
@@ -61,6 +67,7 @@ export function resolveCachedSteps(
     projectedCurves: (featureId) => projected.get(featureId) ?? null,
     subShape: (reference) => deps.subShapes.resolve(reference),
     importedShapes: deps.importedShapes?.(),
+    sheetRecognition: deps.sheetRecognitions?.lookup,
   };
   const first = resolvePart(evaluated, options);
   if (first.projections.length === 0) {

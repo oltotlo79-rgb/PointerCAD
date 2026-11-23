@@ -2,7 +2,7 @@
  * 図形の倍精度測定値は、実際の数学計算部を通して `evaluateDocumentMath` へ渡す。
  * 図形由来の係数は小数として扱い、他の係数の厳密な原式は変えない(FR-210/FR-211)。
  */
-import { plainText, plainTextValue, type FailureText } from '../failureText.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpression, evaluateExpressionExact, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';
 import { createMathBackend, executeMathWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
@@ -201,8 +201,8 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     const recompute = transient(result);
     expect(recompute.pendingGeometry).toEqual(new Set(['g1']));
     expect(textOf(result, 'P')).toEqual(mathGeometryPendingMessage('G'));
-    expect(recompute.analysis.failures).toEqual([{ name: 'P', text: plainText('図形の測定値「G」を計算中です。形の計算が終わると使えます。') }]);
-    expect(plainTextValue(recompute.invalidInputs.get(pointOf(document).id))).toBe('参照する係数を計算できません: P');
+    expect(recompute.analysis.failures).toEqual([{ name: 'P', text: { key: 'mathGeometry.error.pending', parameters: { definitionName: 'G' } } }]);
+    expect(recompute.invalidInputs.get(pointOf(document).id)).toEqual({ key: 'math.error.referenceUncomputable', parameters: { label: 'P' } });
     expect(recompute.analysis.geometryDerived).toEqual(new Map([['P', ['g1']]]));
     expect(requests).toHaveLength(0);
   });
@@ -256,7 +256,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     const result = await pending;
     const point = pointOf(document).id;
     expect(textOf(result, point)).toEqual(mathGeometryOutsideCoefficientMessage('G'));
-    expect(plainTextValue(transient(result).invalidInputs.get(point))).toBe('図形の測定値は係数の式の中でだけ使えます: G');
+    expect(transient(result).invalidInputs.get(point)).toEqual({ key: 'mathGeometry.error.outsideCoefficient', parameters: { label: 'G' } });
     expect(requests).toHaveLength(0);
   });
 
@@ -266,7 +266,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     const { requests, result: pending } = run(document, { geometry: geometryOf(measured('g1', 20)), blocked: new Map([['P', plainText(reason)]]) });
     const result = await pending;
     expect(textOf(result, 'P')).toEqual(plainText(reason));
-    expect(textOf(result, 'Q')).toEqual(plainText('参照する係数を計算できません: P'));
+    expect(textOf(result, 'Q')).toEqual({ key: 'math.error.referenceUncomputable', parameters: { label: 'P' } });
     expect(transient(result).analysis.geometryDerived).toEqual(new Map([['P', ['g1']], ['Q', ['g1']]]));
     expect(requests).toHaveLength(0);
   });
@@ -292,7 +292,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     const document = part([row('X', legacy('3'), 'math-geometry:x')], []);
     const result = await run(document).result;
     expect(result).toEqual({ ok: false, cancelled: false,
-      failures: [{ ownerId: 'X', source: '3', text: plainText('係数の名前または参照先が不正・重複しています。') }] });
+      failures: [{ ownerId: 'X', source: '3', text: { key: 'math.error.invalidParameterName', parameters: {} } }] });
   });
 });
 
@@ -330,7 +330,7 @@ describe('覚え書き(§2.3-④): 図形由来の係数がある表は覚えな
     expect(knownMathParameterEvaluation(result.document.parameters)).toBeUndefined();
     const analysis = analyzeParameters(result.document.parameters, []);
     expect(analysis.variables.has('P')).toBe(false);
-    expect(analysis.failures).toEqual([{ name: 'P', text: plainText('この数式は数学計算部での再計算が必要です。') }]);
+    expect(analysis.failures).toEqual([{ name: 'P', text: { key: 'math.error.needsMathEngine', parameters: {} } }]);
   });
 
   it('図形由来の係数が無い表は従来どおり覚え、analyzeParameters がその値を返す', async () => {

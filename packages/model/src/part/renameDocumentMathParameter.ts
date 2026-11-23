@@ -21,19 +21,19 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
   context: DocumentMathContext): Promise<MathParameterRenameResult> {
   const current = () => !context.signal?.aborted && context.isCurrent() && context.identity.documentId === original.id;
   const rejected = (text: FailureText): MathParameterRenameResult => ({ ok: false, cancelled: !current(), text });
-  if (!current()) return rejected(plainText('係数の改名を中止しました。'));
-  if (!original.parameters.some(parameter => parameter.name === from)) return rejected(plainText('改名する係数がありません。'));
+  if (!current()) return rejected({ key: 'math.error.rename.cancelled', parameters: {} });
+  if (!original.parameters.some(parameter => parameter.name === from)) return rejected({ key: 'math.error.rename.notFound', parameters: {} });
   if (from === to) return { ok: true, document: original };
   // Coefficients and math-geometry definitions share one `coef` label space: a coefficient named
   // like a definition would drop that definition out of `resolvableMathGeometryDefinitions`, so refuse it here.
   if (checkNewParameterName(to) !== null || original.parameters.some(parameter => parameter.name === to)
     || (original.mathGeometry ?? []).some(definition => definition.name === to)) {
-    return rejected(plainText('係数の新しい名前が不正、または既に使われています。'));
+    return rejected({ key: 'math.error.rename.invalidName', parameters: {} });
   }
   try {
     const document = prepareDocumentMathIdentity(original);
     const parameterId = document.parameters.find(parameter => parameter.name === from)?.mathId;
-    if (parameterId === undefined) return rejected(plainText('係数の参照先を確認できません。'));
+    if (parameterId === undefined) return rejected({ key: 'math.error.rename.unverifiedReference', parameters: {} });
     const definitions = new Set<StoredMathExpression>();
     const scopes = new Map<StoredMathExpression, FunctionExpressionScope>();
     const collect = (value: ExpressionValue): ExpressionValue => {
@@ -56,10 +56,10 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
     const replacements = new Map<StoredMathExpression, StoredMathExpression>();
     let revision = 0;
     for (const definition of definitions) {
-      if (!current()) return rejected(plainText('係数の改名を中止しました。'));
+      if (!current()) return rejected({ key: 'math.error.rename.cancelled', parameters: {} });
       const references = collectMathCoefficients(definition.expression);
       if (!references.some(reference => reference.id === parameterId)) continue;
-      if (references.some(reference => byId.get(reference.id) !== reference.label)) return rejected(plainText('保存された係数の参照先を確認できません。'));
+      if (references.some(reference => byId.get(reference.id) !== reference.label)) return rejected({ key: 'math.error.rename.unverifiedStoredReference', parameters: {} });
       revision += 1;
       const completion = await context.client.evaluate({
         identity: { ...context.identity, editorId: 'rename-coefficient', inputRevision: revision },
@@ -69,9 +69,9 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
         renameCoefficient: { id: parameterId, label: to },
         ...(scopes.has(definition) ? { functionScope: scopes.get(definition) } : {}),
       }, 5_000, context.signal);
-      if (!current()) return rejected(plainText('係数の改名を中止しました。'));
+      if (!current()) return rejected({ key: 'math.error.rename.cancelled', parameters: {} });
       if (completion.status !== 'result' || completion.result.renamedDefinition == null) {
-        return rejected(plainText('数式の参照先を保った改名ができませんでした。'));
+        return rejected({ key: 'math.error.rename.rewriteFailed', parameters: {} });
       }
       replacements.set(definition, completion.result.renamedDefinition);
     }
@@ -103,9 +103,9 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
     });
     // `context` passes through unchanged: no definition is renamed here, so `context.geometry` still resolves.
     const result = await evaluateDocumentMath(synchronizeConfigurations({ ...geometry, parameters, configurations }), context);
-    if (!current()) return rejected(plainText('係数の改名を中止しました。'));
+    if (!current()) return rejected({ key: 'math.error.rename.cancelled', parameters: {} });
     return result.ok ? { ok: true, document: result.document }
-      : rejected(result.failures[0]?.text ?? plainText('係数を改名した文書を再計算できませんでした。'));
+      : rejected(result.failures[0]?.text ?? { key: 'math.error.rename.invalidDocument', parameters: {} });
   } catch (error) {
     return rejected(plainText(error instanceof Error ? error.message : '係数の改名を完了できませんでした。'));
   }

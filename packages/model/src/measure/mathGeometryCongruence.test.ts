@@ -113,7 +113,7 @@ describe('GR-11 限定の合同・相似の判定', () => {
   });
   it.each(['congruent', 'similar'] as const)('辺数の違う多角形は%sの偽ではなく比較できない', kind => {
     expect(compareMathGeometryCongruence(kind, polygon(triangle), polygon(rectangle), tolerance))
-      .toMatchObject({ ok: false, reason: 'unsupported', message: '辺の数が違う多角形どうしは比べられません。' });
+      .toMatchObject({ ok: false, reason: 'unsupported', text: { key: 'mathGeometry.error.congruence.edgeCountMismatch', parameters: {} } });
   });
   it.each([circular(4, 1), polygon(triangle)])('種類の異なる組は比較できない #%#', other => {
     for (const kind of ['congruent', 'similar'] as const) {

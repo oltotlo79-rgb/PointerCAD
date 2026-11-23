@@ -2,6 +2,7 @@ import {
   createKernelBridge,
   createOffsetCache,
   createProjectionCache,
+  createSheetRecognitionPass,
   createSubShapeCache,
 } from '@pointercad/model';
 import { useEffect } from 'react';
@@ -39,6 +40,7 @@ import {
 import type { RecomputeOutcome } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { currentOccurrenceDrive } from '../store/assemblyOccurrenceDriveSlice.js';
+import { clearCachesOnDocumentChange } from './documentScopedCaches.js';
 import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 
 type RuntimePhaseObservation = Awaited<ReturnType<ReturnType<typeof createKernelBridge>['readRuntimePhases']>>;
@@ -234,36 +236,13 @@ export function PointerCadApp(): React.JSX.Element {
     // 毎回カーネルへ頼み直し、解決も 2 巡することになる(NFR-PF-2、NFR-PF-3)。
     const projections = createProjectionCache();
     const subShapes = createSubShapeCache();
-    /*
-     * **文書が丸ごと差し替わったら、3 つの覚え書きを空にする**(新規・開く・復元、
-     * および Undo / Redo。ストアの `documentVersion` が進むのがこの 5 つ)。
-     *
-     * 覚え書きは頁を開いている間ずっと生き続けるので、これをしないと**前の文書の参照が
-     * 次の文書に残る**。フィーチャーの id は文書ごとに `solid-1` から振り直される
-     * (`createPartDocument.ts` の `nextSolidId`)ため、前の文書の面・辺・頂点の参照が
-     * 新しい文書の**別物の同じ id のボディ**へ照合し直され、`refresh` が毎回「変わった」と
-     * 言い続けて `recomputePart` が毎回 2 巡目に入り、覚えている参照も増え続ける
-     * (NFR-PF-3。`subShapeCache.ts` の `clear` の注釈)。2026-09-06 の目視で
-     * 「頁を読み込み直すと直る」状態が残っていた 2 か所のうちの 1 つ。
-     *
-     * **`attachPartRecompute` より先に見張りを始める**(購読の通知は登録順に届く)。
-     * 後にすると、差し替え直後の 1 回だけ古い覚え書きで解決してしまう。
-     *
-     * 判定に文書の id を使わないのは、`createEmptyPartDocument()` の id が常に `part-1` で
-     * 「新規」の前後で変わらないため。**Undo / Redo でも空にする**のは、`documentVersion`
-     * がその 2 つでも進むからで、id が振り直されない分だけ捨てすぎではあるが、覚え書きは
-     * 次の再計算で入り直る(費用は往復 1 回ぶん)。
-     */
-    const unwatchDocument = useAppStore.subscribe((next, previous) => {
-      if (next.documentVersion === previous.documentVersion) {
-        return;
-      }
-      offsets.clear();
-      projections.clear();
-      subShapes.clear();
-    });
+    // 立体を板金へ変える行(M-08)の認識の答えも持ち回る。板金の窓の確かめ(純な解決)も同じ答えで解けるよう店へ付ける。
+    const sheetRecognitions = createSheetRecognitionPass();
+    useAppStore.getState().setSheetRecognitionLookup(sheetRecognitions.lookup);
+    // attachPartRecompute より先に差し替えを見張る。板金の認識は外観だけの履歴移動で残す。
+    const unwatchDocument = clearCachesOnDocumentChange([offsets, projections, subShapes], sheetRecognitions);
     const detach = attachPartRecompute((document, options) =>
-      recomputePart(document, bridge, { ...options, offsets, projections, subShapes,
+      recomputePart(document, bridge, { ...options, offsets, projections, subShapes, sheetRecognitions,
         onResolved: resolved => {
           options.onResolved?.(resolved);
           solidAnalysis.captureResolved(document, options.generation ?? 0, resolved);
@@ -284,6 +263,7 @@ export function PointerCadApp(): React.JSX.Element {
         offsets,
         projections,
         subShapes,
+        sheetRecognitions,
         // 読み込んだ形(FR-802)は文書の外にあるので、解くたびにストアの表を渡す。
         // 渡さないと読み込んだ立体だけ段が作れず、測れも書き出せもしなくなる。
         importedShapes: () => useAppStore.getState().importedShapes,
@@ -308,6 +288,7 @@ export function PointerCadApp(): React.JSX.Element {
         offsets,
         projections,
         subShapes,
+        sheetRecognitions,
         importedShapes: () => useAppStore.getState().importedShapes,
       }),
     );
@@ -322,6 +303,7 @@ export function PointerCadApp(): React.JSX.Element {
         offsets,
         projections,
         subShapes,
+        sheetRecognitions,
         importedShapes: () => useAppStore.getState().importedShapes,
       }),
     );
@@ -347,6 +329,7 @@ export function PointerCadApp(): React.JSX.Element {
       detachMeasure();
       detach();
       unwatchDocument();
+      if (useAppStore.getState().sheetRecognitionLookup === sheetRecognitions.lookup) useAppStore.getState().setSheetRecognitionLookup(null);
       detachAssemblyInterference();
       detachAssembly();
       if (window.pcadRuntimePhases === runtimePhases) delete window.pcadRuntimePhases;

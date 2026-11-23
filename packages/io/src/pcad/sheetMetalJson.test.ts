@@ -1,7 +1,8 @@
 import type { SheetMetalFeature } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { checkRecord, type Checked } from './guards.js';
-import { readSheetBaseFeature, readSheetBendFeature, readSheetFlangeFeature, readSheetReliefFeature, serializeSheetMetalFeature } from './codecs/sheetMetal.js';
+import { readSheetBaseFeature, readSheetBendFeature, readSheetConvertFeature, readSheetFlangeFeature, readSheetReliefFeature,
+  serializeSheetMetalFeature } from './codecs/sheetMetal.js';
 import { readSolidFeatureBase } from './codecs/solidBase.js';
 
 const n = (value: number, source = String(value)) => ({ source, value, display: String(value) });
@@ -26,6 +27,8 @@ function read(kind: SheetMetalFeature['kind'], value: unknown): Checked<SheetMet
     case 'sheetFlange': return readSheetFlangeFeature(record.value, 'feature', identity.value);
     case 'sheetBend': return readSheetBendFeature(record.value, 'feature', identity.value);
     case 'sheetRelief': return readSheetReliefFeature(record.value, 'feature', identity.value);
+    // 立体を板金へ変える行(M-08)の往復は sheetConvertJson.test.ts が確かめる。
+    case 'sheetConvert': return readSheetConvertFeature(record.value, 'feature', identity.value);
   }
 }
 

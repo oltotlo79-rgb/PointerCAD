@@ -68,6 +68,7 @@ import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from 
 import type { ParameterAnalysis } from '../parameters/types.js';
 import { plainText, type FailureText } from '../failureText.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
+import { createSheetRecognitionPass, type SheetRecognitionPass } from './sheetRecognitionPass.js';
 import { readReferenceBodies, ReferenceMeshScope, type ReferenceBodyReads } from './readReferenceBodies.js';
 import { recomputeHistoryDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
@@ -184,6 +185,11 @@ export interface PartRecomputeOptions {
    * 覚えておく入れ物。持ち回ると、上流が変わっていない再計算では選び直しによる追加巡回を省ける。
    */
   readonly subShapes?: SubShapeCache;
+  /**
+   * 立体を板金へ変える行(M-08)の認識と確かめの答えを覚えておく入れ物。持ち回ると、元の形が変わっていない再計算は
+   * 計算部へ頼み直さず 1 巡で済み、測定・書き出し・画面の確かめ(純な解決)も同じ答えで同じ段の鍵を作る。
+   */
+  readonly sheetRecognitions?: SheetRecognitionPass;
   /**
    * ボディの表面積(`SolidBody.area`)を測るか(FR-1102。
    * `kernelBridge.ts` の `SolidRecomputeOptions.measureAreas`
@@ -896,7 +902,7 @@ interface StageMath {
 }
 
 /** 途中の段の数式の評価が理由を返さずに失敗したときの文(`evaluateDocumentMath` の最後の文と同じ)。 */
-const STAGE_MATH_FAILED_MESSAGE = '数式の再計算を完了できませんでした。';
+const STAGE_MATH_FAILED_TEXT: FailureText = { key: 'math.error.stageFailed', parameters: {} };
 
 /**
  * 途中の段で測るときに「正しく作れなかった形」とみなす id。最後の段の errors と同じ出どころ
@@ -962,10 +968,10 @@ async function measureStages(
     };
     if (shapes === undefined || valueSinceBuild) {
       const build = await buildShapes(document, bridge, options, generation, current());
-      if (isMathFailedBuild(build)) return giveUp(build.mathFailures[0]?.text ?? plainText(STAGE_MATH_FAILED_MESSAGE));
+      if (isMathFailedBuild(build)) return giveUp(build.mathFailures[0]?.text ?? STAGE_MATH_FAILED_TEXT);
       if (!isShapeBuild(build)) {
         // 数学の計算部があるので、ここへ来るのは取消だけ(数学計算部を準備できない早い戻りは、この関数の頭で断っている)。
-        return build.cancelled ? null : giveUp(plainText(STAGE_MATH_FAILED_MESSAGE));
+        return build.cancelled ? null : giveUp(STAGE_MATH_FAILED_TEXT);
       }
       if (!build.solid.ok) {
         return giveUp(plainText(build.solid.message));
@@ -1037,7 +1043,7 @@ async function buildShapes(
   // 解決そのものは OCCT を呼ばない純関数のままで、形は覚え書き越しに差し込む。
   const offsets = options.offsets ?? createOffsetCache();
   const projections = options.projections ?? createProjectionCache();
-  const subShapes = options.subShapes ?? createSubShapeCache();
+  const subShapes = options.subShapes ?? createSubShapeCache(), sheetRecognitions = options.sheetRecognitions ?? createSheetRecognitionPass();
   const referenceReads: ReferenceBodyReads = options.referenceMeshScope?.reads ?? new Map<string, Parameters<ReferenceBodyReads['set']>[1]>();
   /** この再計算の中で埋まった投影・交差の曲線(フィーチャーの id で引く)。 */
   const projectedByFeature = new Map<string, readonly ResolvedCurve[]>();
@@ -1065,6 +1071,7 @@ async function buildShapes(
     subShape: resolveSubShape,
     // 読み込んだ形のバイト列(FR-802)。渡されなければ resolvePart が空として扱う。
     importedShapes: options.importedShapes,
+    sheetRecognition: sheetRecognitions.lookup,
   };
 
   const offsetErrors: SketchError[] = [];
@@ -1165,11 +1172,14 @@ async function buildShapes(
       attemptedProjections,
       settled,
     );
-    if (options.shouldCancel?.()) {
+    // 投影の応答待ちに文書が替わった巡から、次の文書の認識を始めない。
+    if (options.shouldCancel?.()) return cancelledResult(generation);
+    const recognized = await sheetRecognitions.fill(bridge, resolved, solid.outcome.bodies, settled, options.shouldCancel);
+    if (recognized === null || options.shouldCancel?.()) {
       return cancelledResult(generation);
     }
     if (
-      (projected || changedSources.size > 0) &&
+      (projected || recognized || changedSources.size > 0) &&
       settled.size > countBefore &&
       // 全立体が削除され依存グラフが空でも、暫定の保存位置を null の判定へ
       // 差し替える解決を1回は行う。現在形状の再検証前のスケッチを公開しない。

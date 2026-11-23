@@ -204,6 +204,9 @@ describe('同じファイルの最大でない超過関数の増加を拒否し�
     expect(drift(params, row, source(6))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
     // 報告は送る前の道具が表を下げるのに使う。失敗には数えない。
     expect(failing(drift(params, row, source(7)))).toEqual(NO_FAILURE);
+    const mixed = paramsFunction('large', 11) + paramsFunction('smaller', 7);
+    expect(drift(params, row, mixed)).toEqual({ ...NO_DRIFT, grown: ['large'], stale: ['smaller'] });
+    expect(failing(drift(params, row, mixed))).toEqual({ ...NO_FAILURE, grown: ['large'] });
     expect(failing(drift(params, row, source(6)))).toEqual(NO_FAILURE);
     expect(drift(params, row, source(8, paramsFunction('extra', 7)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });
     expect(drift(params, { file, functions: [['large', 10], ['smaller', 8], ['smaller', 8]] }, source(8)).duplicateRows)
@@ -228,8 +231,12 @@ describe('同じファイルの最大でない超過関数の増加を拒否し�
       '    if (flag) { return 1; }', '    if (flag) { return 2; }', '  } } } } }', '  return 0;', '}', ''].join('\n');
     expect(reports(DEPTH_RULE, file, 5, sibling)).toHaveLength(2);
     expect(drift(depth, row, `${depthFunction('large', 8)}${sibling}`)).toEqual({ ...NO_DRIFT, grown: ['smaller'] });
-    expect(drift(depth, { file, functions: [['large', 8, 3], ['smaller', 6, 2]] }, source(6)))
-      .toEqual({ ...NO_DRIFT, stale: ['smaller'] });
+    const staleRow: ComplexityRow = { file, functions: [['large', 8, 3], ['smaller', 6, 2]] };
+    expect(drift(depth, staleRow, source(6))).toEqual({ ...NO_DRIFT, stale: ['smaller'] });
+    expect(failing(drift(depth, staleRow, source(6)))).toEqual(NO_FAILURE);
+    const mixed = depthFunction('large', 9) + depthFunction('smaller', 6);
+    expect(drift(depth, staleRow, mixed)).toEqual({ ...NO_DRIFT, grown: ['large'], stale: ['smaller'] });
+    expect(failing(drift(depth, staleRow, mixed))).toEqual({ ...NO_FAILURE, grown: ['large'] });
     expect(drift(depth, row, source(5))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
     expect(failing(drift(depth, row, source(5)))).toEqual(NO_FAILURE);
     expect(drift(depth, row, source(6, depthFunction('extra', 6)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });

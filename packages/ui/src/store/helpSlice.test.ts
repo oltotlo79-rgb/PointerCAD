@@ -5,9 +5,10 @@ import { useAppStore } from './useAppStore.js';
 
 beforeEach(() => useAppStore.setState(createInitialDocumentState()));
 describe('ヘルプと文書の分離', () => {
-  it('板金の全5操作から説明を開き、入力欄でも同じ章へ戻れる', () => {
+  it('板金の全6操作から説明を開き、入力欄でも同じ章へ戻れる', () => {
     for (const [kind, topic] of [['sheetBase', 'sheet-metal'], ['sheetFlange', 'sheet-metal-flange'],
-      ['sheetBend', 'sheet-metal-bend-relief'], ['sheetRelief', 'sheet-metal-bend-relief'], ['sheetUnfold', 'sheet-metal-flat']] as const) {
+      ['sheetBend', 'sheet-metal-bend-relief'], ['sheetRelief', 'sheet-metal-bend-relief'], ['sheetConvert', 'sheet-metal'],
+      ['sheetUnfold', 'sheet-metal-flat']] as const) {
       useAppStore.getState().openSheetMetalTool(kind);
       const state = useAppStore.getState();
       expect(contextualHelpTopic(state)).toBe(topic); expect(contextualHelpTopic(state, undefined, true)).toBe(topic);

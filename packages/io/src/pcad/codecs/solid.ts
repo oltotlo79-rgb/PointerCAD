@@ -1,6 +1,7 @@
 /** 部品 JSON: 立体フィーチャーの振り分け。documentJson.ts への逆向きの依存を持たない。 */
 import { readDirectEditFeature, serializeDirectEditFeature } from './directEditOperations.js';
-import { readSheetBaseFeature, readSheetFlangeFeature, readSheetBendFeature, readSheetReliefFeature, serializeSheetMetalFeature } from './sheetMetal.js';
+import { readSheetBaseFeature, readSheetFlangeFeature, readSheetBendFeature, readSheetReliefFeature, readSheetConvertFeature,
+  serializeSheetMetalFeature } from './sheetMetal.js';
 import { readFunctionSurfaceFeature, serializeFunctionSurfaceFeature } from './functionSurface.js';
 
 import {
@@ -92,7 +93,7 @@ import {
 
 export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
   switch (feature.kind) {
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return serializeSheetMetalFeature(feature);
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert': return serializeSheetMetalFeature(feature);
     case 'extrude': return serializeExtrudeFeature(feature);
     case 'revolve': return serializeRevolveFeature(feature);
     case 'sew': return serializeSewFeature(feature);
@@ -145,6 +146,7 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
     case 'sheetFlange': return readSheetFlangeFeature(record.value, path, base.value);
     case 'sheetBend': return readSheetBendFeature(record.value, path, base.value);
     case 'sheetRelief': return readSheetReliefFeature(record.value, path, base.value);
+    case 'sheetConvert': return readSheetConvertFeature(record.value, path, base.value);
     case 'extrude':
       return readExtrudeFeature(record.value, path, base.value);
     case 'revolve':

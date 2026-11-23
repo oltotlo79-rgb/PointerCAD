@@ -236,7 +236,7 @@ function rebuildSweepShape(feature: SweepFeature, map: ValueMapper): SweepFeatur
 
 function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeature {
   switch (feature.kind) {
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return mapSheetMetalExpressions(feature, map);
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert': return mapSheetMetalExpressions(feature, map);
     case 'extrude':
       // 終端(FR-415)・傾き(FR-401)・薄板(FR-416)の欄は省略できる。
       // 省略されている欄は `undefined` のまま残し、既定を書き込まない
@@ -711,7 +711,7 @@ function reevaluateValue(
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
   if (value.mathDefinition !== undefined) {
-    onFailure(plainText('この数式は数学計算部での再計算が必要です。'));
+    onFailure({ key: 'math.error.needsMathEngine', parameters: {} });
     return value;
   }
   const result = evaluateExpression(value.source, { ...options, variables });

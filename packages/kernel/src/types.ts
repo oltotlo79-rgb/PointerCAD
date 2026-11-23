@@ -585,6 +585,8 @@ export interface BooleanStepSpec {
    * **欄が無ければ今までどおり工具 1 個**(段の計算は 1 命令も変わらない)。
    */
   readonly transforms?: readonly RigidTransformSpec[];
+  /** リブのパターンでは toolKey の段が持つ追加材料だけを写す。 */
+  readonly patternTool?: 'rib';
 }
 
 /**

@@ -418,7 +418,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   function onPointerUp(event: PointerEvent): void {
     if (lifetime.disposed || lifetime.activePointerId !== event.pointerId) return;
     if (faceHandle.active()) {
-      // 面の移動のつまみを離した(M-05 4-2a)。距離はもう入力欄に入っているので、掴んでいた控えを落とすだけ。
+      // つまみを離した時だけ窓の回避矩形を更新する。距離はもう入力欄に入っている。
       // 形の計算はしない(確定の時だけ)。
       faceHandle.end();
       releaseActiveCapture();
@@ -524,7 +524,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
     }
     // 面の移動のつまみは、掴んだ入力欄が打ち直し・閉じる・開き直しで替わった時と、文書が替わった時に、書かずに離す(打った数が優先)。
     if (faceHandle.active() && (next.document !== previous.document || !faceHandle.ownsInput(next))) {
-      faceHandle.end();
+      faceHandle.discard();
       releaseActiveCapture();
     }
     if (next.focusViewportRequestCount !== previous.focusViewportRequestCount) {
@@ -541,7 +541,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
       if (drag.active()) drag.stop(false);
       else releaseActiveCapture();
       section.end();
-      faceHandle.end();
+      faceHandle.discard();
       indicators.clearOwnedEdit();
       indicators.clearOwnedIndicators();
       canvas.removeEventListener('pointermove', onPointerMove);

@@ -1,6 +1,7 @@
 import { translateSolidFinite, type SolidFiniteInput } from './solidFiniteTranslation.js';
 import { isSolidFiniteWireResult, type SolidFiniteWireResult } from './solidFiniteBinding.js';
 import { isRecord } from './valueGuards.js';
+import { FEM_REFUSAL_CODES, type FemRefusalCode } from './femCodedError.js';
 import { isSolidContactInput, isSolidContactResult, isSolidContactFailureDiagnostics,
   type SolidContactInput, type SolidContactResult, type SolidContactFailureDiagnostics } from './solidContactBinding.js';
 export { isRecord } from './valueGuards.js';
@@ -199,6 +200,8 @@ export type FemFailureCode = 'asset-missing' | 'asset-corrupt' | 'offline-reques
 export interface FemFailure {
   readonly code: FemFailureCode;
   readonly message: string;
+  /** 解析の断りの種類(0b-4。省略できる。欄の無い返事は FemClient が文から 1 度だけ読む)。ui はこれで見せる文を選び、message を読まない。 */
+  readonly refusal?: FemRefusalCode;
   readonly contactDiagnostics?: SolidContactFailureDiagnostics;
 }
 export type FemResult = SolidFiniteWireResult | SolidContactResult | FrictionContactResult | BeamProofResult | BeamAnalysisResult | BeamModalResult | BeamBucklingResult
@@ -435,6 +438,7 @@ export function isBeamProof(value: unknown): value is BeamProofResult {
 const phases: readonly string[] = ['loading-assets', 'loading-runtime', 'loading-packages', 'solving'];
 const failures: readonly string[] = ['asset-missing', 'asset-corrupt', 'offline-request-denied',
   'runtime-initialization', 'solver-failed', 'invalid-protocol', 'worker-failed', 'deadline'];
+const refusals: readonly string[] = FEM_REFUSAL_CODES;
 export function isReply(value: unknown): value is FemReply {
   if (!isRecord(value) || value.protocol !== FEM_PROTOCOL || !isIdentity(value.identity)) return false;
   if (value.kind === 'phase') return typeof value.phase === 'string' && phases.includes(value.phase);
@@ -452,5 +456,6 @@ export function isReply(value: unknown): value is FemReply {
     || isShellNativeWireResult(value.result);
   return value.kind === 'failure' && isRecord(value.failure) && typeof value.failure.code === 'string'
     && failures.includes(value.failure.code) && boundedText(value.failure.message, 4096)
+    && (!Object.hasOwn(value.failure, 'refusal') || (typeof value.failure.refusal === 'string' && refusals.includes(value.failure.refusal)))
     && (!Object.hasOwn(value.failure, 'contactDiagnostics') || isSolidContactFailureDiagnostics(value.failure.contactDiagnostics));
 }

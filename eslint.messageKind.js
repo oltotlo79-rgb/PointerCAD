@@ -17,12 +17,9 @@ export const MESSAGE_KIND_BASELINE = [
     reason: 'Chromium のネットの誤りは、種類を文(net::ERR_…)でしか渡さない', plannedFix: '直さない(外の仕組みの文)' },
   { file: 'apps/desktop/src/renderer/desktopFileGateway.ts', count: 2, kind: 'boundary',
     reason: 'Electron のプロセスの間の誤りは message しか運べない(目印の定数)', plannedFix: '直さない(プロセスの境目の目印)' },
-  { file: 'packages/fem/src/beamImpactTranslation.ts', count: 1, kind: 'internal',
-    reason: 'fem の中の文の頭(modal-load:)で種類を決めている', plannedFix: '0b-4(fem の失敗の符号)' },
-  { file: 'packages/fem/src/frictionContactTranslation.ts', count: 1, kind: 'internal',
-    reason: 'fem の中の文の完全一致で種類を決めている', plannedFix: '0b-4(fem の失敗の符号)' },
-  { file: 'packages/fem/src/worker.ts', count: 4, kind: 'internal',
-    reason: 'fem が投げる文の頭(asset-missing: など)で失敗の符号を決めている', plannedFix: '0b-4(fem の失敗の符号)' },
+  { file: 'packages/fem/src/femCodedError.ts', count: 7, kind: 'boundary',
+    reason: '計算部(Pyodide・Python)は誤りを包み直し、種類を文(取得の拒否の印・solid-buckling-…: の頭)でしか渡さない。文を読むのは fem のこの 1 か所だけ',
+    plannedFix: '直さない(計算部の境目の 1 か所)' },
   { file: 'packages/model/src/scripting/runtimeErrors.ts', count: 2, kind: 'external',
     reason: '式の実行の仕組みの記憶の不足・呼び出しの深さの超えは、種類を文でしか渡さない', plannedFix: '直さない(外の仕組みの文)' },
   { file: 'packages/ui/src/file/saveFailure.ts', count: 1, kind: 'boundary',
@@ -31,10 +28,6 @@ export const MESSAGE_KIND_BASELINE = [
     reason: '自分で付けた [detail: …] の目印から診断の語を取り出す(種類は reason の符号で決まる)', plannedFix: '直さない(診断の語の取り出し)' },
   { file: 'packages/ui/src/shell/startupRecovery.ts', count: 2, kind: 'external',
     reason: 'ブラウザーの動的な読み込みの失敗は、種類を文でしか渡さない', plannedFix: '直さない(外の仕組みの文)' },
-  { file: 'packages/ui/src/solidAnalysis/cadSolidBuckling.ts', count: 9, kind: 'internal',
-    reason: 'fem の英語の文と訳した文で、座屈の失敗の種類を決めている', plannedFix: '0b-4(fem の失敗の符号)' },
-  { file: 'packages/ui/src/solidAnalysis/solidBoundaryDraft.ts', count: 3, kind: 'internal',
-    reason: 'fem の英語の文で、見せる文を選んでいる', plannedFix: '0b-4(fem の失敗の符号)' },
 ];
 
 /** 誤りの文と見なす式: 欄 X.message(X?.message を含む)と、名前が message の変数・引数。 */

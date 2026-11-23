@@ -2,22 +2,31 @@ import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readSolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { createSolidAnalysisSession, solidSavedInput } from './solidAnalysisSession.js';
-import { createSolidBoundaryDraft, createSolidSupport, solidBoundarySaved,
+import { createSolidBoundaryDraft, createSolidSupport, solidBoundaryFailure, solidBoundarySaved,
   solidGravityExpressionField, solidRunFailure, solidSupportExpressionField } from './solidBoundaryDraft.js';
 import { t } from '../i18n/t.js';
 
 // A-24: 静解析の断り。支持の 3 種(入力の誤り)は今の文、計算部の code は日本語、形状や入力の断りは今のまま。
+// 0b-4: 支持の 3 種は fem の断りの符号(refusal)で見分け、文は読まない(符号は fem の cadSolidAnalysis.test.ts と femCodedError.test.ts が留める)。
 describe('solidRunFailure', () => {
   it.each([
-    ['solver-failed', 'solid-input: Conflicting prescribed displacement on node 3', t('solidAnalysis.supportConflict')],
-    ['solver-failed', 'unrestrained component rigid-body motion', t('solidAnalysis.supportRigid')],
-    ['asset-missing', 'asset-missing: python_stdlib.zip (HTTP 404)', t('strength.femFailure.assetMissing')],
-    ['asset-corrupt', 'asset-corrupt: oofem.whl (SHA-256)', t('strength.femFailure.assetCorrupt')],
-    ['worker-failed', 'FEM Worker error', t('strength.femFailure.runtime').replace('{code}', 'worker-failed')],
-    ['deadline', 'FEM solve exceeded 180000 ms', t('strength.femFailure.runtime').replace('{code}', 'deadline')],
-    ['cad-solid', t('solidAnalysis.changed'), t('solidAnalysis.changed')],
-  ] as const)('%s / %s', (code, message, expected) => {
-    expect(solidRunFailure(code, message)).toBe(expected);
+    [{ code: 'cad-solid', message: 'Conflicting prescribed displacement on a shared node', refusal: 'support-conflict' }, t('solidAnalysis.supportConflict')],
+    [{ code: 'solver-failed', message: 'solid-input: unrestrained component rigid-body motion', refusal: 'rigid-body' }, t('solidAnalysis.supportRigid')],
+    [{ code: 'cad-solid', message: 'Invalid translation restraints', refusal: 'support-all-free' }, t('solidAnalysis.supportAllFree')],
+    [{ code: 'asset-missing', message: 'asset-missing: python_stdlib.zip (HTTP 404)' }, t('strength.femFailure.assetMissing')],
+    [{ code: 'asset-corrupt', message: 'asset-corrupt: oofem.whl (SHA-256)' }, t('strength.femFailure.assetCorrupt')],
+    [{ code: 'worker-failed', message: 'FEM Worker error' }, t('strength.femFailure.runtime').replace('{code}', 'worker-failed')],
+    [{ code: 'deadline', message: 'FEM solve exceeded 180000 ms' }, t('strength.femFailure.runtime').replace('{code}', 'deadline')],
+    [{ code: 'cad-solid', message: t('solidAnalysis.changed') }, t('solidAnalysis.changed')],
+    [{ code: 'cad-solid', message: 'CAD source changed during analysis', refusal: 'stale-source' }, 'CAD source changed during analysis'],
+    [{ code: 'solver-failed', message: 'unrestrained component rigid-body motion' }, t('strength.femFailure.runtime').replace('{code}', 'solver-failed')],
+  ] as const)('%j', (failure, expected) => {
+    expect(solidRunFailure(failure)).toBe(expected);
+  });
+  it('解析の前の断り(solidBoundaryFailure)も支持の 3 種は符号で選び、ほかは文のまま', () => {
+    expect(solidBoundaryFailure({ message: 'Invalid translation restraints', refusal: 'support-all-free' })).toBe(t('solidAnalysis.supportAllFree'));
+    expect(solidBoundaryFailure({ message: t('solidAnalysis.reselect') })).toBe(t('solidAnalysis.reselect'));
+    expect(solidBoundaryFailure({ message: 'CAD source changed during analysis', refusal: 'stale-source' })).toBe('CAD source changed during analysis');
   });
 });
 

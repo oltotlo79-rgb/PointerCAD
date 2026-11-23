@@ -11,6 +11,11 @@ import type { DistanceHandle } from '../solid/faceOffsetHandle.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
 import { HANDLE_PICK_RADIUS_PIXELS } from './sectionHandleDrag.js';
 
+/** 2 つの箱を囲む箱(離した時に、開いた時の避ける箱へ、伸ばした後のつまみの外形を足す)。 */
+export function unionScreenRect(a: ScreenRect, b: ScreenRect): ScreenRect {
+  return { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) };
+}
+
 /** 根もとと先端を写して囲み、掴める半径だけ広げる。どちらかが写せない(カメラの後ろ)時は null。 */
 export function distanceHandleScreenRect(handle: Pick<DistanceHandle, 'base' | 'origin'>, project: ProjectToScreen): ScreenRect | null {
   const base = project(handle.base), tip = project(handle.origin);

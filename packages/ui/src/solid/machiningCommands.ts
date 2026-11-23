@@ -392,15 +392,15 @@ function gatherFilletTargets(context: MachiningContext): readonly SubShapeRef[] 
   return sortSubShapeRefs(dedupeSubShapeRefs([...direct, ...expanded]));
 }
 
-/** パターンの対象(穴・ねじ穴のフィーチャー)を選択から決めた結果。 */
+/** パターンの元を選択から決めた結果。 */
 type PatternSourceOutcome =
   | { readonly ok: true; readonly sourceFeatureId: string }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * パターンで繰り返す穴・ねじ穴を選択から決める。パターンの道具は
+ * パターンで繰り返す立体や加工を選択から決める。パターンの道具は
  * `selectionKind` が `'body'` のままなので(`SELECTION_KIND_FOR_TOOL`)、
- * 立体そのもの(= その穴・ねじ穴フィーチャーの id)を選ぶ。
+ * 立体そのもの、または立体を作った履歴の行を選ぶ。
  */
 function selectedPatternSource(
   document: PartDocument,
@@ -412,8 +412,8 @@ function selectedPatternSource(
   }
   const sourceFeatureId = bodyIds[0];
   const feature = findSolid(document, sourceFeatureId);
-  if (feature === undefined || !isPatternSource(feature)) {
-    return { ok: false, reasonKey: 'machiningError.sourceNotHole' };
+  if (feature === undefined || !isPatternSource(feature, document.solids)) {
+    return { ok: false, reasonKey: 'machiningError.invalidPatternSource' };
   }
   return { ok: true, sourceFeatureId };
 }
@@ -748,7 +748,7 @@ function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageK
 
 /**
  * パターンを 1 つ作る(FR-411、FR-412)。繰り返す穴・ねじ穴が選ばれていなければ
- * `noPatternSource`、選ばれていても穴・ねじ穴でなければ `sourceNotHole`。
+ * 元を選んでいない場合は noPatternSource、対応しない元を選んだ場合は invalidPatternSource。
  *
  * 個数(`placement.count`)が 2〜`MAX_PATTERN_COUNT` の整数か、「両側へ」+偶数個でないかを
  * ここで先に検査して断る(NFR-UX-5)。`resolvePart`も解決のたびに

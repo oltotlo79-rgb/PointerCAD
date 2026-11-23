@@ -78,7 +78,7 @@ function directions(text: string | undefined): ReadonlyMap<string, readonly numb
 const sorted = (values: readonly number[]): readonly number[] => [...values].sort((a, b) => a - b);
 // 密度の表の金属の語に、密度の無い材料の語(樹脂・ゴム・エラストマー)を足す(この語を含む行は、部位ごとに材料の違う行と同じく密度を持たない)。
 const MATERIAL_WORDS: readonly (readonly [string, string])[] = [['アルミ', 'aluminum'], ['ステンレス', 'stainless'], ['鉄', 'steel'], ['鋼', 'steel'],
-  ['樹脂', 'resin'], ['PA', 'resin'], ['PP', 'resin'], ['ナイロン', 'resin'], ['ABS', 'resin'], ['ゴム', 'rubber']];
+  ['樹脂', 'resin'], ['ポリアセタール', 'resin'], ['PA', 'resin'], ['PP', 'resin'], ['ナイロン', 'resin'], ['ABS', 'resin'], ['ゴム', 'rubber']];
 // 英字の前後が英字でない所の材料の記号(樹脂・ゴム・JIS の金属の記号。SPCC の中の PC などを拾わない)と、エラストマー・黄銅・「ステン」。
 const SYMBOLS: readonly (readonly [RegExp, string])[] = [[/(?<![A-Z])POM(?![A-Z])/u, 'resin'], [/(?<![A-Z])(?:L|H)?D?PE(?![A-Z])/u, 'resin'],
   [/(?<![A-Z])PVC(?![A-Z])/u, 'resin'], [/(?<![A-Z])PBT(?![A-Z])/u, 'resin'], [/エラストマー/u, 'elastomer'], [/(?<![A-Z0-9])A[1-7][0-9]{3}/u, 'aluminum'],
@@ -132,11 +132,18 @@ describe('資料 1 の小さい部品の製品の行と照らす側の読み', (
         expect(found.get('横') ?? [], record.key).toContain(record.width);
         expect(found.get('縦') ?? [], record.key).toContain(record.height);
       } else {
-        // 2 本で横と奥行の書き方だけが違う行(統括の決定 2026-11-22): 2 本とも 3 つの数が箱と同じで縦は高さ、横は 2 本で違い、幅は縦と同じ数。
+        // 2 本で横と奥行だけが違う時は、縦と同じ幅、または面を基準に読んだ側の横を採る。
         const other = directions(first);
-        expect([sorted([...other.values()].flat()), other.get('縦'), found.get('縦'), record.width], record.key)
-          .toEqual([box, [record.height], [record.height], record.height]);
+        expect([sorted([...other.values()].flat()), other.get('縦'), found.get('縦')], record.key)
+          .toEqual([box, [record.height], [record.height]]);
         expect(other.get('横'), record.key).not.toEqual(found.get('横'));
+        if (cells['向きの根拠'] === '面の名で読んだ側') {
+          expect([found.get('横'), found.get('奥行'), other.get('横'), other.get('奥行')], record.key)
+            .toEqual([[record.width], [record.depth], [record.depth], [record.width]]);
+          expect([record.width, record.depth], record.key).not.toContain(record.height);
+        } else {
+          expect(record.width, record.key).toBe(record.height);
+        }
       }
       const materials = materialsOf(cells['材質']);
       expect(record.material === 'mixed' ? record.materialText : record.material, record.key)

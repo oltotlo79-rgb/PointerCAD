@@ -603,7 +603,8 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
   switch (step) {
     case 'sweepOptions':
       return [{ key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', value: 'none', presentation: 'menu',
-        options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...(options.sweepGuides ?? [])] }];
+        options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...(options.sweepGuides ?? [])] },
+        ...(options.extrudeTargets === undefined ? [] : solidResultChoices(options))];
     case 'sketchChamferSize':
       return [sketchChamferModeChoice()];
     case 'offsetDistance':
@@ -687,12 +688,14 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     /*
       面をつなぐ(FR-430)の「なめらかさ」。
       **球を含まない断面では形に効かない**ので、そのときは選択肢ごと伏せる。
-      効かない欄を出すと「変えたのに形が変わらない」ことになり、利用者は理由を推し量れない
-      (NFR-UX-5「できないことは示す」の裏返し)。球を含むかどうかはツールバーが選択から
-      見込んで `ruledHasSphere` で渡す。ロフト(`loftTwist`)には球を置けないので選択肢は無い。
+      球を含むかどうかはツールバーが選択から見込んで ruledHasSphere で渡す。
+      ロフトでは球を指定できず、結果と相手だけを選ぶ。
     */
     case 'ruledTwist':
-      return options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : [];
+      return [...(options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : []),
+        ...(options.extrudeTargets === undefined ? [] : solidResultChoices(options))];
+    case 'loftTwist':
+      return options.extrudeTargets === undefined ? [] : solidResultChoices(options);
     /* ---- Should / Could 群 ---- */
     /*
       押し出し(FR-401、FR-415、FR-416)。終わり方と厚みの側もここで聞く。

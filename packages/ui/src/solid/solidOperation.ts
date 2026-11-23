@@ -4,7 +4,8 @@ import { primitiveToolOf } from './primitiveCommands.js';
 
 /** 作成時に結果と相手を選べる道具。 */
 export function supportsSolidOperation(tool: string): boolean {
-  return tool === 'extrude' || tool === 'revolve' || primitiveToolOf(tool) !== null;
+  return tool === 'extrude' || tool === 'revolve' || tool === 'sweep'
+    || tool === 'ruled' || tool === 'loft' || primitiveToolOf(tool) !== null;
 }
 
 /**

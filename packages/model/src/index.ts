@@ -29,11 +29,12 @@ export type { FunctionRecomputeContext } from './functionGeometry/recomputeFunct
 export { FunctionSurfacePlanCache } from './functionGeometry/functionSurfacePlanCache.js';
 export type { FunctionKernelBridge, FunctionCurveGeometryOutcome } from './functionGeometry/functionCurveGeometry.js';
 export { drawingNumberIssue } from './drawing/drawingNumberIssue.js';
-export { defaultSheetMetalRule, createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature } from './sheetMetal/createSheetFeature.js';
+export { defaultSheetMetalRule, createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature,
+  createSheetConvertFeature } from './sheetMetal/createSheetFeature.js';
 export { sheetBoundaryEdges, sheetTangentFrame } from './sheetMetal/panelGeometry.js';
 export type { ResolvedSheetBody } from './sheetMetal/resolveSheetGeometry.js';
 export type { SheetMetalRule, SheetBaseFeature, SheetPanelBoundaryRef, SheetBendRuleOverride, SheetFlangeFeature, SheetFlangeProfile,
-  SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition, SheetMetalFeature } from './sheetMetal/types.js';
+  SheetBendFeature, SheetReliefFeature, SheetConvertFeature, SheetUnfoldDefinition, SheetMetalFeature } from './sheetMetal/types.js';
 export {
   evaluateSheetField,
   resolveSheetRule,
@@ -261,7 +262,7 @@ export type {
   ConstrainedSketchJob,
 } from './sketch/constraints/solveSketch.js';
 export {
-  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, createConstrainedSketchJob, DRAG_PIN_WEIGHT,
+  createConstrainedSketchJob, DRAG_PIN_WEIGHT,
   resolveConstrainedSketch,
 } from './sketch/constraints/solveSketch.js';
 export {
@@ -275,7 +276,7 @@ export {
 /** 球面上の点(FR-431)。 */
 export type { ResolvedSphere } from './sketch/resolveCoordinate.js';
 export {
-  LATITUDE_RANGE_MESSAGE, MISSING_SPHERE_MESSAGE, sphereGridPosition,
+  sphereGridPosition,
 } from './sketch/resolveCoordinate.js';
 export type { SketchResolveOptions } from './sketch/resolveSketch.js';
 export {
@@ -350,6 +351,9 @@ export {
 } from './sketch/projectionMath.js';
 export type { SubShapeCache } from './part/subShapeCache.js';
 export { createSubShapeCache } from './part/subShapeCache.js';
+// 立体を板金へ変える行(M-08)の認識の覚え書き(再計算・測定・書き出し・画面の確かめで持ち回る)と、断る理由の符号。
+export { createSheetRecognitionPass, type SheetRecognitionPass } from './part/sheetRecognitionPass.js';
+export type { SheetConvertLookup, SheetConvertReason } from './sheetMetal/planSheetConvert.js';
 export type { MetricThreadSize, ThreadSeries } from './thread/metricThread.js';
 export {
   DEFAULT_THREAD_DESIGNATION, findMetricThread, METRIC_THREAD_DESIGNATIONS, METRIC_THREADS,
@@ -875,14 +879,13 @@ export { SOLID_FEATURE_KINDS } from './part/createPartDocument.js';
  * ここから出る型には 1 バイトも入らない。
  *
  * `ImportedShapeBytes` は再計算へバイト列を渡す口、`ResolvedMeshBody` は
- * 「段にならないボディ」の解決結果、`IMPORTED_MESH_TARGET_MESSAGE` は
- * 「三角形の形は加工できない」の断りの文言(model が正本)である。
+ * 「段にならないボディ」の解決結果である。「三角形の形は加工できない」の断りの文は ui の文言の表
+ * (partError.importedMesh.notMachinable)が持つ。
  */
 export type {
   ImportedMeshFeature, ImportedSolidFeature, ImportedSource, ImportedSourceFormat,
 } from './part/types.js';
 export type { ImportedShapeBytes } from './part/resolvePart.js';
-export { IMPORTED_MESH_TARGET_MESSAGE } from './part/resolvePart.js';
 export type { ImportedSolidKeyMaterial } from './part/cacheKey.js';
 /**
  * 表示と入力の長さの単位(FR-811、FR-814)。**内部は mm 固定**(NFR-RE-3)で、

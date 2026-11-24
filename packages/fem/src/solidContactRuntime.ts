@@ -4,6 +4,7 @@ import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
 import { decodeSolidContactResult, readSolidContactFailureDiagnostics, verifySolidContactInput,
   type SolidContactFailureDiagnostics, type SolidContactInput, type SolidContactResult } from './solidContactBinding.js';
 import { sha256Hex } from './sha256.js';
+import { FemCodedError } from './femCodedError.js';
 import { isRecord } from './valueGuards.js';
 
 interface SolidContactPrograms {
@@ -29,7 +30,7 @@ export async function analyzeSolidContact(runtime: PyodideRuntime, value: SolidC
   for (const [index, pin] of SOLID_CONTACT_ASSETS.entries()) {
     const bytes = sources[index];
     if (bytes.byteLength !== pin.bytes || await sha256Hex(bytes) !== pin.sha256) {
-      throw new Error(`asset-corrupt: ${pin.file}`);
+      throw new FemCodedError('asset-corrupt', `asset-corrupt: ${pin.file}`);
     }
   }
   onPhase('loading-packages');

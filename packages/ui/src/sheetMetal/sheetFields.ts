@@ -1,6 +1,6 @@
 /** 作成パネルとプロパティが共有する板金の欄。 */
 import type { ExpressionValue } from '@pointercad/expression';
-import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature } from '@pointercad/model';
+import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetMetalFeature } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
 import type { FieldUnit, NumericFieldRange } from '../sketch/numericInput.js';
 
@@ -21,7 +21,8 @@ export const SHEET_FIELD_DEFINITIONS: Readonly<Record<SheetFieldKey, { readonly 
   sheetEndOffset: { labelKey: 'sheetMetal.endOffset', tooltipKey: 'sheetMetal.endOffsetHint', unit: 'mm', range: nonnegative },
 };
 
-export function sheetFieldValues(feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature): readonly (readonly [SheetFieldKey, ExpressionValue])[] {
+export function sheetFieldValues(feature: SheetMetalFeature): readonly (readonly [SheetFieldKey, ExpressionValue])[] {
+  if (feature.kind === 'sheetConvert') return [['sheetRadius', feature.rule.innerRadius], ['sheetKFactor', feature.rule.kFactor]];
   if (feature.kind === 'sheetRelief') return [['sheetReliefPosition', feature.position], ['sheetReliefWidth', feature.width], ['sheetReliefDepth', feature.depth]];
   if (feature.kind === 'sheetBase') return [['sheetThickness', feature.rule.thickness], ['sheetRadius', feature.rule.innerRadius], ['sheetKFactor', feature.rule.kFactor]];
   if (feature.kind === 'sheetBend') return [['sheetAngle', feature.angle],
@@ -35,7 +36,14 @@ export function sheetFieldValues(feature: SheetBaseFeature | SheetFlangeFeature 
   ];
 }
 
-export function setSheetField(feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature, key: string, value: ExpressionValue): SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature {
+export function setSheetField(feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature, key: string, value: ExpressionValue): SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature;
+export function setSheetField(feature: SheetMetalFeature, key: string, value: ExpressionValue): SheetMetalFeature;
+export function setSheetField(feature: SheetMetalFeature, key: string, value: ExpressionValue): SheetMetalFeature {
+  // 立体を板金へ変える行(M-08)は内半径と K 係数だけ。板厚は形から読む。
+  if (feature.kind === 'sheetConvert') {
+    return key === 'sheetRadius' ? { ...feature, rule: { ...feature.rule, innerRadius: value } }
+      : key === 'sheetKFactor' ? { ...feature, rule: { ...feature.rule, kFactor: value } } : feature;
+  }
   if (feature.kind === 'sheetRelief') {
     switch (key) {
       case 'sheetReliefPosition': return { ...feature, position: value };

@@ -243,6 +243,8 @@ function withMeasuredArea(
  * (makeBox.ts の OcctShapeHandle と同じ約束)。
  */
 export interface CachedSolid {
+  /** このキャッシュ項目の delete まで借りられるリブの追加材料。 */
+  readonly ribTool?: TopoDS_Shape;
   readonly surfaceGeometry?: FunctionSurfaceInput;
   readonly shape: TopoDS_Shape;
   readonly triangulation?: KnownTriangulation;
@@ -382,7 +384,9 @@ function createBooleanSolid(
   const target = findStepInput(cache, failedLabels, spec.targetKey);
   const tool = findStepInput(cache, failedLabels, spec.toolKey);
   if (spec.transforms !== undefined) {
-    return booleanPattern(oc, spec, spec.transforms, { shape: target.shape, origins: target.mesh.origins }, tool.shape, featureId);
+    const shape = spec.patternTool === 'rib' ? tool.ribTool : tool.shape;
+    if (shape === undefined) throw new Error(MISSING_INPUT_MESSAGE);
+    return booleanPattern(oc, spec, spec.transforms, { shape: target.shape, origins: target.mesh.origins }, shape, featureId);
   }
   const semantic = featureId !== undefined && target.mesh.origins?.state === 'tracked'
     && tool.mesh.origins?.state === 'tracked'
@@ -660,8 +664,10 @@ function createImportedSolid(
  * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
+type StepShapeHandle = OcctShapeHandle & { readonly ribTool?: TopoDS_Shape };
+
 interface StepSolidResult {
-  readonly handle: OcctShapeHandle;
+  readonly handle: StepShapeHandle;
   readonly threadMarks: readonly ThreadMarkInfo[];
   /**
    * 作り手がすでに測ってある体積(mm³)。無ければ `buildSolidBodyMesh` がその場で測る。
@@ -704,7 +710,7 @@ function makeShellStep(oc: OpenCascadeInstance, spec: Extract<SolidStepSpec, { k
 }
 
 /** ねじの印を持たない段の結果を組み立てる(押し出し・穴・面取り・ばね等)。 */
-function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepSolidResult {
+function noMarks(handle: StepShapeHandle, volume?: number, area?: number): StepSolidResult {
   return { handle, threadMarks: [], volume, area };
 }
 
@@ -1002,7 +1008,7 @@ function createStepSolid(
 function buildCachedSolid(
   oc: OpenCascadeInstance,
   id: string,
-  handle: OcctShapeHandle,
+  handle: StepShapeHandle,
   options: TessellationOptions,
   threadMarks: readonly ThreadMarkInfo[],
   measureAreas: boolean,
@@ -1073,6 +1079,7 @@ function buildCachedSolid(
     const meshWithOrigins: SolidBodyMesh = { ...mesh, origins };
     return {
       shape: handle.shape,
+      ribTool: handle.ribTool,
       mesh: meshWithOrigins,
       triangulation: rememberTriangulation(surface, options),
       tessellation: Object.freeze({ ...options }),
@@ -1428,10 +1435,11 @@ export function recomputeEmptySolids(
     ...(meshJsAccounting === undefined ? {} : { meshJsAccounting }) };
 }
 
-/** Only material-consuming references suppress a failed direct edit's input. */
+/** Only material-consuming references suppress the input of a failed edit or pattern. */
 function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boolean {
   switch (candidate.kind) {
-    case 'boolean':
+    case 'boolean': return candidate.targetKey === source.key
+      || (candidate.transforms === undefined && candidate.toolKey === source.key);
     case 'sheetJoin': return candidate.targetKey === source.key || candidate.toolKey === source.key;
     case 'hole': case 'thread': case 'fillet': case 'chamfer': case 'draft':
     case 'holeTranslate': case 'faceRotate': case 'faceOffset': case 'transform': case 'scale':
@@ -1442,6 +1450,14 @@ function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boole
       && candidate.faces.some(face => face.targetKey === source.key);
     // Mirrors and surface/primitive/section references borrow their input without consuming it.
     default: return false;
+  }
+}
+
+function recoverableTargetKey(step: SolidStepSpec): string | undefined {
+  switch (step.kind) {
+    case 'holeTranslate': case 'faceRotate': case 'faceOffset': case 'thicken': return step.targetKey;
+    case 'boolean': return step.transforms === undefined ? undefined : step.targetKey;
+    default: return undefined;
   }
 }
 
@@ -1456,7 +1472,7 @@ function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boole
  * - **止めずに理由を出す.** 作れなかった段は failures に積んで次の段へ進む。
  *   その段を入力にするブーリアンも、上流の名前を添えた理由で失敗させて続ける(FR-504)。
  * - **消費されたボディは返さない.** visible が false の段はキャッシュに残す。
- *   直接編集が失敗した入力は、別の成功した加工に消費されていなければ表示へ戻す。
+ *   直接編集や立体のパターンが失敗した入力は、別の成功した加工に消費されていなければ表示へ戻す。
  * - **外観の面を選び直す.** 全段を計算し終えたあと、`appearanceQueries` の指紋を
  *   できたボディの面へ照合し直して `appearanceMatches` で返す(FR-1106)。
  *   依頼が無ければこの段は何もせず、OCCT を 1 回も呼ばない。
@@ -1649,9 +1665,9 @@ export async function recomputeSolids(
   const succeeded = new Set([...attempted].filter(id => !failedIds.has(id)));
   for (const step of request.steps) {
     if (cancelled) break;
-    if ((step.step.kind !== 'holeTranslate' && step.step.kind !== 'faceRotate' && step.step.kind !== 'faceOffset' && step.step.kind !== 'thicken')
-      || !failedIds.has(step.id)) continue;
-    const targetKey = step.step.targetKey;
+    if (!failedIds.has(step.id)) continue;
+    const targetKey = recoverableTargetKey(step.step);
+    if (targetKey === undefined) continue;
     const source = request.steps.find(candidate => candidate.key === targetKey);
     const cached = cache.get(targetKey);
     if (source === undefined || cached === undefined || !succeeded.has(source.id)

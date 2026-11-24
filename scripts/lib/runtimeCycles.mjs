@@ -1,6 +1,9 @@
 import fs from 'node:fs';
+import console from 'node:console';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const slash = (value) => value.replaceAll('\\', '/');
@@ -144,4 +147,13 @@ export function inspectRuntimeCycles(rootDir, virtualFiles) {
 
 export function formatRuntimeCycleDiagnostics(result) {
   return [...result.diagnostics, ...result.cycles.map(component => `runtime import cycle group: ${component.join(', ')}`)].join('\n');
+}
+
+// The WIP ticket runs the same graph check independently before named ESLint.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const runtime = inspectRuntimeCycles(process.cwd());
+  if (!runtime.ok) {
+    console.error(formatRuntimeCycleDiagnostics(runtime));
+    process.exitCode = 1;
+  }
 }

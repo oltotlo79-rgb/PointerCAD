@@ -7,9 +7,10 @@
  * `mathGeometryIdentity.ts` に集約し、ここで規則を作り直さない。
  *
  * `validateMathGeometryTolerance` は画面の長さ・角度の各欄に対応した検査と理由を返す。
- * 拒否は機械判定用の `reason` と日本語の `message` を持つ。modelはUIのi18nを参照できないため、
- * `GeometryProblem` や `ReorderRefusal` と同様に、表示できる理由の文もこの層で保持する。
+ * 比較幅の拒否は `invalidTolerance` と、UIで欄ごとの理由を表示するための鍵を返す。
+ * ほかの定義編集の拒否は既存の理由と文を返す。
  */
+import type { FailureText } from '../failureText.js';
 import type { PartDocument } from '../part/types.js';
 import {
   checkMathGeometryName,
@@ -44,11 +45,18 @@ interface MathGeometryDefinitionInput {
 export type MathGeometryDefinitionReason = MathGeometryNameIssue
   | 'duplicateId' | 'notFound' | 'kindMismatch' | 'unitMismatch' | 'notAngle' | 'inUse' | 'invalidTolerance';
 
-export type MathGeometryDefinitionResult =
+type OtherDefinitionReason = Exclude<MathGeometryDefinitionReason, 'invalidTolerance'>;
+type DefinitionEditResult =
   | { readonly ok: true; readonly document: PartDocument }
-  | { readonly ok: false; readonly reason: MathGeometryDefinitionReason; readonly message: string };
+  | { readonly ok: false; readonly reason: OtherDefinitionReason; readonly message: string };
+interface InvalidTolerance {
+  readonly ok: false;
+  readonly reason: 'invalidTolerance';
+  readonly text: FailureText;
+}
+export type MathGeometryDefinitionResult = DefinitionEditResult | InvalidTolerance;
 
-function refuse(reason: MathGeometryDefinitionReason, message: string): MathGeometryDefinitionResult {
+function refuse(reason: OtherDefinitionReason, message: string): DefinitionEditResult {
   return { ok: false, reason, message };
 }
 
@@ -94,20 +102,11 @@ export function validateMathGeometryTolerance(tolerance: MathGeometryTolerance):
   return angularValid ? null : 'angular';
 }
 
-/**
- * The refusal sentence per field. It replaces the former single sentence, which gave 90° as the
- * angle limit where the rule has always been 45°. The reason code stays `invalidTolerance`.
- * The screen shows its own text per field (`mathGeometry.tolerance.error.linear` / `.angular`), not these.
- */
-const INVALID_TOLERANCE_MESSAGES: Readonly<Record<MathGeometryToleranceField, string>> = {
-  linear: '長さの比べる幅は0より大きい有限の数にしてください。',
-  angular: '角度の比べる幅は0より大きく45度より小さい数にしてください。',
-};
-
-/** `invalidTolerance` with the offending field's sentence, or `null` when `tolerance` is valid. */
-function toleranceRefusal(tolerance: MathGeometryTolerance): MathGeometryDefinitionResult | null {
+/** Preserve which comparison field failed when the UI renders the refusal. */
+function toleranceRefusal(tolerance: MathGeometryTolerance): InvalidTolerance | null {
   const field = validateMathGeometryTolerance(tolerance);
-  return field === null ? null : refuse('invalidTolerance', INVALID_TOLERANCE_MESSAGES[field]);
+  return field === null ? null : { ok: false, reason: 'invalidTolerance',
+    text: { key: `mathGeometry.error.definitionTolerance.${field}`, parameters: {} } };
 }
 
 function sameTolerance(a: MathGeometryTolerance, b: MathGeometryTolerance): boolean {
@@ -160,7 +159,7 @@ export function mathGeometryAngleUnitOf(quantity: MathGeometryQuantity): 'degree
  * definition's `id`, `name` and `tolerance` are always kept (only `quantity` changes) — per the screen's
  * "識別番号・名前・比べる幅は保つ".
  */
-export function replaceMathGeometryQuantity(document: PartDocument, id: string, quantity: MathGeometryQuantity): MathGeometryDefinitionResult {
+export function replaceMathGeometryQuantity(document: PartDocument, id: string, quantity: MathGeometryQuantity): DefinitionEditResult {
   const index = indexOf(document, id);
   if (index === -1) return refuse('notFound', MATH_GEOMETRY_NOT_FOUND_MESSAGE);
   const existing = (document.mathGeometry ?? [])[index];
@@ -179,7 +178,7 @@ export function replaceMathGeometryQuantity(document: PartDocument, id: string, 
  * no-op that returns `document` by the same reference (no pointless recomputation; mirrors
  * `part/configurations.ts`'s "nothing changed → same document" convention).
  */
-export function setMathGeometryAngleUnit(document: PartDocument, id: string, unit: 'degree' | 'radian'): MathGeometryDefinitionResult {
+export function setMathGeometryAngleUnit(document: PartDocument, id: string, unit: 'degree' | 'radian'): DefinitionEditResult {
   const index = indexOf(document, id);
   if (index === -1) return refuse('notFound', MATH_GEOMETRY_NOT_FOUND_MESSAGE);
   const existing = (document.mathGeometry ?? [])[index];
@@ -213,7 +212,7 @@ export function setMathGeometryTolerance(document: PartDocument, id: string, tol
  * problem, via `mathGeometryUsage`) rather than deleting out from under a live reference —
  * NFR-UX-5, and the same "先にそちらを直してください" shape as the screen's own message.
  */
-export function removeMathGeometryDefinition(document: PartDocument, id: string): MathGeometryDefinitionResult {
+export function removeMathGeometryDefinition(document: PartDocument, id: string): DefinitionEditResult {
   if (indexOf(document, id) === -1) return refuse('notFound', MATH_GEOMETRY_NOT_FOUND_MESSAGE);
   const usage = mathGeometryUsage(document).get(id);
   if (usage !== undefined) {

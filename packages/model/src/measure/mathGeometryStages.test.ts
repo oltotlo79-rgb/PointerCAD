@@ -7,7 +7,7 @@
  * 呼出し回数、参照先を切った文書、途中段の失敗、関数作図の係数を検査する。
  * 段取りの `planMathGeometryStages` はOCCTを使わない純関数として検査する。
  */
-import { plainText, plainTextValue, type FailureText } from '../failureText.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest, executeFunctionImplicitCurveWorkRequest,
@@ -54,9 +54,9 @@ const ev = expressionValueFromNumber;
 const identity = { documentId: DOCUMENT_ID, documentVersion: 1, editorId: 'test', inputRevision: 1 };
 type Coefficient = MathWorkRequest['coefficients'][number];
 /** measure() の「参照する現在の図形を確認できません」(mathGeometry.ts の missing)。 */
-const MISSING_MESSAGE = '参照する現在の図形を確認できません。参照先を選び直してください。';
+const MISSING_TEXT: FailureText = { key: 'mathGeometry.error.missingReference', parameters: {} };
 /** measure() の「参照先の形を正しく計算できませんでした」(mathGeometry.ts の body)。 */
-const FAILED_SHAPE_MESSAGE = '参照先の形を正しく計算できませんでした。';
+const FAILED_SHAPE_TEXT: FailureText = { key: 'mathGeometry.error.failedShape', parameters: {} };
 
 function calculate(request: MathWorkRequest) {
   const raw = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request }, backend);
@@ -134,9 +134,6 @@ function numberOf(value: number | boolean | string | undefined): number {
 }
 function volumes(result: PartRecomputeResult): ReadonlyMap<string, number> {
   return new Map(result.bodies.map(body => [body.featureId, body.volume]));
-}
-function messageOf(result: PartRecomputeResult, featureId: string): string | undefined {
-  return plainTextValue(result.errors.find(error => error.featureId === featureId)?.text) ?? undefined;
 }
 /** 誤りの鍵と値(0b-3h2。鍵へ移した理由〔測れない測定値を使う係数など〕は、文へ読み戻さずに鍵と値で比べる)。 */
 function textOf(result: PartRecomputeResult, featureId: string): FailureText | undefined {
@@ -246,7 +243,7 @@ describe('段取り(planMathGeometryStages。OCCT を使わない)', () => {
     expect(isMathGeometryValue({ ...real, value: Number.NaN })).toBe(false);
     expect(isMathGeometryValue({ ...base, status: 'value', kind: 'boolean', value: true, representation: 'geometry-double',
       tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE })).toBe(false);
-    expect(isMathGeometryValue({ ...base, status: 'unresolved', reason: 'missing-reference', text: plainText(MISSING_MESSAGE) })).toBe(false);
+    expect(isMathGeometryValue({ ...base, status: 'unresolved', reason: 'missing-reference', text: MISSING_TEXT })).toBe(false);
     expect(unmeasuredMathGeometryOutcomes([volumeOf('g-box1', '箱1体積', 'box-1')], DOCUMENT_ID, 7, plainText('ソリッドを作れませんでした: 切断')))
       .toEqual([{ id: 'g-box1', documentId: DOCUMENT_ID, generation: 7, status: 'unresolved', reason: 'failed-geometry',
         text: plainText('ソリッドを作れませんでした: 切断') }]);
@@ -356,8 +353,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
   it('循環: 形を作る前に付録Cの文で係数を止め、数学の計算部へ送らず、測る形も作らないので値を出さない', async () => {
     const document = cyclic(), calls = recordSolidCalls(), { context, requests } = mathContext(document);
     const result = await recomputePart(document, bridge, { math: context });
-    expect(messageOf(result, '幅B')).toBe(
-      '係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。');
+    expect(textOf(result, '幅B')).toEqual({ key: 'mathGeometry.error.cycle', parameters: { coefficient: '幅B', definition: '箱1体積', shape: '箱1' } });
     expect(textOf(result, 'box-1')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-2']);
     expect(measured(result)).toEqual(new Map([['g-box1', 'unresolved:failed-geometry']]));
@@ -370,8 +366,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
   it('順序違反: 付録Cの文で係数を止めるが、後ろの箱2は作って測る(途中の段は無く recomputeSolids 1回)', async () => {
     const document = usesLater(), calls = recordSolidCalls();
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
-    expect(messageOf(result, '幅B')).toBe(
-      '「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。');
+    expect(textOf(result, '幅B')).toEqual({ key: 'mathGeometry.error.order', parameters: { feature: '箱1', target: '箱2', definition: '箱2体積', coefficient: '幅B' } });
     expect(textOf(result, 'box-1')).toBeDefined();
     expect(numberOf(measured(result).get('g-box2'))).toBeCloseTo(24_000, 6);
     expect(calls()).toEqual([['box-2']]);
@@ -424,7 +419,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     expect(cut.solids.map(feature => feature.id)).toEqual(['box-1']);
     const result = await recomputePart(cut, bridge, { math: mathContext(cut).context });
     expect(result.errors.map(error => [error.featureId, error.text])).toEqual([
-      ['表示用', mathGeometryUnresolvedMessage('箱2体積', '表示用', plainText(MISSING_MESSAGE))]]);
+      ['表示用', mathGeometryUnresolvedMessage('箱2体積', '表示用', MISSING_TEXT)]]);
     expect(result.parameterAnalysis?.variables.has('表示用')).toBe(false);
     expect(result.parameterAnalysis?.variables.get('幅B')).toBeCloseTo(24, 9);
     expect(measured(result).get('g-box2')).toBe('unresolved:missing-reference');
@@ -439,8 +434,8 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     expect(planMathGeometryStages(document)?.stages.map(stage => stage.map(item => item.id))).toEqual([['g-gone'], ['g-box2']]);
     const calls = recordSolidCalls();
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
-    expect(textOf(result, 'P')).toEqual(mathGeometryUnresolvedMessage('消えた体積', 'P', plainText(MISSING_MESSAGE)));
-    expect(textOf(result, 'Q')).toEqual(mathGeometryUnresolvedMessage('箱2体積', 'Q', plainText(FAILED_SHAPE_MESSAGE)));
+    expect(textOf(result, 'P')).toEqual(mathGeometryUnresolvedMessage('消えた体積', 'P', MISSING_TEXT));
+    expect(textOf(result, 'Q')).toEqual(mathGeometryUnresolvedMessage('箱2体積', 'Q', FAILED_SHAPE_TEXT));
     expect(textOf(result, 'box-2')).toBeDefined();
     expect(textOf(result, 'box-3')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-1']);
@@ -466,7 +461,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     const document = nineStages(), calls = recordSolidCalls();
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
     expect(result.errors.map(error => error.featureId)).toEqual(['P9', 'box-10']);
-    expect(messageOf(result, 'P9')).toBe('図形の測定値を使う係数の連なりが上限（8段）を超えています。');
+    expect(textOf(result, 'P9')).toEqual({ key: 'mathGeometry.error.tooDeep', parameters: { limit: '8' } });
     const values = measured(result);
     for (let stage = 1; stage <= 9; stage += 1) expect(numberOf(values.get(`g${String(stage)}`))).toBeCloseTo(24_000, 6);
     const boxes = (count: number) => Array.from({ length: count }, (_, index) => `box-${String(index + 1)}`);

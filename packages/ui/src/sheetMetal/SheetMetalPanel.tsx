@@ -37,7 +37,7 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
   const computeError = useAppStore((state) => state.sheetMetalError);
   const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
   const [profileKey, setProfileKey] = useState(initialProfile === undefined ? '' : faceKey(initialProfile.face));
-  const [targetId, setTargetId] = useState(editing !== undefined && editing.kind !== 'sheetBase' ? editing.targetFeatureId : '');
+  const [targetId, setTargetId] = useState(editing !== undefined && editing.kind !== 'sheetBase' && editing.kind !== 'sheetConvert' ? editing.targetFeatureId : '');
   const [panelId, setPanelId] = useState(editing?.kind === 'sheetBend' ? editing.panelId : '');
   const [lineKey, setLineKey] = useState(editing?.kind === 'sheetBend' ? JSON.stringify([editing.line.sketchId, editing.line.lineFeatureId]) : '');
   const [fixedSide, setFixedSide] = useState<SheetBendFeature['fixedSide']>(editing?.kind === 'sheetBend' ? editing.fixedSide : 'right');
@@ -57,7 +57,10 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
   const [overrideK, setOverrideK] = useState((editing?.kind === 'sheetFlange' || editing?.kind === 'sheetBend') && editing.rule.kFactor !== null);
   const [invalidField, setInvalidField] = useState<SheetFieldKey | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const resolved = useMemo(() => resolvePart(sheetInputDocument(document, editing)), [document, editing]);
+  // 計算完了時に、同じ lookup に入った認識の答えで変換した板金の対象を解き直す。
+  const recognition = useAppStore((state) => state.isComputing ? null : state.sheetRecognitionLookup);
+  const resolved = useMemo(() => resolvePart(sheetInputDocument(document, editing), recognition === null ? {} : { sheetRecognition: recognition }),
+    [document, editing, recognition]);
   const sheetBodies = editing === undefined ? liveSheetBodies : resolved.sheetMetalBodies;
   const faces = document.sketches.flatMap((sketch) => sketch.features.filter((feature) => feature.kind === 'face')
     .map((feature) => ({ ref: { sketchId: sketch.id, faceFeatureId: feature.id }, name: `${sketch.name} / ${feature.name}` })));
@@ -132,7 +135,8 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     if (state.sheetMetalTool !== session || state.activeDocumentId !== session.documentId || state.document !== session.document
       || state.assembly !== null || state.drawing !== null || state.isComputing || candidate === null || missingReferences) return;
     const options = { variables: state.parameterAnalysis.variables, exactVariables: state.parameterAnalysis.exactVariables,
-      nonLengthVariables: state.nonLengthVariables, pendingVariables: pendingFieldVariables(state) };
+      nonLengthVariables: state.nonLengthVariables, pendingVariables: pendingFieldVariables(state),
+      ...(state.sheetRecognitionLookup === null ? {} : { sheetRecognition: state.sheetRecognitionLookup }) };
     const result = buildSheetCreation(state.document, candidate, sources, lengthUnit, options, editing, millimetreSourceKeys);
     if (!result.ok) { setMessage(result.message); setInvalidField(result.field ?? null); return; }
     void applySheetCreation(session, result, commit);

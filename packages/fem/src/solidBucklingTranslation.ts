@@ -1,6 +1,7 @@
 import { sha256Hex } from './sha256.js';
 import type { SolidBucklingInput, SolidBucklingPlan } from './solidBucklingModel.js';
 import { solidNumber, solidRecord, translateSolidAnalysis } from './solidAnalysisTranslation.js';
+import { FemRefusalError } from './femCodedError.js';
 
 export const SOLID_BUCKLING_MAX_MODES = 12;
 
@@ -17,7 +18,7 @@ export function translateSolidBuckling(value: unknown): { input: SolidBucklingIn
   }
   const { forcesN, fixed } = reference.plan;
   const freeDofs = fixed.reduce((sum, flags) => sum + flags.filter(flag => !flag).length, 0);
-  if (freeDofs < modeCount) throw new Error('solid-buckling-supports: insufficient free degrees of freedom');
+  if (freeDofs < modeCount) throw new FemRefusalError('supports', 'solid-buckling-supports: insufficient free degrees of freedom');
   if (!forcesN.some((force, node) => force.some((component, axis) => component !== 0 && !fixed[node][axis]))) {
     throw new Error('solid-buckling-load: zero reference load on free degrees of freedom');
   }

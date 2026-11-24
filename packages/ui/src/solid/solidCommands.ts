@@ -1029,12 +1029,16 @@ export function commitSolidInput(
       }
       return { ok: true, document: replaceSketch(document, next), featureId: created.id };
     }
-    // 面をつなぐ・ロフト(FR-430、FR-410)。対象を消費しない「作る」
-    // フィーチャーなので、加工ではなくここから `ruledCommands.ts` へ渡す。
+    // 面をつなぐ・ロフト(FR-430、FR-410)の作成は ruledCommands に任せ、
+    // 結合・切り抜きが選ばれていれば作った形を工具にする。
     case 'ruled':
     case 'loft': {
       const context: RuledContext = { document, bodies, selection };
-      return commitRuledInput(context, commit);
+      return commitSolidResult(document, commit.shapeChoices, () => commitRuledInput(context, commit));
+    }
+    case 'sweep': {
+      const context: MachiningContext = { document, selection, bodies };
+      return commitSolidResult(document, commit.shapeChoices, () => commitShapeEdit(context, commit, 'sweep'));
     }
     /*
       Should 群 11 種。押せる条件と同じく `shapeEditCommands.ts` へ
@@ -1048,7 +1052,6 @@ export function commitSolidInput(
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
-    case 'sweep':
     case 'rib':
     case 'emboss':
     case 'threadShaft':

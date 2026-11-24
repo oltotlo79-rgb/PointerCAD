@@ -4,7 +4,6 @@
  * 全依頼を実際の数学計算部で検査する。改名は形状を変えないため、形状計算部は不要。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { plainText } from '../failureText.js';
 import { collectMathCoefficients, evaluateExpression, mathScalarExpression, type ExpressionValue,
   type StoredMathExpression } from '@pointercad/expression';
 import { createMathBackend, executeMathWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
@@ -180,7 +179,7 @@ describe('図形の測定値の名前の変更(renameDocumentMathGeometry)', () 
     const before = JSON.stringify(original);
     const { requests, context } = run(original);
     const result = await renameDocumentMathGeometry(original, 'g1', name, context);
-    expect(result).toEqual({ ok: false, cancelled: false, reason, text: plainText('図形の測定値の新しい名前が不正、または既に使われています。') });
+    expect(result).toEqual({ ok: false, cancelled: false, reason, text: { key: 'math.error.geometryRename.invalidName', parameters: {} } });
     expect(requests).toHaveLength(0);
     expect(JSON.stringify(original)).toBe(before);
   });
@@ -202,7 +201,7 @@ describe('図形の測定値の名前の変更(renameDocumentMathGeometry)', () 
     const original = part([], definitions);
     const { requests, context } = run(original);
     expect(await renameDocumentMathGeometry(original, id, '箱1体積', context)).toEqual(
-      { ok: false, cancelled: false, reason: 'notFound', text: plainText('名前を変える図形の測定値がありません。') });
+      { ok: false, cancelled: false, reason: 'notFound', text: { key: 'math.error.geometryRename.notFound', parameters: {} } });
     expect(requests).toHaveLength(0);
   });
 
@@ -223,13 +222,13 @@ describe('図形の測定値の名前の変更(renameDocumentMathGeometry)', () 
         } },
       });
       const result = await renameDocumentMathGeometry(original, 'g1', '箱1体積', context);
-      expect(result).toEqual({ ok: false, cancelled: true, reason: 'cancelled', text: plainText('図形の測定値の名前の変更を中止しました。') });
+      expect(result).toEqual({ ok: false, cancelled: true, reason: 'cancelled', text: { key: 'math.error.geometryRename.cancelled', parameters: {} } });
       expect(result).not.toHaveProperty('document');
       expect(JSON.stringify(original)).toBe(before);
     });
 
   const missing: MathGeometryOutcome = { id: 'g1', documentId: DOCUMENT_ID, generation: 3, status: 'unresolved',
-    reason: 'missing-reference', text: plainText('参照する現在の図形を確認できません。参照先を選び直してください。') };
+    reason: 'missing-reference', text: { key: 'mathGeometry.error.missingReference', parameters: {} } };
   it.each([
     ['測った値がまだ無い(計算待ち)', new Map<string, MathGeometryOutcome>(), mathGeometryPendingMessage('箱1体積')],
     ['参照先が見つからず測れない', new Map([['g1', missing]]), mathGeometryUnresolvedMessage('箱1体積', 'P', missing.text)],
@@ -243,7 +242,7 @@ describe('図形の測定値の名前の変更(renameDocumentMathGeometry)', () 
     const original = part([row('P', math('coef("古い名前")*2', [{ ...G, label: '古い名前' }]), 'coefficient:2')]);
     const { requests, context } = run(original);
     expect(await renameDocumentMathGeometry(original, 'g1', '箱1体積', context)).toEqual(
-      { ok: false, cancelled: false, reason: 'unverifiedReference', text: plainText('保存された式の参照先を確認できません。') });
+      { ok: false, cancelled: false, reason: 'unverifiedReference', text: { key: 'math.error.geometryRename.unverifiedReference', parameters: {} } });
     expect(requests).toHaveLength(0);
   });
 
@@ -299,7 +298,7 @@ describe('係数の改名と図形の測定値(renameDocumentMathParameter)', ()
     const before = JSON.stringify(original);
     const { requests, context } = run(original);
     const result = await renameDocumentMathParameter(original, 'A', 'G', context);
-    expect(result).toEqual({ ok: false, cancelled: false, text: plainText('係数の新しい名前が不正、または既に使われています。') });
+    expect(result).toEqual({ ok: false, cancelled: false, text: { key: 'math.error.rename.invalidName', parameters: {} } });
     expect(requests).toHaveLength(0);
     expect(JSON.stringify(original)).toBe(before);
   });
@@ -309,7 +308,7 @@ describe('係数の改名と図形の測定値(renameDocumentMathParameter)', ()
       row('P', math('coef("古い名前")*2+coef("A")', [{ ...G, label: '古い名前' }, A]), 'coefficient:2')]);
     const { requests, context } = run(original);
     expect(await renameDocumentMathParameter(original, 'A', '幅', context)).toEqual(
-      { ok: false, cancelled: false, text: plainText('保存された係数の参照先を確認できません。') });
+      { ok: false, cancelled: false, text: { key: 'math.error.rename.unverifiedStoredReference', parameters: {} } });
     expect(requests).toHaveLength(0);
   });
 

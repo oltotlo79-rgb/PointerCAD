@@ -459,6 +459,7 @@ export const createSketchSlice: StateCreator<
     set({ pickAnchor, pickAvoidRect: avoid ?? null });
   },
   setNumericInputAvoid: (numericInputAvoid) => {
-    set((state) => (state.numericInput === null ? {} : { numericInputAvoid }));
+    // 閉じている時は同じ状態を返す(空の差分を返すと、変わっていないのに購読へ知らせが出る)。
+    set((state) => (state.numericInput === null ? state : { numericInputAvoid }));
   },
 });

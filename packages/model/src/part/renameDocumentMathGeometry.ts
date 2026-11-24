@@ -51,14 +51,14 @@ export async function renameDocumentMathGeometry(original: PartDocument, definit
   const current = () => !context.signal?.aborted && context.isCurrent() && context.identity.documentId === original.id;
   const refuse = (reason: MathGeometryRenameReason, text: FailureText): MathGeometryRenameResult =>
     ({ ok: false, cancelled: !current(), reason, text });
-  const stopped = (): MathGeometryRenameResult => refuse('cancelled', plainText('図形の測定値の名前の変更を中止しました。'));
+  const stopped = (): MathGeometryRenameResult => refuse('cancelled', { key: 'math.error.geometryRename.cancelled', parameters: {} });
   if (!current()) return stopped();
   const targets = (original.mathGeometry ?? []).filter(definition => definition.id === definitionId);
-  if (targets.length !== 1) return refuse('notFound', plainText('名前を変える図形の測定値がありません。'));
+  if (targets.length !== 1) return refuse('notFound', { key: 'math.error.geometryRename.notFound', parameters: {} });
   const target = targets[0];
   if (target.name === newName) return { ok: true, document: original };
   const issue = checkMathGeometryName(original, newName, definitionId);
-  if (issue !== null) return refuse(issue, plainText('図形の測定値の新しい名前が不正、または既に使われています。'));
+  if (issue !== null) return refuse(issue, { key: 'math.error.geometryRename.invalidName', parameters: {} });
   try {
     const coefficientId = mathGeometryCoefficientId(definitionId);
     // The label each referenced ID must carry now: coefficients by math ID, measured values by definition name.
@@ -76,7 +76,7 @@ export async function renameDocumentMathGeometry(original: PartDocument, definit
       const references = collectMathCoefficients(formula.expression);
       if (!references.some(reference => reference.id === coefficientId)) continue;
       if (references.some(reference => labels.get(reference.id) !== reference.label)) {
-        return refuse('unverifiedReference', plainText('保存された式の参照先を確認できません。'));
+        return refuse('unverifiedReference', { key: 'math.error.geometryRename.unverifiedReference', parameters: {} });
       }
       revision += 1;
       const scope = scopes.get(formula);
@@ -90,14 +90,14 @@ export async function renameDocumentMathGeometry(original: PartDocument, definit
       }, 5_000, context.signal);
       if (!current()) return stopped();
       if (completion.status !== 'result' || completion.result.renamedDefinition == null) {
-        return refuse('rewriteFailed', plainText('数式の参照先を保った名前の変更ができませんでした。'));
+        return refuse('rewriteFailed', { key: 'math.error.geometryRename.rewriteFailed', parameters: {} });
       }
       replacements.set(formula, completion.result.renamedDefinition);
     }
     const result = await evaluateDocumentMath(synchronizeConfigurations(relabel(original, replacements, definitionId, newName)), context);
     if (!current()) return stopped();
     return result.ok ? { ok: true, document: result.document }
-      : refuse('invalidDocument', result.failures[0]?.text ?? plainText('名前を変えた文書を計算し直せませんでした。'));
+      : refuse('invalidDocument', result.failures[0]?.text ?? { key: 'math.error.geometryRename.invalidDocument', parameters: {} });
   } catch (error) {
     if (!current()) return stopped();
     return refuse('rewriteFailed', plainText(error instanceof Error ? error.message : '図形の測定値の名前を変更できませんでした。'));

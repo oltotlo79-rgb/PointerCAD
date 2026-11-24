@@ -138,7 +138,7 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
     return { kind: 'solid', tool: 'extrude', step: 'extrudeDistance', values: { distance: expressionValueFromNumber(5) },
       flags: {}, shapeChoices: { extrudeOperation: operation, extrudeTarget: target } };
   }
-  async function ready(tool: 'extrude' | 'revolve' | 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' = 'extrude', document = part()) {
+  async function ready(tool: 'extrude' | 'revolve' | 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' | 'sweep' | 'loft' | 'ruled' = 'extrude', document = part()) {
     useAppStore.getState().applyDocument(document);
     const control = attachControlled();
     control.calls[0].settle(success(control.calls[0], ['extrude']));
@@ -149,6 +149,67 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
     useAppStore.getState().updateNumericInput(input);
     return { ...control, document, input };
   }
+
+  it.each([
+    ['sweep', 'path'], ['loft', 'section'], ['ruled', 'section'],
+  ] as const)('%s の結合は失敗後にやり直せ、成功時に作成と結合を一度に採用する', async (tool, second) => {
+    const base = part();
+    const sketch = appendFeature(appendFeature(base.sketches[0], {
+      id: 'path', name: 'Path', planeId: 'xy', kind: 'line', construction: false,
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(0, 0, 20),
+    }), {
+      id: 'section', name: 'Section', planeId: 'xy', kind: 'face', color: DEFAULT_FACE_COLOR,
+      boundary: [{ featureId: 'rect' }],
+    });
+    const { calls, detach, document, input } = await ready(tool, replaceSketch(base, sketch));
+    try {
+      const store = useAppStore.getState();
+      store.setSelection(['face', second]);
+      const operation = chooseNumericInput(input, 'extrudeOperation', 'join');
+      const chosen = chooseNumericInput(operation, 'extrudeTarget', 'extrude');
+      const confirm = () => applyNumericTransition(commitNumericInput(chosen));
+      confirm();
+      expect(calls).toHaveLength(2);
+      const failed = calls[1];
+      const created = failed.document.solids.at(-2);
+      const combined = failed.document.solids.at(-1);
+      if (created === undefined || combined === undefined) throw new Error('Missing staged solid');
+      expect(created.kind).toBe(tool);
+      expect(combined).toMatchObject({ kind: 'boolean', operation: 'union',
+        targetFeatureId: 'extrude', toolFeatureId: created.id });
+      failed.settle({ ...success(failed, ['extrude']),
+        errors: [{ featureId: created.id, code: 'kernelFailed', text: plainText('open or invalid solid') }] });
+      await vi.waitFor(() => expect(useAppStore.getState().stagedSolid?.failure).toBe('failed'));
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().undoStack).toBe(store.undoStack);
+      expect(useAppStore.getState().numericInput).toEqual(chosen);
+
+      // Correcting the operation drops a definite geometry failure's owner.
+      const corrected = chooseNumericInput(chosen, 'extrudeOperation', 'cut');
+      const retried = chooseNumericInput(corrected, 'extrudeTarget', 'extrude');
+      useAppStore.getState().updateNumericInput(retried);
+      const next = commitNumericInput(retried);
+      previewExtrudeTransition(next);
+      expect(calls).toHaveLength(3);
+      const retry = calls[2];
+      expect(retry.document.solids.at(-1)).toMatchObject({ kind: 'boolean', operation: 'subtract' });
+      const retryId = retry.document.solids.at(-1)?.id;
+      if (retryId === undefined) throw new Error('Missing retry result');
+      retry.settle(success(retry, [retryId]));
+      await vi.waitFor(() => expect(useAppStore.getState().stagedSolid?.status).toBe('ready'));
+      applyNumericTransition(next);
+      await vi.waitFor(() => expect(useAppStore.getState().numericInput).toBeNull());
+      expect(useAppStore.getState().document).toBe(retry.document);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(store.undoStack.past.length + 1);
+      expect(useAppStore.getState().selection).toEqual([retryId]);
+      useAppStore.getState().undo();
+      expect(useAppStore.getState().document).toBe(document);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toBe(retry.document);
+      const reopened = parseDocument(serializeDocument(retry.document));
+      expect(reopened.ok && reopened.document.solids).toEqual(retry.document.solids);
+    } finally { detach(); }
+  });
 
   it.each(['success', 'middle-error', 'missing-first'] as const)('複数面の一括確定 %s', async result => {
     const base = part();

@@ -16,7 +16,7 @@ import type { PartDocument } from '../part/types.js';
 import { mathGeometryCoefficientId, mathGeometryReferencesOf } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
 import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
-import { plainText, type FailureText } from '../failureText.js';
+import type { FailureText } from '../failureText.js';
 
 /* ---------------------------------------------------------------------------
  * Operations allowed in a formula computed from a measured value
@@ -220,7 +220,7 @@ export function mathGeometryCoefficientValue(document: PartDocument, definition:
   }
   if (outcome.kind === 'boolean') return { status: 'boolean' };
   if (!Number.isFinite(outcome.value)) {
-    return { status: 'unresolved', reason: 'failed-geometry', text: plainText('図形から有限で妥当な測定値を取得できませんでした。') };
+    return { status: 'unresolved', reason: 'failed-geometry', text: { key: 'mathGeometry.error.nonFiniteValue', parameters: {} } };
   }
   return { status: 'value',
     coefficient: { id: mathGeometryCoefficientId(definition.id), label: definition.name, decimal: String(outcome.value) } };
@@ -233,7 +233,7 @@ export function mathGeometryCoefficientValue(document: PartDocument, definition:
 
 /** 「参照先の不一致」: the definition is missing, renamed without this reference, or ambiguous. */
 export function mathGeometryReferenceMismatchMessage(label: string): FailureText {
-  return plainText(`図形の測定値の参照先を確認できません: ${label}`);
+  return { key: 'mathGeometry.error.referenceMismatch', parameters: { label } };
 }
 
 /** 「測れない」: `reason` is the measuring code's own sentence. */
@@ -243,20 +243,20 @@ export function mathGeometryUnresolvedMessage(definitionName: string, coefficien
 
 /** 「真偽」. */
 export function mathGeometryBooleanMessage(definitionName: string): FailureText {
-  return plainText(`平行・垂直などの判定の結果は係数の式に使えません: ${definitionName}`);
+  return { key: 'mathGeometry.error.booleanResult', parameters: { definitionName } };
 }
 
 /** 「演算」. */
 export function mathGeometryOperationMessage(operation: string): FailureText {
-  return plainText(`図形の測定値から計算する式では「${operation}」を使えません。値の境目で結果が変わる計算は使えません。`);
+  return { key: 'mathGeometry.error.discontinuousOperation', parameters: { operation } };
 }
 
 /** Not a refusal: the value is simply not measured yet in this recomputation ("計算待ち"). */
 export function mathGeometryPendingMessage(definitionName: string): FailureText {
-  return plainText(`図形の測定値「${definitionName}」を計算中です。形の計算が終わると使えます。`);
+  return { key: 'mathGeometry.error.pending', parameters: { definitionName } };
 }
 
 /** Only a coefficient's own formula may read a measured value. */
 export function mathGeometryOutsideCoefficientMessage(label: string): FailureText {
-  return plainText(`図形の測定値は係数の式の中でだけ使えます: ${label}`);
+  return { key: 'mathGeometry.error.outsideCoefficient', parameters: { label } };
 }

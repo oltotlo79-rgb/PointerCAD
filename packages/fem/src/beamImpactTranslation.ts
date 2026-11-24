@@ -1,4 +1,4 @@
-import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
+import { exceedsMagnitude, InputIssue } from '@pointercad/model/beam-analysis';
 import { isFiniteNumber, isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
@@ -137,7 +137,7 @@ export function translateBeamImpact(value: unknown): { readonly input: BeamImpac
   try {
     prepared = translateBeamModal(row.geometry);
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('modal-load:')) {
+    if (error instanceof InputIssue && error.code === 'modal-load') {
       throw new Error('impact-load: external loads are not supported; the response starts from initial velocities only', { cause: error });
     }
     throw new Error(`impact-input: ${error instanceof Error ? error.message : 'invalid beam input'}`, { cause: error });

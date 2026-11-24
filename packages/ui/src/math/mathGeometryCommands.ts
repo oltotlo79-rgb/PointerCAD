@@ -56,7 +56,10 @@ function refusalMessage(reason: MathGeometryDefinitionReason | MathGeometryRenam
 
 function publish(state: MathGeometryCommandState, owner: PartDocument,
   result: MathGeometryDefinitionResult): MathGeometryCommandResult {
-  if (!result.ok) return { ...result, message: refusalMessage(result.reason, result.message) };
+  if (!result.ok) {
+    const message = result.reason === 'invalidTolerance' ? failureMessage(result.text) : refusalMessage(result.reason, result.message);
+    return { ok: false, reason: result.reason, message };
+  }
   if (result.document !== owner) state.applyDocument(result.document);
   return { ok: true };
 }

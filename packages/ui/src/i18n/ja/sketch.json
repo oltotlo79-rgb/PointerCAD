@@ -282,7 +282,7 @@
   "shapeError.noFlatFace": "平らな面が選ばれていません。",
   "shapeError.notCylinderFace": "ねじを切れるのは丸い軸の面だけです。",
   "shapeError.noPatternPoints": "置き場所にする点を 2 つ以上選んでください。",
-  "shapeError.noPatternSource": "並べる加工が選ばれていません。",
+  "shapeError.noPatternSource": "並べる立体や加工が選ばれていません。",
   "shapeError.noSurfaceSource": "曲面のもとになる輪郭も面も選ばれていません。",
   "shapeError.noCutPlane": "切る面を決めるものが足りません。決め方に合わせて点・辺・面を選んでください。",
   "shapeError.notYetAvailable": "この道具はまだ使えません。",

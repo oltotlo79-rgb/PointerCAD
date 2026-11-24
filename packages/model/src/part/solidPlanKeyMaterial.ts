@@ -14,7 +14,8 @@ import {
 /** 通常の和・差では配置を省き、工具の向きや位置が変わったパターンだけ新しい鍵にする。 */
 function booleanToolMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'boolean' }>) {
   return { toolKey: plan.toolKey,
-    ...(plan.transforms === undefined ? {} : { transforms: plan.transforms.map(toKeyTransform) }) };
+    ...(plan.transforms === undefined ? {} : { transforms: plan.transforms.map(toKeyTransform) }),
+    ...(plan.patternTool === undefined ? {} : { patternTool: plan.patternTool }) };
 }
 
 /** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。辺からの距離の辺は指紋の文字列にする(M-02)。 */

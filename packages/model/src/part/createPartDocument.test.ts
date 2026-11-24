@@ -627,6 +627,7 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       sheetFlange: 'フランジ',
   sheetBend: '指定線で曲げる',
   sheetRelief: '曲げリリーフ',
+  sheetConvert: '板金へ変換',
       extrude: '押し出し',
       revolve: '回転',
       sew: '縫合',
@@ -781,7 +782,7 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('厚み付けを含む種類ごとの既定名は44個', () => {
+  it('厚み付けと板金へ変換を含む種類ごとの既定名は45個', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
     // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
@@ -790,8 +791,9 @@ describe('加工フィーチャーとばねの名前・id の採番(P3 タスク
     // P6 タスク20 で読み込んだ形のベースボディ 2 種(FR-802、§2.8)が増えて 32 → 34 になった。
     // P10の板金基板・フランジ・指定線曲げを含む。EX-18 の平らな面の移動で 39 → 40 になった。
     // EX-04 の面による切断を足して 40 → 41 になった。
+    // M-08 の板金へ変換(sheetConvert)を足して 44 → 45。
     // 全キーの一致は上の独立した表で検査する。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(44);
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(45);
     expect(SOLID_LABELS.faceOffset).toBe('面の移動');
     expect(SOLID_LABELS.functionSurface).toBe('関数曲面');
     expect(SOLID_LABELS.hole).toBe('穴');
@@ -1067,14 +1069,42 @@ describe('加工・パターン・ばねの消費の判定(§0.a-0.5、§0.a-0.2
     expect(isPatternSource(buildLinearPattern(withHole, hole.id))).toBe(false);
   });
 
-  it('履歴があると作成行と和差の対を選べ、加工辺を選び直す行は対象外になる', () => {
+  it('履歴があると作成行と直後の和差を選べ、離れた作成行との組は対象外になる', () => {
     const { document, target, tool, subtract } = documentWithSubtract();
     expect(isPatternSource(target, document.solids)).toBe(true);
     expect(isPatternSource(subtract, document.solids)).toBe(true);
+    const union: BooleanFeature = { ...subtract, operation: 'union' };
+    expect(isPatternSource(union, replaceSolid(document, subtract.id, union).solids)).toBe(true);
     expect(isPatternSource(subtract, [tool, target, subtract])).toBe(false);
-    for (const row of [buildFillet(document, target.id), buildChamfer(document, target.id), buildRib(document, target.id)]) {
-      expect(isPatternSource(row, [...document.solids, row])).toBe(false);
+  });
+
+  it('履歴に加工対象があってもR面取りとC面取りはパターンの対象外になる', () => {
+    const { document, subtract } = documentWithSubtract();
+    for (const row of [buildFillet(document, subtract.id), buildChamfer(document, subtract.id)]) {
+      expect(isPatternSource(row, appendSolid(document, row).solids)).toBe(false);
     }
+  });
+
+  it('輪郭と土台がそろったリブは履歴を渡すとパターンの対象になる', () => {
+    const { document: base, faceRef } = documentWithFace();
+    const sketch = activeSketch(base);
+    const line: SketchLineFeature = {
+      id: nextFeatureId(sketch, 'line'),
+      name: nextFeatureName(sketch, 'line'),
+      planeId: 'xz',
+      kind: 'line',
+      from: absoluteCoordinate(10, 15, 20),
+      to: absoluteCoordinate(30, 15, 20),
+      construction: false,
+    };
+    const withProfile = replaceSketch(base, appendFeature(sketch, line));
+    const plate = buildExtrude(withProfile, faceRef);
+    const withPlate = appendSolid(withProfile, plate);
+    const rib: RibFeature = { ...buildRib(withPlate, plate.id), profile: { sketchId: sketch.id, curveIds: [line.id] } };
+    const document = appendSolid(withPlate, rib);
+    expect(liveBodyIds(document)).toEqual([rib.id]);
+    expect(isPatternSource(rib, document.solids)).toBe(true);
+    expect(isPatternSource(rib)).toBe(false);
   });
 
   it('穴は対象の押し出しを消費し、穴だけが残る', () => {
@@ -1392,7 +1422,7 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('板金と関数曲面・面の移動を含む36種で、数え漏れは型検査で落ちる', () => {
+  it('板金と関数曲面・面の移動・板金へ変換を含む37種で、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
@@ -1409,6 +1439,7 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       sheetFlange: true,
       sheetBend: true,
       sheetRelief: true,
+      sheetConvert: true,
       extrude: true,
       revolve: true,
       sew: true,
@@ -1442,20 +1473,22 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       importedSolid: true,
       importedMesh: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(36);
+    // M-08 の板金へ変換(sheetConvert)を足して 37。
+    expect(Object.keys(kinds)).toHaveLength(37);
   });
 
   it(
-    'SOLID_FEATURE_KINDS(実行時の一覧、P10板金と関数曲面・面の移動を含む)は36種を重複なく持ち、' +
+    'SOLID_FEATURE_KINDS(実行時の一覧、P10板金と関数曲面・面の移動・板金へ変換を含む)は37種を重複なく持ち、' +
       '上のテストで手で数え上げた表(SolidFeatureKind そのものの網羅の確かめ)と同じ集合になる',
     () => {
-      expect(SOLID_FEATURE_KINDS).toHaveLength(36);
-      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(36);
+      expect(SOLID_FEATURE_KINDS).toHaveLength(37);
+      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(37);
       const kinds: Readonly<Record<SolidFeatureKind, true>> = {
         sheetBase: true,
         sheetFlange: true,
       sheetBend: true,
       sheetRelief: true,
+        sheetConvert: true,
         extrude: true,
         revolve: true,
         sew: true,
@@ -1740,7 +1773,7 @@ describe('Should 群の消費・加工・パターンの対象(P5 §2.11、タ�
     );
   });
 
-  it('新しい種類はどれもパターンの対象にならない(§0.a-0.42)', () => {
+  it('履歴を省略した従来のパターン判定は追加の加工や立体を受け付けない', () => {
     const { document: withFace, faceRef } = documentWithFace();
     const extrude = buildExtrude(withFace, faceRef);
     const document = appendSolid(withFace, extrude);

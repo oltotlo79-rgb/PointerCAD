@@ -1,4 +1,4 @@
-import { plainText } from '../failureText.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, SUB_SHAPE_MATCH_THRESHOLD } from '@pointercad/kernel';
@@ -128,7 +128,7 @@ function positionAt(body: SolidBody, reference: SubShapeRef, index: number): Vec
     case 'vertex': return body.vertices.find(vertex => vertex.index === index)?.position;
   }
 }
-const AMBIGUOUS_MESSAGE = '形が変わり、参照先を1つに決められません。選び直してください。';
+const AMBIGUOUS_TEXT: FailureText = { key: 'mathGeometry.reason.ambiguous-reference', parameters: {} };
 
 function boxFace(body: SolidBody, axis: 0 | 1 | 2, side = 1): MathGeometryFace {
   const face = body.faces.find(candidate => candidate.axis !== null && Math.abs(candidate.axis[axis]) > 1 - 1e-8
@@ -239,7 +239,7 @@ describe('GR-09 平面と3点の角度・平行・垂直', () => {
       second, third: collapsed === 'third' ? first : third, unit: 'degree' };
     const result = await recomputePart(document, kernel(), { mathGeometry: requests(document, quantity) });
     expect(result.mathGeometry?.[0]).toMatchObject({ status: 'unresolved', reason: 'unsupported',
-      text: plainText('この種類の図形からは指定した量を求められません。') });
+      text: { key: 'mathGeometry.error.unsupportedShape', parameters: {} } });
   });
   it.each(['plane-angle', 'line-plane-angle', 'parallel', 'perpendicular'] as const)('円柱の曲面の%sは理由付きで非対応になる', async kind => {
     const initial = createEmptyPartDocument();
@@ -256,7 +256,7 @@ describe('GR-09 平面と3点の角度・平行・垂直', () => {
       : kind === 'plane-angle' ? { kind, first, second, unit: 'degree' } : { kind, first, second };
     const result = await recomputePart(document, bridge, { mathGeometry: requests(document, quantity) });
     expect(result.mathGeometry?.[0]).toMatchObject({ status: 'unresolved', reason: 'unsupported',
-      text: plainText('平面でない面からは角度・平行・垂直を求められません。') });
+      text: { key: 'mathGeometry.error.nonPlanarFace', parameters: {} } });
   });
   it('円の辺の軸を直線の方向として平面との角度に流用しない', async () => {
     const initial = createEmptyPartDocument();
@@ -528,7 +528,7 @@ describe('数学で使う図形量は現在の再計算から取得する', () =
     expect(farNow.centroid[0]).toBeCloseTo(far.centroid[0], 9);
     expect(changed.mathGeometry).toHaveLength(2);
     for (const outcome of changed.mathGeometry ?? []) {
-      expect(outcome).toMatchObject({ status: 'unresolved', reason: 'ambiguous-reference', text: plainText(AMBIGUOUS_MESSAGE) });
+      expect(outcome).toMatchObject({ status: 'unresolved', reason: 'ambiguous-reference', text: AMBIGUOUS_TEXT });
     }
     // Neither face reaches the kernel measurement, which would otherwise pick one silently.
     expect(measure).not.toHaveBeenCalled();
@@ -722,7 +722,7 @@ describe('GR-10 半径・中心角・輪郭全体の長さ', () => {
     const { document, contour } = contourPart(feature);
     const result = await recomputePart(document, kernel(), { mathGeometry: requests(document, contour) });
     expect(result.mathGeometry?.[0]).toMatchObject({ status: 'unresolved', reason: 'unsupported',
-      text: plainText('楕円や自由曲線を含む輪郭の長さには対応していません。') });
+      text: { key: 'mathGeometry.error.profileLength', parameters: {} } });
   });
   it.each(['radius', 'central-angle'] as const)('直線の%sは非対応', async kind => {
     const { document, curve } = contourPart({ kind: 'line', id: 'line-measured', name: '直線', planeId: 'xy',
@@ -800,7 +800,7 @@ describe('GR-10b 現在の座標系で測る座標', () => {
     const result = await recomputePart({ ...document, references }, kernel(), { mathGeometry: requests(document, ...quantities) });
     expect(result.mathGeometry).toHaveLength(3);
     for (const outcome of result.mathGeometry ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'missing-reference',
-      text: plainText('参照する現在の図形を確認できません。参照先を選び直してください。') });
+      text: { key: 'mathGeometry.error.missingReference', parameters: {} } });
   });
 
   it('座標系の参照先が座標の値が数でない基準点なら、その点の誤りの鍵と値を理由にする(一般の文へ替えない。0b-3h2)', async () => {
@@ -834,7 +834,7 @@ describe('GR-10b 現在の座標系で測る座標', () => {
       resolved, bodies: [], failedIds: new Set(failure === 'failedIds' ? [frame.id] : []), bridge: kernel(), shouldCancel: () => false });
     expect(outcomes).toHaveLength(3);
     for (const outcome of outcomes ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'failed-geometry',
-      text: plainText(failure === 'reference-error' ? message : '参照先の座標系を正しく計算できませんでした。') });
+      text: failure === 'reference-error' ? plainText(message) : { key: 'mathGeometry.error.failedFrame', parameters: {} } });
   });
 
   it('基準ジオメトリの誤りが文をそのまま出す鍵でない時も、測りの理由はその鍵と値のまま運ぶ(0b-3h2。一般の文へ替えない)', async () => {
@@ -857,7 +857,7 @@ describe('GR-10b 現在の座標系で測る座標', () => {
       resolved, bodies: [], failedIds: new Set(), bridge: kernel(), shouldCancel: () => false });
     expect(outcomes).toHaveLength(3);
     for (const outcome of outcomes ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'failed-geometry',
-      text: plainText('座標系の原点と軸を正しく取得できませんでした。') });
+      text: { key: 'mathGeometry.error.frameAxes', parameters: {} } });
   });
 
   it('同じIDの解決済み座標系が複数なら先頭を選ばない', async () => {

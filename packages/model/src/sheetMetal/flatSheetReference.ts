@@ -5,7 +5,7 @@ import type { PartDocument } from '../part/types.js';
 export function sheetFlatReferenceIssue(document: PartDocument, reference: DrawingSheetFlatReference): string | null {
   if (reference.partId !== document.id) return '展開図の元部品が一致しません。元と同じ部品ファイルを選んでください。';
   const feature = document.solids.find((item) => item.id === reference.sourceFeatureId);
-  if (feature === undefined || !['sheetBase', 'sheetFlange', 'sheetBend', 'sheetRelief'].includes(feature.kind))
+  if (feature === undefined || !['sheetBase', 'sheetFlange', 'sheetBend', 'sheetRelief', 'sheetConvert'].includes(feature.kind))
     return '展開図の元になる板金フィーチャーが見つかりません。';
   if (reference.fixedPanelId.length === 0 || reference.seamConnectionIds.some((id) => id.length === 0)
     || new Set(reference.seamConnectionIds).size !== reference.seamConnectionIds.length)

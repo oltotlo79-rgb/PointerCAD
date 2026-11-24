@@ -55,6 +55,8 @@ export interface ResolvedSheetBody {
   readonly rootFeatureId: string; readonly rule: SheetMetalRule;
   /** 加工前の接続IDから現在の実接続へ。履歴の入力から導出し、ファイルには保存しない。 */
   readonly connectionAliases?: ReadonlyMap<string, readonly string[]>;
+  /** 立体から変換した板金(M-08)。後段の板・縁の参照が無い時は、元の立体の変更として sourceChanged で断る。 */
+  readonly converted?: true;
   readonly panels: readonly SheetPanelGeometry[]; readonly bends: readonly ResolvedSheetBend[];
 }
 export interface SheetGeometryPlan { readonly plan: SheetSolidPlan; readonly body: ResolvedSheetBody }

@@ -1,7 +1,8 @@
 import type { Parameter } from '@pointercad/model';
 import type { SolidCadSavedInput } from '@pointercad/model/beam-analysis';
+import type { FemRefusalCode } from '@pointercad/fem';
 import { beamExpressionField, plasticBarExpressionField } from '../beam/beamFields.js';
-import { t } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { femRuntimeFailureText } from '../femFailureMessage.js';
 
 export const SOLID_BOUNDARY_AXES = ['x', 'y', 'z'] as const;
@@ -84,15 +85,23 @@ export function solidBoundarySaved(draft: SolidBoundaryDraft, parameters: readon
     densityKgM3: evaluated(solidGravityExpressionField('density', gravity.density, parameters)),
   } } : {}) };
 }
-export function solidBoundaryFailure(message: string): string {
-  if (message.includes('Conflicting prescribed displacement')) return t('solidAnalysis.supportConflict');
-  if (message.includes('unrestrained component rigid-body motion')) return t('solidAnalysis.supportRigid');
-  if (message.includes('Invalid translation restraints')) return t('solidAnalysis.supportAllFree');
-  return message;
+/** fem の支持の断りの符号から今の文の鍵へ(ほかの断りは null。符号を足すと、ここの書き漏れが型検査で分かる)。 */
+const SUPPORT_REFUSAL_KEYS: Readonly<Record<FemRefusalCode, MessageKey | null>> = {
+  'support-conflict': 'solidAnalysis.supportConflict', 'rigid-body': 'solidAnalysis.supportRigid', 'support-all-free': 'solidAnalysis.supportAllFree',
+  'no-positive-mode': null, mechanism: null, budget: null, supports: null, 'stale-source': null, unknown: null,
+};
+interface SolidFailure { readonly message: string; readonly refusal?: FemRefusalCode }
+function supportRefusalKey(failure: SolidFailure): MessageKey | null {
+  return failure.refusal === undefined ? null : SUPPORT_REFUSAL_KEYS[failure.refusal];
+}
+/** 支持の 3 種の断り(fem の断りの符号)は今の文、ほかは文(message)のまま。文は読まない(0b-4)。 */
+export function solidBoundaryFailure(failure: SolidFailure): string {
+  const key = supportRefusalKey(failure);
+  return key === null ? failure.message : t(key);
 }
 /** 解析の断り(A-24): 支持の 3 種は今の文、計算部の code は共通の文(資産)か code を添えた文にし、内部の英語の文を出さない。
- * 計算部の code でない断り(形状や入力の断り)は今のまま message を出す。 */
-export function solidRunFailure(code: string, message: string): string {
-  const boundary = solidBoundaryFailure(message);
-  return boundary !== message ? boundary : femRuntimeFailureText(code) ?? message;
+ * 計算部の code でない断り(形状や入力の断り)は今のまま message を出す。種類は code と refusal で決め、文は読まない(0b-4)。 */
+export function solidRunFailure(failure: SolidFailure & { readonly code: string }): string {
+  const key = supportRefusalKey(failure);
+  return key !== null ? t(key) : femRuntimeFailureText(failure.code) ?? failure.message;
 }

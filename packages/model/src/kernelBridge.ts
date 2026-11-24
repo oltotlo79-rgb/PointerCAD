@@ -1857,11 +1857,11 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     },
 
     async recognizeSheetMetal(requests): Promise<readonly SheetRecognitionReply[]> {
+      if (requests.length === 0) return [];
       if (health.broken && !disposed) restart();
       const active = connection;
       return raceWithBroken(
-        active,
-        () => askSheetRecognition(requests, (request) => active.remote.recognizeSheetMetal(request)),
+        active, () => askSheetRecognition(requests, (request) => active.remote.recognizeSheetMetal(request)),
         () => unavailableSheetReplies(requests, 'workerBroken'));
     },
 

@@ -63,6 +63,73 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
       .toBe('参照する現在の図形を確認できません。参照先を選び直してください。\n係数の参照が循環しています。\n係数の参照が循環しています。');
   });
 
+  it('鍵へ移した図形の測定値の誤りの文は、移す前の model の文と 1 文字も違わない(0b3h2-text-keys-measure)', () => {
+    // 右の文は、道具が移す前の model の文字(定数・呼び出しの文字に同じ値を入れた物)から写した物(文言の表は読まない)。
+    const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+      ['mathGeometry.error.missingReference', {}, '参照する現在の図形を確認できません。参照先を選び直してください。'],
+      ['mathGeometry.error.unsupportedShape', {}, 'この種類の図形からは指定した量を求められません。'],
+      ['mathGeometry.reason.ambiguous-reference', {}, '形が変わり、参照先を1つに決められません。選び直してください。'],
+      ['mathGeometry.error.failedShape', {}, '参照先の形を正しく計算できませんでした。'],
+      ['mathGeometry.error.failedFrame', {}, '参照先の座標系を正しく計算できませんでした。'],
+      ['mathGeometry.error.frameAxes', {}, '座標系の原点と軸を正しく取得できませんでした。'],
+      ['mathGeometry.error.arcDimensions', {}, '円弧の半径と中心角を正しく取得できませんでした。'],
+      ['mathGeometry.error.profileLength', {}, '楕円や自由曲線を含む輪郭の長さには対応していません。'],
+      ['mathGeometry.error.nonPlanarFace', {}, '平面でない面からは角度・平行・垂直を求められません。'],
+      ['mathGeometry.error.invalidRequest', {}, '参照する文書・識別番号・許容差を確認してください。'],
+      ['mathGeometry.error.nonFiniteValue', {}, '図形から有限で妥当な測定値を取得できませんでした。'],
+      ['mathGeometry.error.congruence.invalidShape', {}, '合同・相似を比べる図形の寸法を正しく取得できませんでした。'],
+      ['mathGeometry.error.congruence.degenerate', {}, '比べる幅以下の長さや退化した図形では合同・相似を判定できません。'],
+      ['mathGeometry.error.congruence.duplicateEdges', {}, '同じ辺が重複した輪郭は比べられません。'],
+      ['mathGeometry.error.congruence.branching', {}, '枝分かれした輪郭では合同・相似を判定できません。'],
+      ['mathGeometry.error.congruence.notClosed', {}, '閉じた1つの多角形でない輪郭は比べられません。'],
+      ['mathGeometry.error.congruence.tooFewSegments', {}, '多角形の比較には3本以上の線分で閉じた輪郭が必要です。'],
+      ['mathGeometry.error.congruence.nonPlanar', {}, '同じ平面にない輪郭では多角形の合同・相似を判定できません。'],
+      ['mathGeometry.error.congruence.selfIntersecting', {}, '交差したり重なったりする輪郭では多角形の合同・相似を判定できません。'],
+      ['mathGeometry.error.congruence.invalidTolerance', {}, '合同・相似の比べる幅を確認してください。'],
+      ['mathGeometry.error.congruence.edgeCountMismatch', {}, '辺の数が違う多角形どうしは比べられません。'],
+      ['mathGeometry.error.congruence.unsupportedPair', {}, '線分どうし、円弧・円どうし、または同じ辺数の多角形どうしを選んでください。'],
+      ['mathGeometry.error.referenceMismatch', { label: '箱1体積' }, '図形の測定値の参照先を確認できません: 箱1体積'],
+      ['mathGeometry.error.booleanResult', { definitionName: '箱1体積' }, '平行・垂直などの判定の結果は係数の式に使えません: 箱1体積'],
+      ['mathGeometry.error.discontinuousOperation', { operation: 'floor' }, '図形の測定値から計算する式では「floor」を使えません。値の境目で結果が変わる計算は使えません。'],
+      ['mathGeometry.error.pending', { definitionName: '箱1体積' }, '図形の測定値「箱1体積」を計算中です。形の計算が終わると使えます。'],
+      ['mathGeometry.error.outsideCoefficient', { label: '箱1体積' }, '図形の測定値は係数の式の中でだけ使えます: 箱1体積'],
+      ['mathGeometry.error.cycle', { coefficient: '幅B', definition: '箱1体積', shape: '箱1' }, '係数「幅B」は図形の測定値「箱1体積」を使っていますが、その測る形「箱1」が「幅B」を使って作られているため循環しています。'],
+      ['mathGeometry.error.order', { feature: '箱1', target: '箱2', definition: '箱2体積', coefficient: '幅B' }, '「箱1」は、後ろにある「箱2」を測った値（図形の測定値「箱2体積」）を係数「幅B」から使っています。「箱2」より後ろへ移してください。'],
+      ['mathGeometry.error.tooDeep', { limit: '8' }, '図形の測定値を使う係数の連なりが上限（8段）を超えています。'],
+    ];
+    expect(cases.map(([key, parameters]) => failureMessage({ key, parameters }))).toEqual(cases.map(([, , before]) => before));
+  });
+
+  it('鍵へ移した数式の評価・名前の変更・関数の作図の誤りの文は、移す前の model の文と 1 文字も違わない(0b3h2-text-keys-part)', () => {
+    // 右の文は、道具が移す前の model の文字(定数・呼び出しの文字に同じ値を入れた物)から写した物(文言の表は読まない)。
+    const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+      ['math.error.invalidParameterName', {}, '係数の名前または参照先が不正・重複しています。'],
+      ['math.error.definitionMismatch', {}, '保存された原式と数学定義が一致しません。'],
+      ['math.error.circular', {}, '係数の参照が循環しています。'],
+      ['math.error.geometryRename.cancelled', {}, '図形の測定値の名前の変更を中止しました。'],
+      ['math.error.geometryRename.notFound', {}, '名前を変える図形の測定値がありません。'],
+      ['math.error.geometryRename.invalidName', {}, '図形の測定値の新しい名前が不正、または既に使われています。'],
+      ['math.error.geometryRename.unverifiedReference', {}, '保存された式の参照先を確認できません。'],
+      ['math.error.geometryRename.rewriteFailed', {}, '数式の参照先を保った名前の変更ができませんでした。'],
+      ['math.error.geometryRename.invalidDocument', {}, '名前を変えた文書を計算し直せませんでした。'],
+      ['math.error.rename.cancelled', {}, '係数の改名を中止しました。'],
+      ['math.error.rename.notFound', {}, '改名する係数がありません。'],
+      ['math.error.rename.invalidName', {}, '係数の新しい名前が不正、または既に使われています。'],
+      ['math.error.rename.unverifiedReference', {}, '係数の参照先を確認できません。'],
+      ['math.error.rename.unverifiedStoredReference', {}, '保存された係数の参照先を確認できません。'],
+      ['math.error.rename.rewriteFailed', {}, '数式の参照先を保った改名ができませんでした。'],
+      ['math.error.rename.invalidDocument', {}, '係数を改名した文書を再計算できませんでした。'],
+      ['math.error.needsMathEngine', {}, 'この数式は数学計算部での再計算が必要です。'],
+      ['math.error.function.engineUnavailable', {}, '関数の計算部を準備できません。再計算してから作図してください。'],
+      ['math.error.function.emptyCurve', {}, '指定したXYZの範囲に曲線がありません。'],
+      ['math.error.referenceUnverified', { label: 'P' }, '係数の参照先を確認できません: P'],
+      ['math.error.referenceUncomputable', { label: 'P' }, '参照する係数を計算できません: P'],
+      ['math.error.calculationIncomplete', { status: 'invalid' }, '数式の計算を完了できませんでした: invalid'],
+      ['math.error.stageFailed', {}, '数式の再計算を完了できませんでした。'],
+    ];
+    expect(cases.map(([key, parameters]) => failureMessage({ key, parameters }))).toEqual(cases.map(([, , before]) => before));
+  });
+
   it('鍵が文言の表に無い時は、内部の鍵を出さず「内部の誤りが起きました。」にする', () => {
     expect(failureMessage({ key: 'no.such.key', parameters: {} })).toBe('内部の誤りが起きました。');
     expect(t('assembly.error.internal')).toBe('内部の誤りが起きました。');

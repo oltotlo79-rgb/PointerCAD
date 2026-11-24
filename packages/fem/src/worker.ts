@@ -3,6 +3,7 @@ import { analyzeFrictionContactInBrowser, analyzeWeldSpanContactInBrowser } from
 import { analyzeNativeBoltPreloadInBrowser } from './offlineBrowser.js';
 import { analyzeSolidContactInBrowser } from './offlineBrowser.js';
 import { SolidContactRuntimeError } from './solidContactRuntime.js';
+import { FemCodedError, FemRefusalError, nativeFailureCode, nativeRefusal } from './femCodedError.js';
 import { analyzeInBrowser, analyzeModalInBrowser, analyzeBucklingInBrowser, analyzeTransientInBrowser,
   analyzePlasticBarInBrowser, analyzeContactInBrowser, analyzeBoltContactInBrowser, analyzeWeldContactInBrowser, analyzeJointContactInBrowser, analyzeSolidInBrowser, analyzeSolidPlasticInBrowser,
   meshTetrahedraInBrowser, qualifyInBrowser } from './offlineBrowser.js';
@@ -56,13 +57,13 @@ self.onmessage = (event: MessageEvent<unknown>): void => {
     send({ protocol: FEM_PROTOCOL, kind: 'result', identity: request.identity, result });
   }).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    let code: FemFailureCode = phase === 'solving' ? 'solver-failed' : 'runtime-initialization';
-    if (message.startsWith('native-preload-input:')) code = 'invalid-protocol';
-    if (message.startsWith('asset-missing:')) code = 'asset-missing';
-    if (message.startsWith('asset-corrupt:')) code = 'asset-corrupt';
-    if (message.includes('offline-request-denied:')) code = 'offline-request-denied';
+    // 種類は投げた所の符号で決め、文は読まない(0b-4)。計算部(Pyodide・Python)が包み直した誤りだけは、境目の 1 か所
+    // (femCodedError.ts の nativeFailureCode・nativeRefusal)で文から読む。取得の拒否の印は今までどおりほかの符号より先。
+    const code: FemFailureCode = nativeFailureCode(message)
+      ?? (error instanceof FemCodedError ? error.code : phase === 'solving' ? 'solver-failed' : 'runtime-initialization');
+    const refusal = error instanceof FemRefusalError ? error.refusal : nativeRefusal(message);
     send({ protocol: FEM_PROTOCOL, kind: 'failure', identity: request.identity,
-      failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed',
+      failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed', ...(refusal === undefined ? {} : { refusal }),
         ...(error instanceof SolidContactRuntimeError ? { contactDiagnostics: error.contactDiagnostics } : {}) } });
   }).finally(closeOnce);
 };

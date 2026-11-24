@@ -21,7 +21,7 @@
  */
 
 import { withinMagnitude } from '../../numericTolerance.js';
-import { plainText } from '../../failureText.js';
+import { plainText, type FailureText } from '../../failureText.js';
 import {
   baseWorkPlane,
   isFreeWorkPlaneId,
@@ -59,12 +59,10 @@ import {
  * 3D スケッチ(作図面を持たないスケッチ、FR-330)に拘束が付いていたときの断り。
  * 水平・垂直・平行・直角は平面の中でしか意味が決まらないため。
  */
-export const CONSTRAINT_FREE_SKETCH_MESSAGE =
-  '3D スケッチには拘束を付けられません。作図面の上のスケッチで使ってください。';
+const CONSTRAINT_FREE_SKETCH_TEXT: FailureText = { key: 'partError.sketchConstraint.freeSketch', parameters: {} };
 
 /** 反復を使い切っても残差が残り、原因の拘束を絞り込めなかったときの断り。 */
-export const CONSTRAINT_UNSOLVED_MESSAGE =
-  '拘束を満たす形が見つかりませんでした。拘束をいくつか外して試してください。';
+const CONSTRAINT_UNSOLVED_TEXT: FailureText = { key: 'partError.sketchConstraint.unsolved', parameters: {} };
 
 /** 解かなかったときに返す空の表(呼ぶたびに作らない)。 */
 const NO_POINTS: ReadonlyMap<string, Vec3> = new Map<string, Vec3>();
@@ -285,6 +283,11 @@ function sketchError(
   return { featureId: documentId, code, text: plainText(message) };
 }
 
+/** スケッチ全体に関わる断りを、画面の文の鍵と値で 1 件作る(文は ui の文言の表が鍵ごとに持つ)。 */
+function sketchErrorWith(documentId: string, code: SketchError['code'], text: FailureText): SketchError {
+  return { featureId: documentId, code, text };
+}
+
 /**
  * 診断と反復の結果を、画面へそのまま出せる断りへ直す(FR-504、NFR-RE-1)。
  *
@@ -323,7 +326,7 @@ function constraintErrors(
       text: plainText(sentences.join('')),
     });
   } else if (converged === false) {
-    errors.push(sketchError(documentId, 'constraintUnsolved', CONSTRAINT_UNSOLVED_MESSAGE));
+    errors.push(sketchErrorWith(documentId, 'constraintUnsolved', CONSTRAINT_UNSOLVED_TEXT));
   }
   for (const skipped of diagnosis.skipped) {
     errors.push({
@@ -398,7 +401,7 @@ function prepareConstrainedSketch(
       base,
       constraints.length === 0
         ? []
-        : [sketchError(document.id, 'constraintUnsolved', CONSTRAINT_FREE_SKETCH_MESSAGE)],
+        : [sketchErrorWith(document.id, 'constraintUnsolved', CONSTRAINT_FREE_SKETCH_TEXT)],
       null,
       null,
     );

@@ -43,7 +43,7 @@ function solidPoints(feature: SolidFeature): readonly PointReference[] {
     case 'pattern': return feature.placement.kind === 'points' ? feature.placement.points.map(slot => slot.reference) : [];
     case 'surfaceCut': return feature.blade.kind === 'plane' ? planeReferences(feature.blade.plane) : [];
     case 'cut': return planeReferences(feature.plane);
-    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief':
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'sheetConvert':
     case 'extrude': case 'revolve': case 'sew': case 'boolean': case 'hole':
     case 'threadHole': case 'fillet': case 'chamfer': case 'spring': case 'ruled':
     case 'loft': case 'draft': case 'faceOffset': case 'holeTranslate': case 'faceRotate': case 'mirror': case 'transform': case 'sweep':

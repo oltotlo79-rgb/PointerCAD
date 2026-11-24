@@ -161,6 +161,9 @@ describe('同じファイルの最大でない長い関数が1行増えても拒
     expect(drift(source(200))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
     // 報告は送る前の道具が表を下げるのに使う。失敗には数えない。
     expect(failing(drift(source(229)))).toEqual(NO_FAILURE);
+    const mixed = syntheticFunction('large', 261) + '\n' + syntheticFunction('smaller', 229);
+    expect(drift(mixed)).toEqual({ ...NO_DRIFT, grown: ['large'], stale: ['smaller'] });
+    expect(failing(drift(mixed))).toEqual({ ...NO_FAILURE, grown: ['large'] });
     expect(failing(drift(source(200)))).toEqual(NO_FAILURE);
     expect(drift(source(230, syntheticFunction('extra', 201)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });
     const twice = (name: string) => `export const ${name} = [{ run() {\n${'  void 0;\n'.repeat(210)}} }, { run() {\n${

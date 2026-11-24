@@ -17,7 +17,7 @@ import { filletWeldLegs, filletWeldSegmentOptions, filletWeldSegmentRevision } f
 import { weldSegmentsOf } from '../assembly/welding/planFilletWeld.js';
 import { WELD_LENGTH_TOLERANCE_MM } from '../assembly/welding/types.js';
 import type { DrawingSourceLibrary } from './sourceLibrary.js';
-import type { ResolvedWeldSymbol, WeldIssue } from './welding.js';
+import type { ResolvedWeldSymbol } from './welding.js';
 
 /** 溶接線に沿った始点・終点・長さ(mm、溶接の始点の測り方のまま)。 */
 export interface LinkedWeldBead {
@@ -134,27 +134,21 @@ export function linkedWeldSymbolValues(data: LinkedWeldData): LinkedWeldSymbolVa
   return { legMm: data.legOnSecond, lengthMm: first.length, pitchMm: second.start - first.start, count: data.beads.length };
 }
 
-const MISSING_MESSAGES: Readonly<Record<LinkedWeldMissingReason, string>> = {
-  sourceNotEmbedded: '結び付けた溶接の元のアセンブリが図面に取り込まれていないため、溶接記号を溶接と照合できません。元を取り込み直してください。',
-  notAssembly: '溶接への結び付けは、アセンブリを元にした図面だけで使えます。',
-  weldMissing: '結び付けた溶接が元のアセンブリに見つかりません(消されたか、別の溶接に置き換わりました)。結び付けを外すか、溶接を選び直してください。',
-  weldDamaged: '結び付けた溶接のビードの記録が読めないか食い違っているため、溶接記号を照合できません。',
-};
-const LIMITATION_MESSAGES: Readonly<Record<LinkedWeldLimitation, string>> = {
-  irregularBeads: '結び付けた溶接はビードごとに長さか間隔が違うため、この溶接記号の 1 組の寸法では表せません。各ビードの値は補足の一覧を見てください。',
-  unequalLegs: '結び付けた溶接は 2 脚の長さが違うため、この溶接記号の脚長 1 つでは表せません。2 脚の値は補足の一覧を見てください。',
-};
+interface LinkedWeldIssue {
+  readonly code: 'linkedWeld';
+  readonly reason: LinkedWeldMissingReason | LinkedWeldLimitation | 'dimensionMismatch';
+}
 
 /**
  * 結び付けた記号を溶接の値と照合する。結び付けていない記号は照合しない(空)。表せない溶接・見つからない溶接は
  * 必ず理由を返す(記号を解決済みにしない)。表せる溶接は、すみ肉の 1 組だけを持ち、その脚長・溶接長・中心間隔・
  * 個数が溶接の値と許容差の内で一致する時だけ理由が無い。
  */
-export function linkedWeldIssues(resolved: ResolvedWeldSymbol, linked: LinkedWeldResolution | null): readonly WeldIssue[] {
+export function linkedWeldIssues(resolved: ResolvedWeldSymbol, linked: LinkedWeldResolution | null): readonly LinkedWeldIssue[] {
   if (resolved.symbol.weldId === undefined || linked === null) return [];
-  if (linked.kind === 'missing') return [{ code: 'linkedWeld', message: MISSING_MESSAGES[linked.reason] }];
+  if (linked.kind === 'missing') return [{ code: 'linkedWeld', reason: linked.reason }];
   if (linked.data.limitations.length > 0) {
-    return linked.data.limitations.map((limitation) => ({ code: 'linkedWeld' as const, message: LIMITATION_MESSAGES[limitation] }));
+    return linked.data.limitations.map((reason): LinkedWeldIssue => ({ code: 'linkedWeld', reason }));
   }
   const expected = linkedWeldSymbolValues(linked.data);
   const side = resolved.sides.length === 1 ? resolved.sides[0] : undefined;
@@ -163,6 +157,5 @@ export function linkedWeldIssues(resolved: ResolvedWeldSymbol, linked: LinkedWel
   const agrees = expected !== null && side !== undefined && side.spec.kind === 'fillet' && side.spec.side !== 'center'
     && side.spec.size?.kind === 'leg' && same(side.sizeMm, expected.legMm) && same(side.lengthMm, expected.lengthMm)
     && same(side.pitchMm, expected.pitchMm) && same(side.count, expected.count);
-  return agrees ? [] : [{ code: 'linkedWeld',
-    message: '溶接記号の脚長・溶接長・中心間隔・個数が、結び付けた溶接と違います。溶接の値に合わせてください。' }];
+  return agrees ? [] : [{ code: 'linkedWeld', reason: 'dimensionMismatch' }];
 }

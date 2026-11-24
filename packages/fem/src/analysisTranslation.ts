@@ -1,4 +1,4 @@
-import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
+import { exceedsMagnitude, InputIssue } from '@pointercad/model/beam-analysis';
 import { sha256Hex } from './sha256.js';
 import type { AnalysisMaterialCapacity, BeamAnalysisDocument, BeamFrame, Vector3, Vector6 } from './analysisModel.js';
 import { beamFrame, readBeamAnalysis, scale, serializeBeamAnalysis } from './analysisValidation.js';
@@ -22,7 +22,8 @@ function finitePositive(value: number): number {
 /** Sorted numeric ids are generated internally. No user text becomes Python or an input keyword. */
 export function translateBeamAnalysis(value: unknown): { readonly document: BeamAnalysisDocument; readonly plan: OofemBeamPlan } {
   const checked=readBeamAnalysis(value);
-  if(!checked.ok) throw new Error(checked.issue.code+': '+checked.issue.path+': '+checked.issue.message);
+  // 入力の誤りの符号(issue.code)を InputIssue のまま運ぶ(文は今のまま。受け手は文の頭ではなく code で見分ける。0b-4)。
+  if(!checked.ok) throw new InputIssue(checked.issue.code, checked.issue.path, checked.issue.code+': '+checked.issue.path+': '+checked.issue.message);
   const document=checked.document;
   const length=document.units==='N-mm'?0.001:1;
   const area=length*length, inertia=area*area;

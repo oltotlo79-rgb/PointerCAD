@@ -9,7 +9,8 @@ import { resolveSheetSeams } from './seamConnections.js';
 export function setSheetUnfoldDefinition(document: PartDocument, body: ResolvedSheetBody,
   definition: SheetUnfoldDefinition): SheetGeometryResult<PartDocument> {
   if (!document.solids.some((feature) => feature.id === definition.sourceFeatureId
-    && (feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief')))
+    && (feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief'
+      || feature.kind === 'sheetConvert')))
     return { ok: false, message: '展開元の板金が見つかりません。元の部品を確認してください。' };
   const flat = unfoldSheetBody(body, definition.fixedPanelId, definition.seamConnectionIds);
   if (!flat.ok) return flat;

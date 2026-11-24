@@ -1,11 +1,12 @@
 /** 板金の道具・一時的な実形状プレビュー。保存する定義はdocumentだけ。 */
-import type { PartDocument, PartRecomputeResult, ResolvedSheetBody, SolidBody, SheetMetalFeature, SheetFlatGeometry, SheetFlatResult, SheetUnfoldDefinition } from '@pointercad/model';
+import type { PartDocument, PartRecomputeResult, ResolvedSheetBody, SolidBody, SheetConvertLookup, SheetMetalFeature, SheetFlatGeometry, SheetFlatResult,
+  SheetUnfoldDefinition } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { AppState } from './appState.js';
 import type { SheetOutputComputer } from '../sheetMetal/sheetOutputComputer.js';
 import { snapshotSheetMetalDefaultSources, type SheetMetalDefaultSourceSnapshot } from '../sheetMetal/sheetMetalDefaultSources.js';
 
-export type SheetMetalToolKind = 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' | 'sheetUnfold';
+export type SheetMetalToolKind = 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' | 'sheetConvert' | 'sheetUnfold';
 export interface SheetMetalToolSession {
   readonly id: string; readonly kind: SheetMetalToolKind;
   readonly document: PartDocument; readonly documentId: string;
@@ -30,7 +31,13 @@ export interface SheetMetalSlice {
   readonly sheetMetalComputer: SheetMetalComputer | null;
   readonly sheetMetalFlatComputer: SheetMetalFlatComputer | null;
   readonly sheetOutputComputer: SheetOutputComputer | null;
+  /**
+   * 立体を板金へ変える行(M-08)の認識の答えを引く口(再計算が持ち回る覚え書きの lookup。PointerCadApp が付ける)。
+   * 画面の純な解決(板金の窓の対象の一覧・確定前の確かめ)へ渡し、変換した板金を後段の元にできるようにする。
+   */
+  readonly sheetRecognitionLookup: SheetConvertLookup | null;
   readonly setSheetOutputComputer: (computer: SheetOutputComputer | null) => void;
+  readonly setSheetRecognitionLookup: (lookup: SheetConvertLookup | null) => void;
   readonly setSheetMetalComputer: (computer: SheetMetalComputer | null) => void;
   readonly setSheetMetalFlatComputer: (computer: SheetMetalFlatComputer | null) => void;
   readonly clearSheetMetalPreview: () => void;
@@ -45,7 +52,9 @@ export const createSheetMetalSlice: StateCreator<AppState, [], [], Omit<SheetMet
   sheetMetalComputer: null,
   sheetMetalFlatComputer: null,
   sheetOutputComputer: null,
+  sheetRecognitionLookup: null,
   setSheetOutputComputer: (sheetOutputComputer) => set({ sheetOutputComputer }),
+  setSheetRecognitionLookup: (sheetRecognitionLookup) => set({ sheetRecognitionLookup }),
   setSheetMetalComputer: (sheetMetalComputer) => set({ sheetMetalComputer }),
   setSheetMetalFlatComputer: (sheetMetalFlatComputer) => set({ sheetMetalFlatComputer }),
   clearSheetMetalPreview: () => set({ sheetMetalPreview: null, sheetMetalRequestId: null, sheetMetalError: null }),
@@ -54,7 +63,8 @@ export const createSheetMetalSlice: StateCreator<AppState, [], [], Omit<SheetMet
     if (state.assembly !== null || state.drawing !== null) return;
     const editing = featureId === undefined ? undefined : state.document.solids.find((feature) => feature.id === featureId);
     if (featureId !== undefined && (editing === undefined || editing.kind !== kind)) return;
-    const editingFeature = editing?.kind === 'sheetBase' || editing?.kind === 'sheetFlange' || editing?.kind === 'sheetBend' || editing?.kind === 'sheetRelief' ? editing : undefined;
+    const editingFeature = editing?.kind === 'sheetBase' || editing?.kind === 'sheetFlange' || editing?.kind === 'sheetBend' || editing?.kind === 'sheetRelief'
+      || editing?.kind === 'sheetConvert' ? editing : undefined;
     const selection = state.selection;
     const defaultSources = snapshotSheetMetalDefaultSources(state.displaySettings.numericToolDefaults, editingFeature);
     state.setActiveTool('select');

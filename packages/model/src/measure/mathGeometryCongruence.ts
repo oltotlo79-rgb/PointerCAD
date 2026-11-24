@@ -1,4 +1,5 @@
 /** G1 comparison of current geometry. These transient dimensions are never persisted. */
+import type { FailureText } from '../failureText.js';
 import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
 import { isFiniteVec3 as finite, addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
@@ -10,11 +11,11 @@ export type MathGeometryComparisonShape =
   | { readonly kind: 'circular'; readonly radius: number; readonly sweep: number }
   | { readonly kind: 'polygon'; readonly curves: readonly ResolvedCurve[] };
 
-interface Problem { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly message: string }
+interface Problem { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly text: FailureText }
 type Result<T> = { readonly ok: true; readonly value: T } | Problem;
-const unsupported = (message: string): Problem => ({ ok: false, reason: 'unsupported', message });
-const invalidGeometry = (): Problem => ({ ok: false, reason: 'failed-geometry', message: '合同・相似を比べる図形の寸法を正しく取得できませんでした。' });
-const degenerate = (): Problem => unsupported('比べる幅以下の長さや退化した図形では合同・相似を判定できません。');
+const unsupported = (text: FailureText): Problem => ({ ok: false, reason: 'unsupported', text });
+const invalidGeometry = (): Problem => ({ ok: false, reason: 'failed-geometry', text: { key: 'mathGeometry.error.congruence.invalidShape', parameters: {} } });
+const degenerate = (): Problem => unsupported({ key: 'mathGeometry.error.congruence.degenerate', parameters: {} });
 
 interface Polygon {
   /** Edge i leaves vertex i; turn i is at vertex i, retaining the sign of a concave corner. */
@@ -26,7 +27,7 @@ interface Polygon {
 /** A unique single loop. Curves may arrive in either direction or in a different storage order. */
 function orderedSegments(segments: readonly ResolvedSegment[], width: number): Result<readonly ResolvedSegment[]> {
   const ordered: ResolvedSegment[] = [segments[0]], remaining = new Set(segments.slice(1));
-  if (new Set(segments).size !== segments.length) return unsupported('同じ辺が重複した輪郭は比べられません。');
+  if (new Set(segments).size !== segments.length) return unsupported({ key: 'mathGeometry.error.congruence.duplicateEdges', parameters: {} });
   let tip = segments[0].to;
   while (remaining.size > 0) {
     let next: ResolvedSegment | undefined, reversed = false;
@@ -35,19 +36,19 @@ function orderedSegments(segments: readonly ResolvedSegment[], width: number): R
       const backward = distanceVec3(tip, segment.to) <= width;
       if (!forward && !backward) continue;
       if (next !== undefined || (forward && backward)) {
-        return unsupported('枝分かれした輪郭では合同・相似を判定できません。');
+        return unsupported({ key: 'mathGeometry.error.congruence.branching', parameters: {} });
       }
       next = segment;
       reversed = backward;
     }
-    if (next === undefined) return unsupported('閉じた1つの多角形でない輪郭は比べられません。');
+    if (next === undefined) return unsupported({ key: 'mathGeometry.error.congruence.notClosed', parameters: {} });
     remaining.delete(next);
     const directed = reversed ? { ...next, from: next.to, to: next.from } : next;
     ordered.push(directed);
     tip = directed.to;
   }
   return distanceVec3(tip, ordered[0].from) <= width ? { ok: true, value: ordered }
-    : unsupported('閉じた1つの多角形でない輪郭は比べられません。');
+    : unsupported({ key: 'mathGeometry.error.congruence.notClosed', parameters: {} });
 }
 
 function distanceToSegment(point: Vec3, from: Vec3, to: Vec3): number {
@@ -69,7 +70,7 @@ function edgesTouch(a: Vec3, b: Vec3, c: Vec3, d: Vec3, normal: Vec3, width: num
 function polygon(curves: readonly ResolvedCurve[], tolerance: MathGeometryTolerance): Result<Polygon> {
   const segments = curves.filter((curve): curve is ResolvedSegment => curve.kind === 'segment');
   if (segments.length !== curves.length || segments.length < 3) {
-    return unsupported('多角形の比較には3本以上の線分で閉じた輪郭が必要です。');
+    return unsupported({ key: 'mathGeometry.error.congruence.tooFewSegments', parameters: {} });
   }
   const lengths = segments.map(segment => distanceVec3(segment.from, segment.to));
   if (segments.some(segment => !finite(segment.from) || !finite(segment.to)) || !lengths.every(Number.isFinite)) return invalidGeometry();
@@ -90,13 +91,13 @@ function polygon(curves: readonly ResolvedCurve[], tolerance: MathGeometryTolera
   if (areaLength <= width * width) return degenerate();
   const normal = scaleVec3(area, 1 / areaLength);
   if ([...starts, ...ends].some(point => exceedsMagnitude(dotVec3(point, normal), width))) {
-    return unsupported('同じ平面にない輪郭では多角形の合同・相似を判定できません。');
+    return unsupported({ key: 'mathGeometry.error.congruence.nonPlanar', parameters: {} });
   }
   for (let i = 0; i < starts.length; i += 1) {
     for (let j = i + 2; j < starts.length; j += 1) {
       if (i === 0 && j === starts.length - 1) continue;
       if (edgesTouch(starts[i], ends[i], starts[j], ends[j], normal, width)) {
-        return unsupported('交差したり重なったりする輪郭では多角形の合同・相似を判定できません。');
+        return unsupported({ key: 'mathGeometry.error.congruence.selfIntersecting', parameters: {} });
       }
     }
   }
@@ -142,7 +143,7 @@ function comparePolygons(first: Polygon, second: Polygon, similar: boolean, tole
 export function compareMathGeometryCongruence(kind: 'congruent' | 'similar', first: MathGeometryComparisonShape,
   second: MathGeometryComparisonShape, tolerance: MathGeometryTolerance): Result<boolean> {
   if (validateMathGeometryTolerance(tolerance) !== null) {
-    return { ok: false, reason: 'invalid-request', message: '合同・相似の比べる幅を確認してください。' };
+    return { ok: false, reason: 'invalid-request', text: { key: 'mathGeometry.error.congruence.invalidTolerance', parameters: {} } };
   }
   if (first.kind === 'segment' && second.kind === 'segment') {
     if (![first.length, second.length].every(Number.isFinite) || first.length < 0 || second.length < 0) return invalidGeometry();
@@ -160,8 +161,8 @@ export function compareMathGeometryCongruence(kind: 'congruent' | 'similar', fir
     const a = polygon(first.curves, tolerance), b = polygon(second.curves, tolerance);
     if (!a.ok) return a;
     if (!b.ok) return b;
-    if (a.value.lengths.length !== b.value.lengths.length) return unsupported('辺の数が違う多角形どうしは比べられません。');
+    if (a.value.lengths.length !== b.value.lengths.length) return unsupported({ key: 'mathGeometry.error.congruence.edgeCountMismatch', parameters: {} });
     return { ok: true, value: comparePolygons(a.value, b.value, kind === 'similar', tolerance) };
   }
-  return unsupported('線分どうし、円弧・円どうし、または同じ辺数の多角形どうしを選んでください。');
+  return unsupported({ key: 'mathGeometry.error.congruence.unsupportedPair', parameters: {} });
 }

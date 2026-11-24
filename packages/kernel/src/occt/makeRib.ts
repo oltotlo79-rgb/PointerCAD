@@ -12,7 +12,8 @@ import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { distanceBetween } from './measureShape.js';
 import { measureVolume } from './solidMesh.js';
 import { booleanMargin, boundingDiagonal } from './subShapes.js';
-import { makeCompound } from './transformShape.js';
+import type { OcctShapeHandle } from './makeBox.js';
+import { IDENTITY_TRANSFORM, makeCompound, transformShape } from './transformShape.js';
 
 /**
  * リブ(FR-420)。
@@ -228,7 +229,7 @@ function collectSolids(
   const count = subShapes.Size();
 
   for (let position = 1; position <= count; position += 1) {
-    const subShape = subShapes.FindKey(position);
+    const subShape = keep(subShapes.FindKey(position));
     if (subShape.ShapeType() === solidType) {
       solids.push(subShape);
     }
@@ -315,14 +316,13 @@ function selectRibChunks(
  * ここでは輪郭の平面を推し量らない。`direction` は輪郭の平面の中の向き(材料へ向かう向き)、
  * `normal` はその平面の法線で、2 つが平行だと壁が潰れるので断る。
  *
- * 返す値は和(`Fuse`)の結果で、判定のために測った体積を持つ(`BooleanResult`)。
- * **引数の `target` は解放しない**(呼び出し側の持ち物。booleanOp.ts と同じ約束)。
+ * 帯から材料までの部分だけを返す。返した工具の持ち主が、差の作り手までまとめて解放する。
  */
-export function makeRib(
+function buildRibTool(
   oc: OpenCascadeInstance,
   target: TopoDS_Shape,
   input: RibInput,
-): BooleanResult {
+): OcctShapeHandle {
   if (input.profile.length === 0) {
     throw new Error(NO_PROFILE_MESSAGE);
   }
@@ -420,13 +420,34 @@ export function makeRib(
       throw new Error(INSIDE_MESSAGE);
     }
 
-    // ④ 対象と和を取る。塊が複数のときはコンパウンドにまとめて 1 回で足す
-    //    (塊どうしは重なっていないので、重なる工具の落とし穴は起きない)。
-    const tool = kept.length === 1 ? kept[0] : keep(makeCompound(oc, kept)).shape;
-    return booleanOp(oc, 'union', target, tool);
-  } finally {
-    // 和の結果は自分の中に形を持つので、材料になった塊はここで解放してよい
-    // (makeHole.ts が工具を解放するのと同じ)。
+    // 塊は互いに重ならない。複数なら 1 つの工具にまとめる。
+    const shape = kept.length === 1 ? kept[0] : keep(makeCompound(oc, kept)).shape;
+    return { shape, delete: release };
+  } catch (error) {
     release();
+    throw error;
+  }
+}
+
+interface RibResult extends BooleanResult {
+  /** 並べる時に借りる追加材料。結果の delete で一緒に解放する。 */
+  readonly ribTool: TopoDS_Shape;
+}
+
+/** 対象は借用。和と、独立した追加材料を結果の持ち物として返す。 */
+export function makeRib(oc: OpenCascadeInstance, target: TopoDS_Shape, input: RibInput): RibResult {
+  const owned = createAllocations();
+  try {
+    const tool = buildRibTool(oc, target, input);
+    try {
+      const added = owned.keep(transformShape(oc, tool.shape, IDENTITY_TRANSFORM));
+      const result = owned.keep(booleanOp(oc, 'union', target, tool.shape));
+      return { ...result, ribTool: added.shape, delete: owned.release };
+    } finally {
+      tool.delete();
+    }
+  } catch (error) {
+    owned.release();
+    throw error;
   }
 }

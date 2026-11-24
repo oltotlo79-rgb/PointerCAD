@@ -120,6 +120,7 @@ describe('UI lint分割の完全性', () => {
     const b = 'packages/demo/src/b.mjs';
     const config = 'lint.config.mjs';
     const lint = path.join(fixture, 'scripts/lint.mjs');
+    const cycles = path.join(fixture, 'scripts/lib/runtimeCycles.mjs');
     const require = createRequire(import.meta.url);
     const eslint = path.join(path.dirname(require.resolve('eslint/package.json')), 'bin/eslint.js');
     try {
@@ -144,11 +145,17 @@ describe('UI lint分割の完全性', () => {
       expect(clean.stdout).toBe(direct.stdout);
       expect(clean.stderr).toBe(direct.stderr);
 
+      const cleanTicket = spawnSync(process.execPath, [cycles], spawnOptions);
+      expect([cleanTicket.status, cleanTicket.stdout, cleanTicket.stderr]).toEqual([0, '', '']);
+
       writeFileSync(path.join(fixture, b), "import './a.mjs';\n");
       const blocked = spawnSync(process.execPath, [lint, ...args], spawnOptions);
       expect(blocked.status).toBe(1);
       expect(blocked.stdout).toBe('');
       expect(blocked.stderr.trimEnd()).toBe(`runtime import cycle group: ${a}, ${b}`);
+      const blockedTicket = spawnSync(process.execPath, [cycles], spawnOptions);
+      expect([blockedTicket.status, blockedTicket.stdout, blockedTicket.stderr])
+        .toEqual([blocked.status, blocked.stdout, blocked.stderr]);
 
       const optionArgs = ['-c', config, '--print-config', a];
       const optionDirect = spawnSync(process.execPath, [eslint, ...optionArgs], spawnOptions);

@@ -163,7 +163,7 @@ export function analyzeParameters(
       continue;
     }
     if (parameter.value.mathDefinition !== undefined) {
-      failures.push({ name, text: plainText('この数式は数学計算部での再計算が必要です。') });
+      failures.push({ name, text: { key: 'math.error.needsMathEngine', parameters: {} } });
       continue;
     }
     const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables, nonLengthVariables: nonLength });

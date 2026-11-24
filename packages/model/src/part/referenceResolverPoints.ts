@@ -160,7 +160,7 @@ function solidOriginAt(
  * 球の基本形状(FR-429)を id で引き、中心と半径にする口を作る(球面上の点 FR-431)。
  *
  * 見つからない・球でない・抑制されている・半径が正の数でない・中心が解けない、のどれでも
- * null を返す。呼び出し側はそれを 1 つの断り(`MISSING_SPHERE_MESSAGE`)にまとめる。
+ * null を返す。呼び出し側はそれを 1 つの断り(`MISSING_SPHERE_TEXT`)にまとめる。
  */
 export function createSphereLookup(
   lookups: SolidOriginLookups,

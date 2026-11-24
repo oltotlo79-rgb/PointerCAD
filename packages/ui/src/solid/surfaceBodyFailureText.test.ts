@@ -246,6 +246,7 @@ describe('面だけのボディの失敗の文(画面の側の一覧)', () => {
       ['partError.mirror.notFlat', {}, '鏡にできるのは平らな面だけです。平らな面を選び直してください。'],
       ['partError.scale.missingOrigin', {}, '拡大縮小の中心にする点が見つかりません。点を選び直してください。'],
       ['partError.pattern.missingSource', {}, '並べるもとのソリッドが見つかりません。'],
+      ['partError.pattern.invalidSource', {}, '並べる立体、穴・ねじ穴・リブ、または作成行と対になった結合・切り抜きの行を選び直してください。'],
       ['partError.pattern.missingTarget', {}, '結合・切り抜きの相手のソリッドが見つかりません。'],
       ['partError.pattern.missingTool', {}, '並べる工具のソリッドが見つかりません。'],
       ['partError.pattern.selfReference', {}, '並べる対象の参照が自分自身へ戻っています。'],
@@ -256,6 +257,19 @@ describe('面だけのボディの失敗の文(画面の側の一覧)', () => {
       ['loftError.sphere', {}, 'ロフトには球を使えません。「面をつなぐ」を使ってください。'],
       ['ruledError.sphereOrigin', {}, '中心をソリッドの頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。'],
       ['partError.revolve.missingAxis', {}, '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。'],
+    ];
+    expect(cases.map(([key, parameters]) => partErrorMessage({ featureId: 'f', code: 'invalidValue', text: { key, parameters } })))
+      .toEqual(cases.map(([, , before]) => before));
+  });
+
+  it('鍵へ移した書き出しの定数 5 つ(球・緯度・3D スケッチの拘束・解けない拘束・読み込んだ三角形の形)の文は、移す前の model の文と 1 文字も違わない(0b-xc)', () => {
+    // 右の文は、道具が移す前の model の定数(MISSING_SPHERE_MESSAGE など)の文字から写した物(文言の表は読まない)。
+    const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+      ['partError.coordinate.missingSphere', {}, '球が見つかりません。球を選び直してください。'],
+      ['partError.coordinate.latitudeRange', {}, '緯度は −90 度から 90 度の間で指定してください。'],
+      ['partError.sketchConstraint.freeSketch', {}, '3D スケッチには拘束を付けられません。作図面の上のスケッチで使ってください。'],
+      ['partError.sketchConstraint.unsolved', {}, '拘束を満たす形が見つかりませんでした。拘束をいくつか外して試してください。'],
+      ['partError.importedMesh.notMachinable', {}, '読み込んだ三角形の形には、穴あけや面取りはできません。'],
     ];
     expect(cases.map(([key, parameters]) => partErrorMessage({ featureId: 'f', code: 'invalidValue', text: { key, parameters } })))
       .toEqual(cases.map(([, , before]) => before));

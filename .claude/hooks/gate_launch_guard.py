@@ -110,7 +110,7 @@ def blocking_reason(delivery: dict, window: dict, now: datetime) -> str | None:
     status = delivery["state"].get("status")
     if status in FINISHED_STATUSES:
         return None
-    return (f"gate（delivery {delivery['id']}）が {status} の間で、gate の起動から {minutes(now - delivery['started'])} 分、"
+    return (f"手元の gate（旧経路、delivery {delivery['id']}）が {status} の間で、gate の起動から {minutes(now - delivery['started'])} 分、"
             f"静かな窓は {window['end']:%H:%M} まで。担当の起動の負荷で gate の自己試験・型・lint・単体が時間切れになる（{RULE}）。"
             f"gate が {'・'.join(FINISHED_STATUSES)} になるか窓が終わるまで起動を待つ。どうしても要る時だけ統括が {MARKER} に "
             '{"reason": "<理由>", "placedAt": "<今の時刻>"} を置く（1 回の起動で消える）。')
@@ -163,7 +163,7 @@ def early_gate(deliveries: Path, now: datetime) -> dict | None:
 
 
 def early_gate_reason(gate: dict, now: datetime, what: str) -> str:
-    return (f"全体検査（delivery {gate['id']}、{gate['status']}、起動から {max(0, int((now - gate['started']).total_seconds() // 60))} 分）は、"
+    return (f"手元の gate（旧経路、delivery {gate['id']}、{gate['status']}、起動から {max(0, int((now - gate['started']).total_seconds() // 60))} 分）は、"
             f"まだ 2 回目の起動前検査（段 check-ps1）を通っていない。今{what}と、その起動前検査が「直前 3 分以内の起動」と"
             f"「稼働の担当」で全体検査を止める（{EARLY_GATE_RULE}。2026-11-13 04:13 に約 10 分を失った）。gate.log に"
             f"「{EARLY_GATE_MARK}」の行が出てから{what}（全体検査の間の起動の印 launch-during-gate.json はこの間は使わない）。")

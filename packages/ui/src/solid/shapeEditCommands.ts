@@ -509,14 +509,14 @@ function pointPatternRejection(context: MachiningContext): MessageKey | null {
 }
 
 /**
- * 点集合パターンで繰り返す加工(穴・ねじ穴に限る)を選択から決める。
+ * 点集合パターンで繰り返す立体や加工を選択から決める。
  * 直線・円形パターン(`machiningCommands.ts` の `selectedPatternSource`)と同じ判定を使う。
  */
 function pointPatternSourceOf(context: MachiningContext): string | null {
   const bodyIds = selectedBodyIds(context.selection, liveBodyIds(context.document));
   for (const bodyId of bodyIds) {
     const feature = findSolid(context.document, bodyId);
-    if (feature !== undefined && isPatternSource(feature)) {
+    if (feature !== undefined && isPatternSource(feature, context.document.solids)) {
       return bodyId;
     }
   }

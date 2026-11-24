@@ -2,7 +2,9 @@
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { nextSolidId, nextSolidName } from '../part/createPartDocument.js';
 import type { PartDocument, SketchFaceRef, SketchLineRef } from '../part/types.js';
-import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetMetalRule, SheetPanelBoundaryRef } from './types.js';
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import type { SheetBaseFeature, SheetConvertFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetMetalRule,
+  SheetPanelBoundaryRef } from './types.js';
 
 export function defaultSheetMetalRule(): SheetMetalRule {
   return { thickness: n(1), innerRadius: n(1), kFactor: n(0.4) };
@@ -19,6 +21,12 @@ export function createSheetFlangeFeature(document: PartDocument, targetFeatureId
 export function createSheetBendFeature(document: PartDocument, targetFeatureId: string, panelId: string, line: SketchLineRef): SheetBendFeature {
   return { kind: 'sheetBend', id: nextSolidId(document, 'sheetBend'), name: nextSolidName(document, 'sheetBend'),
     suppressed: false, targetFeatureId, panelId, line, fixedSide: 'right', angle: n(90), rule: { innerRadius: null, kFactor: null } };
+}
+/** 立体を板金へ変える行(M-08)。内半径と K 係数は板金の既定と同じ値から始める。 */
+export function createSheetConvertFeature(document: PartDocument, sourceFeatureId: string, referenceFace: SubShapeRef,
+  rule: SheetMetalRule = defaultSheetMetalRule()): SheetConvertFeature {
+  return { kind: 'sheetConvert', id: nextSolidId(document, 'sheetConvert'), name: nextSolidName(document, 'sheetConvert'),
+    suppressed: false, sourceFeatureId, referenceFace, rule: { innerRadius: rule.innerRadius, kFactor: rule.kFactor } };
 }
 export function createSheetReliefFeature(document: PartDocument, targetFeatureId: string, boundary: SheetPanelBoundaryRef,
   rule: SheetMetalRule = defaultSheetMetalRule()): SheetReliefFeature {

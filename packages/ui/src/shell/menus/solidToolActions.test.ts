@@ -15,7 +15,7 @@ function fixture(): PartDocument {
 }
 
 beforeEach(resetTestStore);
-const creationTools = ['extrude', 'revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+const creationTools = ['extrude', 'revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus', 'sweep', 'ruled', 'loft'] as const;
 
 describe('solid creation menu explicit targets', () => {
   it.each(creationTools)('%s opens the result and target controls without selecting a body by order', tool => {

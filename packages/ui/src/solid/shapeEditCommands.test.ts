@@ -313,7 +313,7 @@ describe('Should 群の押せる条件(タスク50、NFR-UX-5)', () => {
     const readinessOf = (selection: readonly string[]): string | null =>
       shapeEditReadiness({ document: withPoints, bodies, selection }, 'pointPattern').reasonKey;
     expect(readinessOf([])).toBe('shapeError.noPatternSource');
-    // 穴でない立体(押し出し)を選んでも「並べる加工」にはならない。
+    // 穴に使って消費された立体は並べる元にできない。
     expect(readinessOf(['extrude-1'])).toBe('shapeError.noPatternSource');
     expect(readinessOf(['hole-1'])).toBe('shapeError.noPatternPoints');
     expect(readinessOf(['hole-1', 'point-1'])).toBe('shapeError.noPatternPoints');
@@ -735,9 +735,11 @@ describe('Should 群の確定(タスク50)', () => {
     ).toEqual({ ok: false, reasonKey: 'shapeError.unknownChoice' });
   });
 
-  it('点集合パターン: 点の一覧がそのまま置き場所になる(FR-425)', () => {
+  it.each(['hole-1', 'extrude-1'])('点集合パターン: %s と選択順の点を保存する(FR-425)', source => {
     const base = fixture();
-    let document = appendSolid(base.document, holeFeature('hole-1', 'extrude-1'));
+    let document = source === 'hole-1'
+      ? appendSolid(base.document, holeFeature('hole-1', 'extrude-1'))
+      : base.document;
     const sketch = document.sketches[0];
     const p1 = createPointFeature(sketch, absoluteCoordinate(0, 0, 0));
     const withP1 = appendFeature(sketch, p1);
@@ -745,8 +747,8 @@ describe('Should 群の確定(タスク50)', () => {
     document = replaceSketch(document, appendFeature(withP1, p2));
     const context: MachiningContext = {
       document,
-      bodies: [...base.bodies, makeBody('hole-1')],
-      selection: ['hole-1', p1.id, p2.id, VERTEX_0],
+      bodies: source === 'hole-1' ? [...base.bodies, makeBody('hole-1')] : base.bodies,
+      selection: [source, p1.id, p2.id, VERTEX_0],
     };
     const outcome = commitShapeEdit(context, commitOf({ tool: 'pointPattern' }), 'pointPattern');
     expect(outcome.ok).toBe(true);
@@ -758,7 +760,7 @@ describe('Should 群の確定(タスク50)', () => {
     if (feature?.kind !== 'pattern' || feature.placement.kind !== 'points') {
       return;
     }
-    expect(feature.sourceFeatureId).toBe('hole-1');
+    expect(feature.sourceFeatureId).toBe(source);
     expect(feature.placement.points).toHaveLength(3);
     expect(feature.placement.points[0]?.reference).toEqual({ kind: 'point', pointId: p1.id });
     // 立体の頂点も置き場所にできる(座標を写さず参照で持つ)。

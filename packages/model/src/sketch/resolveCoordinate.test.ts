@@ -6,8 +6,6 @@ import { expectVec3CloseTo } from '../testing/vec3Assertions.testSupport.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { WORK_PLANES } from './planeMath.js';
 import {
-  LATITUDE_RANGE_MESSAGE,
-  MISSING_SPHERE_MESSAGE,
   resolveCoordinate,
   resolvePointReference,
   sphereGridPosition,
@@ -610,11 +608,11 @@ describe('球面上の点(FR-431)', () => {
     const outcome = resolvePointReference(gridPoint(95, 0), context, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('invalidValue');
-    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toContain('−90 度から 90 度');
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.latitudeRange', parameters: {} });
     expect(outcome.ok ? '' : outcome.error.featureId).toBe('point-9');
 
     const below = resolvePointReference(gridPoint(-95, 0), context, 'point-9');
-    expect(below.ok ? '' : plainTextValue(below.error.text)).toBe(LATITUDE_RANGE_MESSAGE);
+    expect(below.ok ? undefined : below.error.text).toEqual({ key: 'partError.coordinate.latitudeRange', parameters: {} });
   });
 
   it('球が消えた・球でない・別の id なら「球が見つかりません」で断る', () => {
@@ -622,13 +620,13 @@ describe('球面上の点(FR-431)', () => {
     const outcome = resolvePointReference(gridPoint(0, 0), context, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
-    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toBe(MISSING_SPHERE_MESSAGE);
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.missingSphere', parameters: {} });
   });
 
   it('球を引く口が渡されていなければ、黙って原点へ落とさず断る', () => {
     const outcome = resolvePointReference(gridPoint(0, 0), CONTEXT, 'point-9');
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toBe(MISSING_SPHERE_MESSAGE);
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.missingSphere', parameters: {} });
   });
 
   it('緯度・経度は式のまま保たれ、評価値だけを使う(FR-202)', () => {

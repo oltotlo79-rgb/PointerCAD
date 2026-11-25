@@ -19,7 +19,9 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@playwright/test": "catalog:",
+    "@pointercad/io": "workspace:*",
     "@pointercad/kernel": "workspace:*",
+    "@pointercad/model": "workspace:*",
     "@types/node": "catalog:",
     "comlink": "catalog:",
     "electron-builder": "catalog:",

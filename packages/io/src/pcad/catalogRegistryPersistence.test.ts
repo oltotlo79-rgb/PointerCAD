@@ -6,8 +6,8 @@
  * 選ぶ窓に出さない行(listed: false)と、前の呼び(formerSizes)で保存した部品(前の版で保存したファイルの形)も、同じ書き手と読み手で開き直せる事を見る。
  */
 import {
-  addComponent, buildStandardPartFromSource, createAssemblyDocument, createComponentFor, createStandardPartSource,
-  PRODUCT_CATALOG_REGISTRY, resolveAssembly, type AssemblyDocument, type StandardPartSource,
+  addComponent, buildBom, buildStandardPartFromSource, createAssemblyDocument, createComponentFor, createStandardPartSource,
+  joinRigidGroup, PRODUCT_CATALOG_REGISTRY, resolveAssembly, type AssemblyDocument, type StandardPartSource,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -46,6 +46,44 @@ function assemblyOf(name: string, sources: readonly StandardPartSource[]): Assem
 }
 
 describe('登録の表の全部の族の部品の保存と開き直し', () => {
+  it('穴加工の式、旧形式の板、組にした固定部材を開き直し、穴と部品表を再構成する', async () => {
+    const id = 'panel-board-order';
+    const fittingId = 'panel-part-box';
+    await PRODUCT_CATALOG_REGISTRY.ensure([id, fittingId]);
+    const row = PRODUCT_CATALOG_REGISTRY.loaded(id)?.rows.find((item) => item.key === 'resin-pc-t3');
+    const holder = PRODUCT_CATALOG_REGISTRY.loaded(fittingId)?.rows.find((item) => item.key === 'board-holder-23.8x20x30.5');
+    if (row === undefined || holder === undefined) throw new Error('missing panel rows');
+    const stock = { family: id, item: row.key, width: '100', height: '50' };
+    const original = createStandardPartSource('catalogItem', row.size, stock);
+    expect(original.options).toEqual(stock);
+    const machinedOptions = { ...stock, holeDiameter: '4*2', holeX: '15+5', holeY: '25' };
+    const machined = createStandardPartSource('catalogItem', row.size, machinedOptions);
+    const invalid = createStandardPartSource('catalogItem', row.size, { ...machinedOptions, holeX: '4' });
+    expect(buildStandardPartFromSource(invalid)).toBeNull();
+    const fitting = createStandardPartSource('catalogItem', holder.size, { family: fittingId, item: holder.key });
+    const base = assemblyOf('穴加工した枠の板', [original, machined, fitting]);
+    const document = joinRigidGroup(base, base.components.slice(1).map((component) => component.id));
+    const json = readAssemblyDocument(writeAssemblyDocument(document, SAVE_OPTIONS));
+    const zip = await readPcadaFile(await writePcadaFile(document, SAVE_OPTIONS));
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(reopened.components[1]?.source).toEqual(machined);
+      expect(reopened.components[1]?.rigidGroupId).toBeDefined();
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(buildStandardPartFromSource(original)?.solids.map((solid) => solid.kind)).toEqual(['extrude']);
+      expect(buildStandardPartFromSource(machined)?.solids.at(-1)).toMatchObject({
+        kind: 'hole', depth: { kind: 'through' }, diameter: { value: 8 },
+      });
+      const rows = buildBom(reopened, { partKeys: new Map(), bodies: new Map() });
+      expect(rows).toHaveLength(3);
+      const removed = Math.PI * 4 ** 2;
+      expect(rows[0]?.massEach).toBeCloseTo(18, 9);
+      expect(rows[1]?.massEach).toBeCloseTo((5000 - removed) * 0.0036, 9);
+      expect(rows[1]?.catalogMaterialLabel).toBe(row.materialLabel);
+    }
+  });
   it('値を渡す族は登録の表にあり、登録の表の族の id は重ならない', () => {
     const ids = PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);

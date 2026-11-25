@@ -11,7 +11,8 @@
 import { evaluateExpression } from '@pointercad/expression';
 
 import { withName } from '../../standard/partPrimitives.js';
-import { buildPanelBoardPart, fitsPanelMax, panelBoardProfile } from '../profiles/panelBoard.js';
+import { fitsPanelMax } from '../profiles/panelBoard.js';
+import { canMachinePanelBoard, makeMachinedPanelBoard, panelBoardHole, PANEL_HOLE_OPTIONS } from '../profiles/panelBoardMachining.js';
 import type { CatalogFamily, CatalogItemRow, CatalogOptionSpec } from '../types.js';
 import { PANEL_BOARD_RECORDS } from './panelBoardRows.js';
 
@@ -19,11 +20,14 @@ import { PANEL_BOARD_RECORDS } from './panelBoardRows.js';
 export interface PanelBoardRecord {
   readonly key: string;
   readonly size: string;
-  readonly page: number;
+  /** 元の表の紙面。個別製品仕様に紙面が無い場合は null。 */
+  readonly page: number | null;
   /** 部品表の材質の欄の文字(一般の材料の語)。 */
   readonly materialLabel: string;
   /** 密度の表の材質(アルミ・鋼など)。密度の表に無い材料(樹脂・木など)は持たない。 */
   readonly densityMaterialId?: string;
+  /** 材質の指定が無い場合に既定の鋼の密度を使わない。 */
+  readonly omitDefaultDensity?: true;
   readonly thickness: number;
   /** 面積あたりの質量(kg/m²)。記入の無い行は null。 */
   readonly massKgPerM2: number | null;
@@ -69,7 +73,7 @@ function lengthOfKey(values: Readonly<Record<string, string>>, key: string): num
 
 function noteOf(record: PanelBoardRecord): string {
   const mass = record.massKgPerM2 !== null ? '質量は面積 × 資料の面積あたりの質量' : record.specificGravity !== null ? '質量は体積 × 資料の比重'
-    : '質量は形の体積 × 材質の密度';
+    : record.omitDefaultDensity === true ? '質量には密度の材質指定が必要' : '質量は形の体積 × 材質の密度';
   const text = record.simplified.length > 0 ? `形は簡略(${record.simplified.join('・')})。${mass}` : mass;
   return record.sizeNote === undefined ? text : `${text}。${record.sizeNote}`;
 }
@@ -86,8 +90,11 @@ function rowOf(record: PanelBoardRecord): CatalogItemRow {
     standardLabel: '製造元の寸法に合わせた物',
     materialLabel: record.materialLabel,
     ...(record.densityMaterialId === undefined ? {} : { densityMaterialId: record.densityMaterialId }),
+    ...(record.omitDefaultDensity === true ? { omitDefaultDensity: record.omitDefaultDensity } : {}),
     dims,
-    evidence: { title: EVIDENCE_TITLE, edition: null, locator: `PDF ${record.page} 頁 取扱品目の表(板厚・質量・サイズの記入)`, reference: '' },
+    evidence: record.page === null
+      ? { title: '製造元の個別製品仕様', edition: null, locator: '板厚・サイズ上限・質量欄', reference: '' }
+      : { title: EVIDENCE_TITLE, edition: null, locator: `PDF ${record.page} 頁 取扱品目の表(板厚・質量・サイズの記入)`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
     note: noteOf(record),
@@ -96,45 +103,64 @@ function rowOf(record: PanelBoardRecord): CatalogItemRow {
 }
 
 /** 板の 1 枚の質量(g)。面積あたりの質量か比重が無い行は null。 */
-function boardMass(row: CatalogItemRow, width: number, height: number): number | null {
+function boardMass(row: CatalogItemRow, area: number): number | null {
   const thickness = row.dims.thickness ?? NaN;
-  if (!(width > 0 && height > 0 && thickness > 0)) return null;
+  if (!(Number.isFinite(area) && area > 0 && thickness > 0)) return null;
   const perArea = row.dims.massKgPerM2;
-  if (perArea !== undefined) return width * height / 1e6 * perArea * 1000;
+  if (perArea !== undefined) return area / 1e6 * perArea * 1000;
   const gravity = row.dims.specificGravity;
-  return gravity === undefined ? null : width * height * thickness / 1000 * gravity;
+  return gravity === undefined ? null : area * thickness / 1000 * gravity;
+}
+
+function boardName(row: CatalogItemRow, values: Readonly<Record<string, string>>, fixed: boolean): string {
+  if (fixed) return row.size;
+  const name = `${row.size} ${values.width ?? ''}×${values.height ?? ''}`;
+  const diameter = evaluateExpression(values.holeDiameter ?? '0');
+  return diameter.ok && diameter.value.value > 0
+    ? `${name} ⌀${values.holeDiameter} (${values.holeX}, ${values.holeY})` : name;
+}
+
+function boardArea(row: CatalogItemRow, size: readonly [number, number] | null, values: Readonly<Record<string, string>>): number | null {
+  if (size === null || !size.every((length) => Number.isFinite(length) && length > 0)) return null;
+  const hole = panelBoardHole(row, size, values);
+  if (hole === false) return null;
+  const removed = hole === null ? 0 : Math.PI * (hole.diameter / 2) ** 2;
+  return size[0] * size[1] - removed;
 }
 
 /** 板の族を作る(行の表を渡す。検査は汎用の行で同じ作り方を確かめる)。 */
 export function createPanelBoardFamilies(records: readonly PanelBoardRecord[]): { readonly fixed: CatalogFamily; readonly order: CatalogFamily } {
   const fixedRows = records.filter((record) => record.fixedSize !== null).map(rowOf);
   const orderRows = records.filter((record) => record.fixedSize === null).map(rowOf);
+  const orderOptions = orderRows.some(canMachinePanelBoard) ? [WIDTH_SPEC, HEIGHT_SPEC, ...PANEL_HOLE_OPTIONS] : [WIDTH_SPEC, HEIGHT_SPEC];
   const base: Pick<CatalogFamily, 'group' | 'generatorRevision' | 'stock'> = { group: 'aluminumFrame', generatorRevision: GENERATOR_REVISION, stock: 'count' };
   const sizeOf = (row: CatalogItemRow, values: Readonly<Record<string, string>>, fixed: boolean): readonly [number, number] | null => {
     if (fixed) return [row.dims.width ?? NaN, row.dims.height ?? NaN];
     const [width, height] = [lengthOfKey(values, 'width'), lengthOfKey(values, 'height')];
     const { maxWidth, maxHeight } = row.dims;
     const max: readonly [number, number] | null = maxWidth === undefined || maxHeight === undefined ? null : [maxWidth, maxHeight];
-    return Number.isNaN(width) || Number.isNaN(height) || !fitsPanelMax(width, height, max) ? null : [width, height];
+    return !Number.isFinite(width * height) || !fitsPanelMax(width, height, max) ? null : [width, height];
   };
   const family = (id: string, kindKey: string, rows: readonly CatalogItemRow[], fixed: boolean): CatalogFamily => ({
     ...base, id, kindKey, catalogRevision: `${id}-2026-11-r1`, diagram: fixed ? 'panelBoardFixed' : 'panelBoardOrder',
-    options: fixed ? [] : [WIDTH_SPEC, HEIGHT_SPEC], rows,
-    // 部品の名前: 定尺は呼び、注文の寸法は呼びと入れた幅 × 高さ(入れた式のまま)。
-    partName: (row, values) => (fixed ? row.size : `${row.size} ${values.width ?? ''}×${values.height ?? ''}`),
+    options: fixed ? [] : orderOptions, rows,
+    partName: (row, values) => boardName(row, values, fixed),
     build: (row, values) => {
       const size = sizeOf(row, values, fixed);
-      const part = size === null ? null : buildPanelBoardPart({ width: size[0], height: size[1], thickness: row.dims.thickness ?? NaN });
-      return part === null ? null : withName(part, fixed ? row.size : `${row.size} ${values.width ?? ''}×${values.height ?? ''}`);
+      if (size === null) return null;
+      const hole = fixed ? null : panelBoardHole(row, size, values);
+      if (hole === false) return null;
+      const part = makeMachinedPanelBoard({ width: size[0], height: size[1], thickness: row.dims.thickness ?? NaN }, hole);
+      return part === null ? null : withName(part, boardName(row, values, fixed));
     },
     nominalVolume: (row, values) => {
-      const size = sizeOf(row, values, fixed);
-      const profile = size === null ? null : panelBoardProfile({ width: size[0], height: size[1], thickness: row.dims.thickness ?? NaN });
-      return profile === null ? null : profile.areaMm2 * (row.dims.thickness ?? NaN);
+      const area = boardArea(row, sizeOf(row, values, fixed), fixed ? {} : values);
+      const thickness = row.dims.thickness ?? NaN;
+      return area === null || !Number.isFinite(thickness) || thickness <= 0 ? null : area * thickness;
     },
     nominalMassG: (row, values) => {
-      const size = sizeOf(row, values, fixed);
-      return size === null ? null : boardMass(row, size[0], size[1]);
+      const area = boardArea(row, sizeOf(row, values, fixed), fixed ? {} : values);
+      return area === null ? null : boardMass(row, area);
     },
   });
   return { fixed: family('panel-board-fixed', 'catalog.board.kind.fixed', fixedRows, true),

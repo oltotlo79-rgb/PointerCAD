@@ -33,6 +33,8 @@ import {
 import {
   appendFeature,
   appendSolid,
+  assignBodyAppearance,
+  DEFAULT_APPEARANCE,
   carriesColor,
   dxfToSketch,
   nextSolidId,
@@ -47,6 +49,7 @@ import {
   type ExportRequest,
   type ExportSelection,
   type FileKind,
+  type ImportedBrepInspection,
   type ImportedMeshFeature,
   type ImportedSolidFeature,
   type ImportedSource,
@@ -77,7 +80,7 @@ import {
  * 一覧そのものの正本は model の `EXPORT_FORMATS`(こちらは並べ替えた写しではなく、
  * 画面が「STEP → STL → 3MF → OBJ → glTF」の順で見せるという決めだけを持つ)。
  */
-const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
+const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'iges', 'stl', '3mf', 'obj', 'glb'];
 
 /**
  * 書き出しのパネルで選べる形式(FR-803、FR-813)。
@@ -107,8 +110,10 @@ export const EXPORT_PANEL_FORMAT_ORDER: readonly ExportPanelFormat[] = [
  */
 /** DWGは変換案内を表示する種類。ネイティブ読込には渡さない。 */
 export type ImportFileKind = Exclude<FileKind, 'pcad' | 'pcadt' | 'pcadscript' | 'pcadinput'>;
-export const IMPORT_FILE_KINDS: readonly ImportFileKind[] = ['step', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg'];
-const READABLE_FILE_KINDS = IMPORT_FILE_KINDS.filter(kind => kind !== 'dwg');
+export const IMPORT_FILE_KINDS: readonly ImportFileKind[] = ['step', 'iges', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg'];
+function readableKinds(igesAvailable: boolean): readonly ImportFileKind[] {
+  return IMPORT_FILE_KINDS.filter(kind => kind !== 'dwg' && (kind !== 'iges' || igesAvailable));
+}
 
 /**
  * カーネルへ渡す書き出しの形式(`KernelApi.exportShapes` の `format`)。
@@ -117,13 +122,14 @@ const READABLE_FILE_KINDS = IMPORT_FILE_KINDS.filter(kind => kind !== 'dwg');
  * カーネルは三角形までを返す。glTF はカーネルの言葉では `'gltf'`(ファイルの種類としては
  * `.glb` なので `FileKind` は `'glb'`)。
  */
-export type ExchangeKernelExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
+export type ExchangeKernelExportFormat = 'step' | 'iges' | 'stl' | 'obj' | 'gltf' | 'mesh';
 
 /** 書き出しの形式 → カーネルの言葉(網羅 `switch`。形式が増えたら型検査が落ちる)。 */
 export function kernelExportFormatOf(format: ExportFormat): ExchangeKernelExportFormat {
   switch (format) {
     case 'step':
-      return 'step';
+    case 'iges':
+      return format;
     case 'stl':
       return 'stl';
     case 'obj':
@@ -144,7 +150,8 @@ export function kernelExportFormatOf(format: ExportFormat): ExchangeKernelExport
 export function importedSourceFormatOf(kind: FileKind): ImportedSourceFormat | null {
   switch (kind) {
     case 'step':
-      return 'step';
+    case 'iges':
+      return kind;
     case 'stl':
       return 'stl';
     case 'obj':
@@ -249,7 +256,8 @@ const EXPORT_NOTICE_KEYS: Readonly<Record<ExportNoticeKey, MessageKey>> = {
 };
 
 /** 断り・警告のキーを画面の文言のキーへ直す。 */
-export function exportNoticeMessageKey(notice: ExportNoticeKey): MessageKey {
+export function exportNoticeMessageKey(notice: ExportNoticeKey, format?: ExportFormat): MessageKey {
+  if (notice === 'meshNotSupported' && format === 'iges') return 'exchangeError.igesMeshNotSupported';
   return EXPORT_NOTICE_KEYS[notice];
 }
 
@@ -297,7 +305,7 @@ export function exportRefusalKey(
   request: ExportRequest,
 ): MessageKey | null {
   const outcome = selectExportBodies(bodies, request);
-  return outcome.ok ? null : exportNoticeMessageKey(outcome.reason);
+  return outcome.ok ? null : exportNoticeMessageKey(outcome.reason, request.format);
 }
 
 /**
@@ -409,6 +417,7 @@ export type ExchangeImportedBody =
       readonly triangleCount: number;
       /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
       readonly brepBytes: Uint8Array;
+      readonly color?: ExportColor;
     }
   | {
       readonly bodyKind: 'mesh';
@@ -436,9 +445,12 @@ export interface ExchangeImportOutcome {
  * 「文言の正本の層」)。呼び出し側はその文をそのまま画面へ出す。
  */
 export interface ExchangeKernel {
+  supportsIges?(): Promise<boolean>;
+  /** Read a single saved B-rep. The caller retains the attachment bytes. */
+  readonly inspectImportedBrep?: (bytes: Uint8Array) => Promise<ImportedBrepInspection>;
   exportShapes(request: ExchangeExportRequest): Promise<ExchangeExportOutcome>;
   importShape(
-    format: 'step' | 'stl' | 'obj' | 'gltf',
+    format: 'step' | 'iges' | 'stl' | 'obj' | 'gltf',
     fileName: string,
     bytes: Uint8Array,
   ): Promise<ExchangeImportOutcome>;
@@ -461,6 +473,8 @@ export interface ExchangeDeps {
   readonly gateway: FileGateway;
   /** 幾何カーネル。 */
   readonly kernel: ExchangeKernel;
+  readonly igesAvailable?: boolean;
+  readonly importIsCurrent?: () => boolean;
   /**
    * 読み込んだファイルに単位が書かれていないとき(STL / OBJ)に訊く。
    * 取り消されたら `null`(読み込みそのものを止める)。
@@ -550,10 +564,10 @@ export async function prepareExport(
   if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
   const selected = selectExportBodies(bodies, request);
   if (!selected.ok) {
-    return { ok: false, message: deps.messageOf(exportNoticeMessageKey(selected.reason)) };
+    return { ok: false, message: deps.messageOf(exportNoticeMessageKey(selected.reason, request.format)) };
   }
   const notices = visibleExportWarnings(request.format, selected.selection.warnings).map(
-    (warning) => deps.messageOf(exportNoticeMessageKey(warning)),
+    (warning) => deps.messageOf(exportNoticeMessageKey(warning, request.format)),
   );
   const startedAt = performance.now();
   const deadlineAt = request.format === '3mf' ? startedAt + THREE_MF_EXPORT_TIME_LIMIT_MS : null;
@@ -771,6 +785,11 @@ export interface ImportedFeaturesResult {
   readonly meshes: ReadonlyMap<string, ImportedMeshBytes>;
 }
 
+function importedColor(color: ExportColor): string | null {
+  if (!color.every(value => Number.isFinite(value) && value >= 0 && value <= 1)) return null;
+  return '#' + color.map(value => Math.round(value * 255).toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * 読み込んだ立体を履歴のベースボディへ積む(FR-802)。
  *
@@ -778,7 +797,7 @@ export interface ImportedFeaturesResult {
  * 実ストアへ入れる入口は、過去/未来の原本との衝突を新規featureだけで正規化する。
  * feature.idと形状への参照は保ち、最終的な添付refだけを割り当て直す。
  *
- * **外観は既定のまま**にする(ファイルの中の色は取り込まない)。
+ * IGES の明示的な本体色は、添付と同じ履歴変更に含める。
  */
 export function appendImportedBodies(
   document: PartDocument,
@@ -819,6 +838,10 @@ export function appendImportedBodies(
     };
     shapes.set(id, body.brepBytes);
     next = appendSolid(next, feature);
+    if (source.format === 'iges' && body.color !== undefined) {
+      const color = importedColor(body.color);
+      if (color !== null) next = assignBodyAppearance(next, id, { ...DEFAULT_APPEARANCE, color });
+    }
   }
   return { document: next, shapes, meshes };
 }
@@ -893,7 +916,7 @@ export async function runImportBody(
 ): Promise<ImportOutcome> {
   let picked;
   try {
-    picked = await openFileThrough(deps.gateway, READABLE_FILE_KINDS);
+    picked = await openFileThrough(deps.gateway, readableKinds(deps.igesAvailable === true));
   } catch (error) {
     return { ok: false, message: messageOfError(error) };
   }
@@ -919,6 +942,8 @@ export async function importPickedBody(
     return { ok: false, message: DXF_IS_NOT_A_BODY_MESSAGE };
   }
 
+  const igesIsStale = (): boolean => format === 'iges' && deps.importIsCurrent?.() === false;
+  if (igesIsStale()) return { ok: false, cancelled: true };
   let outcome: ExchangeImportOutcome;
   if (format === '3mf') {
     const read = readThreeMfBodies(picked.bytes);
@@ -930,13 +955,16 @@ export async function importPickedBody(
     try {
       outcome = await deps.kernel.importShape(format, picked.fileName, picked.bytes);
     } catch (error) {
+      if (igesIsStale()) return { ok: false, cancelled: true };
       return { ok: false, message: messageOfError(error) };
     }
   }
+  if (igesIsStale()) return { ok: false, cancelled: true };
   if (outcome.bodies.length === 0) {
     return { ok: false, message: NO_SHAPE_MESSAGE };
   }
 
+  if (format === 'iges' && outcome.unit === 'other') return { ok: false, message: deps.messageOf('exchangeError.igesUnit') };
   const unit = await resolveImportUnit(deps, outcome.unit);
   if (unit === null) {
     return { ok: false, cancelled: true };
@@ -1083,9 +1111,12 @@ export async function runImport(
   format?: ImportFileKind,
 ): Promise<ImportAnyOutcome> {
   if (format === 'dwg') return { ok: false, message: deps.messageOf('exchange.dwgGuide') };
+  if (format === 'iges' && deps.igesAvailable !== true) {
+    return { ok: false, message: deps.messageOf('exchangeError.igesUnavailable') };
+  }
   let picked;
   try {
-    picked = await openFileThrough(deps.gateway, format === undefined ? READABLE_FILE_KINDS : [format]);
+    picked = await openFileThrough(deps.gateway, format === undefined ? readableKinds(deps.igesAvailable === true) : [format]);
   } catch (error) {
     return { ok: false, message: messageOfError(error) };
   }

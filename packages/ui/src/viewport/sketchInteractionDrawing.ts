@@ -90,13 +90,12 @@ function commitVertexPoint(ref: SubShapeRef, pointer: Pointer): void {
   if (transition.kind !== 'committed') {
     return;
   }
-  applySketchCommit(transition.commit, transition.state);
-  const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
-  if (next === null) {
-    useAppStore.getState().closeNumericInput();
-    return;
-  }
-  useAppStore.getState().openNumericInput(next, pointer);
+  void applySketchCommit(transition.commit, transition.state, () => {
+    const store = useAppStore.getState();
+    const next = nextNumericInput(transition.state, store.chaining);
+    if (next === null) store.closeNumericInput();
+    else store.openNumericInput(next, pointer);
+  });
 }
 
 /** 1 つの canvas の作図の押下。返す関数はどれも呼ばれた時点のストアを読む。 */

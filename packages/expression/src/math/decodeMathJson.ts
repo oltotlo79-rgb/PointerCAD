@@ -61,35 +61,111 @@ export interface DecodeMathOptions {
     => 'multiply' | 'dot' | 'cross' | null;
 }
 
+type DecodeMathNode = (value: unknown, scope: MathSymbolScope, path: string, scalarFunction?: boolean) => MathNode;
+
+/**
+ * cartesian, cylindrical and spherical in a selector position are the selectors 0, 1 and 2 (MC-19c).
+ * A name that already means something in the scope (a declared or bound symbol) keeps that meaning.
+ */
+function coordinateKeyword(value: unknown, scope: MathSymbolScope, notation: DecodeMathOptions['symbolNotation']): unknown {
+  const symbol = symbolOf(value), name = symbol ?? stringOf(value);
+  const selector = VECTOR_COORDINATE_SYSTEMS.findIndex(keyword => keyword === name);
+  if (selector < 0) return value;
+  if (symbol !== null) {
+    try { scope.resolve(symbol, notation); return value; } catch (error) {
+      if (!(error instanceof MathInputProblem)) throw error;
+    }
+  }
+  return { num: String(selector) };
+}
+/** The tagged point [[p1,p2,p3],cylindrical] of gradientat and the other vector operations at a point. */
+function taggedKeyword(value: unknown, scope: MathSymbolScope, notation: DecodeMathOptions['symbolNotation']): unknown {
+  const target = sequenceOf(value);
+  if (target?.[0] !== 'List' || target.length !== 3 || sequenceOf(target[1])?.[0] !== 'List') return value;
+  const selector = coordinateKeyword(target[2], scope, notation);
+  return selector === target[2] ? value : ['List', target[1], selector];
+}
+
+function decodeMatrix(items: readonly unknown[], scope: MathSymbolScope, path: string, parse: DecodeMathNode): MathNode {
+  // Parentheses/brackets are rendering metadata, not another mathematical operand.
+  // Determinant/norm notation must arrive with its own operator, never be dropped as a style.
+  const style = items.length === 3 ? stringOf(items[2]) : null;
+  if (items.length === 3 && style !== '[]' && style !== '()' && style !== '..') {
+    throw new MathInputProblem('syntax', '行列の囲みと行列式・ノルムを区別して指定してください。');
+  }
+  const contents = parse(items[1], scope, `${path}.0`);
+  if (contents.kind !== 'operation' || contents.operation !== 'list' || contents.operands.length === 0) {
+    throw new MathInputProblem('syntax', '行列の行と列を指定してください。');
+  }
+  let columns = -1, entries = 0;
+  for (const row of contents.operands) {
+    if (row.kind !== 'operation' || row.operation !== 'list' || row.operands.length === 0
+      || columns >= 0 && columns !== row.operands.length) throw new MathInputProblem('syntax', '行列の各行の成分数を揃えてください。');
+    columns = row.operands.length; entries += columns;
+    if (entries > 4096) throw new MathInputProblem('budget', '行列の成分が多すぎます。');
+  }
+  return { kind: 'operation', operation: 'matrix', operands: [contents] };
+}
+
+function decodeDerivative(
+  items: readonly unknown[], operation: string, scope: MathSymbolScope, path: string,
+  notation: DecodeMathOptions['symbolNotation'], parse: DecodeMathNode,
+): MathNode {
+  // Keep the caller-scope meaning of every existing derivative; only the failure names the rule.
+  for (const item of items.slice(2)) {
+    const name = symbolOf(item);
+    if (name === null) continue;
+    try { scope.resolve(name, notation); } catch (error) {
+      if (error instanceof MathInputProblem) throw new MathInputProblem(error.code, derivativeVariableReason(name));
+      throw error;
+    }
+  }
+  const body = parse(items[1], scope, `${path}.1`);
+  const variables = items.slice(2).map((value, index) => parse(value, scope, `${path}.${index + 2}`));
+  if (variables.some(variable => variable.kind !== 'symbol')) {
+    throw new MathInputProblem('syntax', '微分する変数を記号で指定してください。');
+  }
+  return { kind: 'operation', operation, operands: [body, ...variables] };
+}
+
+function indexedBinding(
+  items: readonly unknown[], operation: string, scope: MathSymbolScope, path: string,
+  parse: DecodeMathNode, scalarBoundIds: Set<string>,
+): MathNode {
+  let nested = scope;
+  const bindings: MathBinding[] = [];
+  const seen = new Set<string>();
+  for (let index = 2; index < items.length; index += 1) {
+    const item = items[index];
+    const range = sequenceOf(item);
+    const name = symbolOf(range?.[0] === 'Tuple' ? range[1] : item);
+    if (!name || seen.has(name)) throw new MathInputProblem('syntax', '積分や総和の変数名を重複なく指定してください。');
+    seen.add(name);
+    let domain: MathBinding['domain'];
+    if (range?.[0] === 'Tuple' && (range.length === 4 || range.length === 5)) {
+      if (operation === 'integrate' && range.length === 5) throw new MathInputProblem('syntax', '積分の範囲に刻み幅は指定できません。');
+      domain = { kind: 'range', lower: parse(range[2], nested, `${path}.${index}.2`),
+        upper: parse(range[3], nested, `${path}.${index}.3`),
+        step: range.length === 5 ? parse(range[4], nested, `${path}.${index}.4`) : null };
+    } else if (symbolOf(item) !== null && operation === 'integrate') {
+      domain = { kind: 'unrestricted' };
+    } else {
+      throw new MathInputProblem('syntax', '積分や総和の下限と上限を指定してください。');
+    }
+    const bound = nested.bind(name, `${path}.${index}.1`);
+    scalarBoundIds.add(bound.variable.id);
+    bindings.push({ variable: bound.variable, domain });
+    nested = bound.scope;
+  }
+  return { kind: 'binder', operation, bindings, body: parse(items[1], nested, `${path}.1`) };
+}
+
 export function decodeMathJson(input: unknown, options: DecodeMathOptions): MathNode {
   // y′, ẏ and dy/dx are converted inside their differential problem; any left here gets its reason.
   rejectShortDerivativeNotation(input);
   validateRawMath(input, options.operations);
   const rootScope = new MathSymbolScope(options.names);
   const scalarBoundIds = new Set<string>();
-
-  /**
-   * cartesian, cylindrical and spherical in a selector position are the selectors 0, 1 and 2 (MC-19c).
-   * A name that already means something in the scope (a declared or bound symbol) keeps that meaning.
-   */
-  function coordinateKeyword(value: unknown, scope: MathSymbolScope): unknown {
-    const symbol = symbolOf(value), name = symbol ?? stringOf(value);
-    const selector = VECTOR_COORDINATE_SYSTEMS.findIndex(keyword => keyword === name);
-    if (selector < 0) return value;
-    if (symbol !== null) {
-      try { scope.resolve(symbol, options.symbolNotation); return value; } catch (error) {
-        if (!(error instanceof MathInputProblem)) throw error;
-      }
-    }
-    return { num: String(selector) };
-  }
-  /** The tagged point [[p1,p2,p3],cylindrical] of gradientat and the other vector operations at a point. */
-  function taggedKeyword(value: unknown, scope: MathSymbolScope): unknown {
-    const target = sequenceOf(value);
-    if (target?.[0] !== 'List' || target.length !== 3 || sequenceOf(target[1])?.[0] !== 'List') return value;
-    const selector = coordinateKeyword(target[2], scope);
-    return selector === target[2] ? value : ['List', target[1], selector];
-  }
 
   function parse(value: unknown, scope: MathSymbolScope, path: string, scalarFunction = false): MathNode {
     if (typeof value === 'number') return { kind: 'number', decimal: String(value) };
@@ -102,26 +178,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     if (typeof head !== 'string') throw new MathInputProblem('syntax', '演算名を確認できません。');
     const operation = options.operations.get(head);
     if (!operation) throw new MathInputProblem('unsupported', `演算「${head}」の定義を確認してください。`);
-    if (operation.id === 'matrix') {
-      // Parentheses/brackets are rendering metadata, not another mathematical operand.
-      // Determinant/norm notation must arrive with its own operator, never be dropped as a style.
-      const style = items.length === 3 ? stringOf(items[2]) : null;
-      if (items.length === 3 && style !== '[]' && style !== '()' && style !== '..') {
-        throw new MathInputProblem('syntax', '行列の囲みと行列式・ノルムを区別して指定してください。');
-      }
-      const contents = parse(items[1], scope, `${path}.0`);
-      if (contents.kind !== 'operation' || contents.operation !== 'list' || contents.operands.length === 0) {
-        throw new MathInputProblem('syntax', '行列の行と列を指定してください。');
-      }
-      let columns = -1, entries = 0;
-      for (const row of contents.operands) {
-        if (row.kind !== 'operation' || row.operation !== 'list' || row.operands.length === 0
-          || columns >= 0 && columns !== row.operands.length) throw new MathInputProblem('syntax', '行列の各行の成分数を揃えてください。');
-        columns = row.operands.length; entries += columns;
-        if (entries > 4096) throw new MathInputProblem('budget', '行列の成分が多すぎます。');
-      }
-      return { kind: 'operation', operation: 'matrix', operands: [contents] };
-    }
+    if (operation.id === 'matrix') return decodeMatrix(items, scope, path, parse);
     if (head === 'Delimiter') return parse(items[1], scope, `${path}.1`);
     if (head === 'PcadCoefficient') {
       const label = stringOf(unwrapDelimiter(items[1]));
@@ -155,7 +212,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
         operands: items.slice(1).map((operand, index) => parse(operand, scope, `${path}.${index + 1}`)) };
     }
     if (head === 'Sum' || head === 'Product' || head === 'Integrate') {
-      return indexedBinding(items, operation.id, scope, path);
+      return indexedBinding(items, operation.id, scope, path, parse, scalarBoundIds);
     }
     if (head === 'ForAll' || head === 'Exists') {
       const declaration = sequenceOf(items[1]);
@@ -196,23 +253,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
       if (axes.length === 0) throw new MathInputProblem('syntax', NABLA_VARIABLES_REQUIRED);
       return parse([head, items[1], ['List', ...axes]], scope, path);
     }
-    if (head === 'D') {
-      // Keep the caller-scope meaning of every existing derivative; only the failure names the rule.
-      for (const item of items.slice(2)) {
-        const name = symbolOf(item);
-        if (name === null) continue;
-        try { scope.resolve(name, options.symbolNotation); } catch (error) {
-          if (error instanceof MathInputProblem) throw new MathInputProblem(error.code, derivativeVariableReason(name));
-          throw error;
-        }
-      }
-      const body = parse(items[1], scope, `${path}.1`);
-      const variables = items.slice(2).map((value, index) => parse(value, scope, `${path}.${index + 2}`));
-      if (variables.some(variable => variable.kind !== 'symbol')) {
-        throw new MathInputProblem('syntax', '微分する変数を記号で指定してください。');
-      }
-      return { kind: 'operation', operation: operation.id, operands: [body, ...variables] };
-    }
+    if (head === 'D') return decodeDerivative(items, operation.id, scope, path, options.symbolNotation, parse);
     if (LINE_INTEGRAL_IDS.has(operation.id) || REGION_INTEGRAL_IDS.has(operation.id)) {
       const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
         operands: items.slice(1).map((item, index) => parse(item, scope, `${path}.${index + 1}`, index < 2)) };
@@ -282,7 +323,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     }
     if (VECTOR_CALCULUS_AT_IDS.has(operation.id)) {
       const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
-        operands: [parse(items[1], scope, `${path}.1`, true), parse(taggedKeyword(items[2], scope), scope, `${path}.2`)] };
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(taggedKeyword(items[2], scope, options.symbolNotation), scope, `${path}.2`)] };
       vectorCalculusAtBounds(value);
       return value;
     }
@@ -308,40 +349,11 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     }
     if (COORDINATE_SELECTABLE.has(operation.id) && items.length === 4) {
       // gradient(f,[r,θ,z],cylindrical): the third operand is the MC-29 selector.
-      return { kind: 'operation', operation: operation.id, operands: [items[1], items[2], coordinateKeyword(items[3], scope)]
+      return { kind: 'operation', operation: operation.id, operands: [items[1], items[2], coordinateKeyword(items[3], scope, options.symbolNotation)]
         .map((operand, index) => parse(operand, scope, `${path}.${String(index + 1)}`)) };
     }
     return { kind: 'operation', operation: operation.id,
       operands: items.slice(1).map((operand, index) => parse(operand, scope, `${path}.${index + 1}`)) };
-  }
-
-  function indexedBinding(items: readonly unknown[], operation: string, scope: MathSymbolScope, path: string): MathNode {
-    let nested = scope;
-    const bindings: MathBinding[] = [];
-    const seen = new Set<string>();
-    for (let index = 2; index < items.length; index += 1) {
-      const item = items[index];
-      const range = sequenceOf(item);
-      const name = symbolOf(range?.[0] === 'Tuple' ? range[1] : item);
-      if (!name || seen.has(name)) throw new MathInputProblem('syntax', '積分や総和の変数名を重複なく指定してください。');
-      seen.add(name);
-      let domain: MathBinding['domain'];
-      if (range?.[0] === 'Tuple' && (range.length === 4 || range.length === 5)) {
-        if (operation === 'integrate' && range.length === 5) throw new MathInputProblem('syntax', '積分の範囲に刻み幅は指定できません。');
-        domain = { kind: 'range', lower: parse(range[2], nested, `${path}.${index}.2`),
-          upper: parse(range[3], nested, `${path}.${index}.3`),
-          step: range.length === 5 ? parse(range[4], nested, `${path}.${index}.4`) : null };
-      } else if (symbolOf(item) !== null && operation === 'integrate') {
-        domain = { kind: 'unrestricted' };
-      } else {
-        throw new MathInputProblem('syntax', '積分や総和の下限と上限を指定してください。');
-      }
-      const bound = nested.bind(name, `${path}.${index}.1`);
-      scalarBoundIds.add(bound.variable.id);
-      bindings.push({ variable: bound.variable, domain });
-      nested = bound.scope;
-    }
-    return { kind: 'binder', operation, bindings, body: parse(items[1], nested, `${path}.1`) };
   }
 
   return parse(input, rootScope, '0');

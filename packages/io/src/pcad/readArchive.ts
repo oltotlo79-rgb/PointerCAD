@@ -5,8 +5,9 @@
  */
 import { inflateSync } from 'fflate';
 import { IO_LIMITS, type IoLimits } from '../limits.js';
-import { DeflateSizeError, deflateExpandedSize } from './deflateExpandedSize.js';
-import { ZipDirectoryError, zipDirectory, type ZipEntryRegion } from './zipDirectory.js';
+import { ARCHIVE_READ_CHUNK_BYTES, ArchiveReadSourceError, readArchiveRange, type ArchiveReadSource } from './archiveReadSource.js';
+import { DeflateSizeError, decodeDeflateRange, deflateExpandedSize } from './deflateExpandedSize.js';
+import { ZipDirectoryError, zipDirectory, zipDirectoryFromSource, type ZipEntryLocation, type ZipEntryRegion } from './zipDirectory.js';
 import { zipCrc32 } from './zipCrc32.js';
 
 export type ArchiveReadLimits = Pick<
@@ -52,7 +53,7 @@ export interface ReadArchiveOptions {
 export const ARCHIVE_TOO_LARGE_MESSAGE = 'ファイルが大きすぎるため開けません。';
 export const ARCHIVE_BROKEN_MESSAGE = 'ファイルが壊れているため開けません。';
 
-function failure(kind: ArchiveReadErrorKind, entryName?: string): ReadArchiveResult {
+function failure(kind: ArchiveReadErrorKind, entryName?: string): Extract<ReadArchiveResult, { ok: false }> {
   const oversized = kind === 'compressedInput' || kind === 'entryCount' || kind === 'entryExpanded' || kind === 'totalExpanded';
   const error: ArchiveReadError = { kind, reason: oversized ? ARCHIVE_TOO_LARGE_MESSAGE : ARCHIVE_BROKEN_MESSAGE,
     ...(entryName === undefined ? {} : { entryName }) };
@@ -121,5 +122,78 @@ export function readArchive(bytes: Uint8Array, options: ReadArchiveOptions): Rea
     return omittedOptional ? { ok: true, entries, omittedOptional } : { ok: true, entries };
   } catch (error) {
     return error instanceof ZipDirectoryError ? failure(error.kind, error.entryName) : failure('invalidZip', name);
+  }
+}
+
+
+type ExpandedEntry = Uint8Array | 'entryExpanded' | 'totalExpanded' | 'invalidZip';
+
+async function copyStoredEntry(source: ArchiveReadSource, entry: ZipEntryLocation, output: Uint8Array): Promise<void> {
+  for (let offset = 0; offset < output.length; offset += ARCHIVE_READ_CHUNK_BYTES) {
+    const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, output.length - offset);
+    output.set(await readArchiveRange(source, entry.dataOffset + offset, length), offset);
+  }
+}
+
+async function expandRange(source: ArchiveReadSource, entry: ZipEntryLocation,
+  budget: ExpansionBudget, entryLimit = budget.limit): Promise<ExpandedEntry> {
+  const limit = Math.min(budget.limit, entryLimit), remaining = budget.remaining;
+  if (entry.expandedSize > limit) return 'entryExpanded';
+  if (entry.expandedSize > remaining) return 'totalExpanded';
+  try {
+    const actual = entry.method === 0 ? entry.compressedSize
+      : await decodeDeflateRange(source, entry.dataOffset, entry.compressedSize, Math.min(limit, remaining));
+    if (actual > limit) return 'entryExpanded';
+    if (actual > remaining) return 'totalExpanded';
+    if (actual !== entry.expandedSize) return 'invalidZip';
+    const output = new Uint8Array(actual);
+    budget.remaining -= actual;
+    if (entry.method === 0) await copyStoredEntry(source, entry, output);
+    else if (await decodeDeflateRange(source, entry.dataOffset, entry.compressedSize, actual, output) !== actual) return 'invalidZip';
+    return zipCrc32(output) === entry.crc32 ? output : 'invalidZip';
+  } catch (error) {
+    if (error instanceof ArchiveReadSourceError) throw error;
+    if (error instanceof DeflateSizeError && error.kind === 'expandedLimit') {
+      return limit <= remaining ? 'entryExpanded' : 'totalExpanded';
+    }
+    return 'invalidZip';
+  }
+}
+
+interface OpenArchiveSource {
+  extract(options: Omit<ReadArchiveOptions, 'limits'>): Promise<ReadArchiveResult>;
+}
+
+async function extractRanges(source: ArchiveReadSource, directory: readonly ZipEntryLocation[],
+  budget: ExpansionBudget, options: Omit<ReadArchiveOptions, 'limits'>): Promise<ReadArchiveResult> {
+  const entries = new Map<string, Uint8Array>(), optional: ZipEntryLocation[] = [];
+  for (const entry of directory) {
+    if (!options.shouldExtract(entry.name)) continue;
+    if (options.optionalEntry?.(entry.name)) { optional.push(entry); continue; }
+    const data = await expandRange(source, entry, budget);
+    if (typeof data === 'string') return failure(data, entry.name);
+    entries.set(entry.name, data);
+  }
+  let omittedOptional = false;
+  for (const entry of optional) {
+    const data = await expandRange(source, entry, budget, options.optionalEntryLimit?.(entry.name));
+    if (typeof data === 'string') omittedOptional = true;
+    else entries.set(entry.name, data);
+  }
+  return omittedOptional ? { ok: true, entries, omittedOptional } : { ok: true, entries };
+}
+
+/** Native Open uses the same directory and expansion limits with a bounded, seekable compressed source. */
+export async function openArchiveSource(source: ArchiveReadSource,
+  limits: ArchiveReadLimits = IO_LIMITS): Promise<{ readonly ok: true; readonly archive: OpenArchiveSource }
+    | Extract<ReadArchiveResult, { ok: false }>> {
+  if (!Object.values(limits).every(value => Number.isSafeInteger(value) && value >= 0)) return failure('invalidZip');
+  try {
+    const directory = await zipDirectoryFromSource(source, limits.archiveEntryCount);
+    const budget = { limit: limits.archiveEntryExpandedBytes, remaining: limits.archiveTotalExpandedBytes };
+    return { ok: true, archive: { extract: options => extractRanges(source, directory, budget, options) } };
+  } catch (error) {
+    if (error instanceof ArchiveReadSourceError) throw error;
+    return error instanceof ZipDirectoryError ? failure(error.kind, error.entryName) : failure('invalidZip');
   }
 }

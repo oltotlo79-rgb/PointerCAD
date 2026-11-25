@@ -3,7 +3,6 @@ import { readDocumentBundle, type ReadDocumentBundleResult } from '@pointercad/i
 import {
   buildStandardPartFromSource,
   embedPart,
-  MAX_SUB_ASSEMBLY_DEPTH,
   placedPartName,
   PRODUCT_CATALOG_REGISTRY,
   type AssemblyDocument,
@@ -24,6 +23,7 @@ import { openErrorMessage } from '../file/partFile.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { boltedJointRebuildNotice, componentsUsingPart } from './boltedJointRebuild.js';
 import { cancelMate } from './mateActions.js';
+import { sharedPartOccurrenceCount as countPartOccurrences } from './partOccurrenceCount.js';
 import {
   confirmComponentReplacement,
   placeSubAssemblyBundle,
@@ -211,45 +211,11 @@ export function cancelReplacementPreview(): void {
   useAppStore.setState({ assemblyReplacementPreview: null });
 }
 
-/** Counts saved occurrences, including hidden and suppressed branches. */
+/** Count the part occurrences used by source refresh. */
 export function sharedPartOccurrenceCount(
   assembly: AssemblyDocument, library: PartLibrary, partRef: string,
 ): { readonly count: number; readonly complete: boolean } {
-  interface Count { readonly count: number; readonly complete: boolean }
-  const memo = new Map<string, Count>();
-  const visit = (document: AssemblyDocument, ancestors: ReadonlySet<string>, depth: number): Count => {
-    let count = 0;
-    let complete = true;
-    const add = (value: number): void => {
-      if (value > Number.MAX_SAFE_INTEGER - count) {
-        count = Number.MAX_SAFE_INTEGER;
-        complete = false;
-      } else count += value;
-    };
-    for (const component of document.components) {
-      if (component.source.kind === 'part') {
-        if (component.source.partRef === partRef) add(1);
-      } else if (component.source.kind === 'subAssembly') {
-        const ref = component.source.assemblyRef;
-        const nested = library.assemblies?.get(ref);
-        if (nested === undefined || ancestors.has(ref) || depth + 1 > MAX_SUB_ASSEMBLY_DEPTH) {
-          complete = false;
-          continue;
-        }
-        const nextAncestors = new Set([...ancestors, ref]);
-        const key = JSON.stringify([ref, depth + 1, [...nextAncestors].sort()]);
-        let result = memo.get(key);
-        if (result === undefined) {
-          result = visit(nested, nextAncestors, depth + 1);
-          memo.set(key, result);
-        }
-        add(result.count);
-        complete = complete && result.complete;
-      }
-    }
-    return { count, complete };
-  };
-  return visit(assembly, new Set(), 0);
+  return countPartOccurrences(assembly, library, partRef);
 }
 
 /** A tagged UUID identifies lineage; it does not authenticate file contents. */

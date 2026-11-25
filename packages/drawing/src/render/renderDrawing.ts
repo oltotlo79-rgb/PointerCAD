@@ -1,7 +1,7 @@
 import type { DrawingDocument, DrawingElementStyle, Point2 } from '../types.js';
 import type { PathCommand, RenderClip, RenderDocument, RenderPrimitive, RenderStroke, RenderSubpath, RenderText } from './types.js';
 import { bezierArc } from './bezierArc.js';
-import { paperSizeOf } from '../paper/paperSize.js';
+import { paperSizeOf, UnknownDrawingPaperError } from '../paper/paperSize.js';
 import { createPaperFrame } from '../paper/frame.js';
 import { createTitleBlock, formatDrawingScale } from '../paper/titleBlock.js';
 import { generalToleranceNote } from '../annotation/generalTolerance.js';
@@ -79,7 +79,7 @@ function curvePath(curve: DrawingRenderCurve): readonly RenderSubpath[] | null {
 export function renderDrawingElements(drawing: DrawingDocument, elements: readonly DrawingRenderElement[],
   options: RenderDrawingOptions): DrawingRenderResult {
   const paper = paperSizeOf(drawing.sheet.paperSizeId);
-  if (paper === undefined) throw new Error('知らない用紙です。');
+  if (paper === undefined) throw new UnknownDrawingPaperError(drawing.sheet.paperSizeId);
   const primitives: RenderPrimitive[] = [], issues: DrawingRenderIssue[] = [];
   for (const element of elements) appendDrawingElement(element, drawing, options, primitives, issues);
   return { document: { widthMm: paper.width, heightMm: paper.height, primitives }, issues };
@@ -121,7 +121,7 @@ export function renderDrawing(input: {
 }, options: RenderDrawingOptions): DrawingRenderResult {
   const drawing = input.document;
   const paper = paperSizeOf(drawing.sheet.paperSizeId);
-  if (paper === undefined) throw new Error('知らない用紙です。');
+  if (paper === undefined) throw new UnknownDrawingPaperError(drawing.sheet.paperSizeId);
   const primitives: RenderPrimitive[] = [];
   const issues: DrawingRenderIssue[] = [];
   const append = (element: DrawingRenderElement): void => appendDrawingElement(element, drawing, options, primitives, issues);

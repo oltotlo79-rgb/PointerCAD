@@ -1,8 +1,9 @@
 import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
-import { analyzeParameters, nextFeatureId, nextFeatureName, parseDisplayInput, textFeature,
+import { analyzeParameters, nextFeatureId, nextFeatureName, parseDisplayInput, replaceSketch, textFeature,
   type SketchDocument, type TextFeatureInput, type Vec3, type WorkPlane } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { drawingFont } from '../drawing/drawingFont.js';
+import { commitWorkingPartDocument } from '../store/partEditActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 interface SketchTextInput {
@@ -44,7 +45,8 @@ export async function applySketchText(input: SketchTextInput): Promise<boolean> 
   if (state.activeTool !== 'text' || state.workPlaneId !== input.plane.id) return false;
   const isCurrent = (): boolean => {
     const current = useAppStore.getState();
-    return current.document === document && current.sketch === sketch && current.workPlaneId === input.plane.id
+    return current.activeDocumentId === state.activeDocumentId && current.partEdit?.id === state.partEdit?.id
+      && current.document === document && current.sketch === sketch && current.workPlaneId === input.plane.id
       && current.activeTool === state.activeTool && current.numericInput === state.numericInput;
   };
   const heightSource = parseDisplayInput(input.heightSource, state.displaySettings.lengthUnit);
@@ -65,10 +67,10 @@ export async function applySketchText(input: SketchTextInput): Promise<boolean> 
     const result = commitSketchText(sketch, { text: input.text, height: height.value, angleDegrees: angle.value.value,
       align: input.align, origin, plane: input.plane, outlineText: drawingFont.outline });
     if (!result.ok) { state.setShapeError(result.reason); return false; }
-    state.setSketch(result.document);
-    state.setShapeError(null);
-    state.setActiveTool('select');
-    return true;
+    return commitWorkingPartDocument(state, replaceSketch(document, result.document), current => {
+      current.setShapeError(null);
+      current.setActiveTool('select');
+    });
   } catch {
     if (isCurrent()) state.setShapeError(t('drawing.error.fontFailed'));
     return false;

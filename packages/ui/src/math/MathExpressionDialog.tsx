@@ -2,7 +2,7 @@ import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { prepareDocumentMathProblem } from './prepareDocumentMathProblem.js';
 import { unresolvedMathProblemOutput } from './unresolvedMathProblemOutput.js';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import { mathScalarExpression, type AngleUnit, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
+import { inspectMathScalarExpression, type AngleUnit, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import type { MathGeometryOutcome, PartDocument } from '@pointercad/model';
 import { createBrowserMathClient, pageMathResultMemory } from './createBrowserMathClient.js';
 import { recomputePartWithMath } from './recomputePartWithMath.js';
@@ -20,6 +20,7 @@ import { focusAdjacentControl, type StructuredMathField } from './mathFieldHost.
 import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { canApplyMathScalar, mathScalarIssueText } from './mathScalarIssueText.js';
 import './mathEditor.css';
 import { MATH_INPUT_PALETTE } from './mathPaletteExamples.js';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
@@ -70,14 +71,14 @@ function geometryProblem(document: PartDocument, target: MathGeometryEditorTarge
 
 /**
  * 計算の済んだ結果を、この欄に使えない理由(UI の点検の指摘 36。前は結果の説明の中に埋もれていた)。
- * 数の欄は値を受け入れる境界(mathScalarExpression)の文、関数と未解決の式は共通の 1 文。図形の参照の問題は、
+ * 数の欄は値を受け入れる境界の理由に対応する文、関数と未解決の式は共通の 1 文。図形の参照の問題は、
  * 窓の上の GeometryEditorFeedback が既に知らせるので重ねない。
  */
 function applyBlockedReason(owner: MathExpressionDialogProps | FunctionExpressionDialogProps | ProblemExpressionDialogProps,
   output: MathEditorOutput): string | null {
   if (owner.kind === 'function' || owner.kind === 'problem') return t('math.applyUnavailable');
-  const scalar = mathScalarExpression(output);
-  return scalar.ok ? null : scalar.message;
+  const scalar = inspectMathScalarExpression(output);
+  return scalar.ok ? null : mathScalarIssueText(scalar.issue);
 }
 
 function GeometryEditorFeedback({ ready, target }: { readonly ready: ReadyEditor; readonly target: MathGeometryEditorTarget }): React.JSX.Element | null {
@@ -121,7 +122,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
     const initialDefinition = owner.kind === 'function' ? owner.initialFunction.definition : owner.kind === 'problem' ? owner.initialProblem : owner.initialValue.mathDefinition;
     const canApply = (output: MathEditorOutput) => isCurrent() && (owner.kind === 'function'
       ? output.definition !== null && output.evaluation.status === 'value' && output.evaluation.kind === 'function'
-      : owner.kind === 'problem' ? unresolvedMathProblemOutput(output) !== null : mathScalarExpression(output).ok
+      : owner.kind === 'problem' ? unresolvedMathProblemOutput(output) !== null : canApplyMathScalar(output)
         && (geometryTarget === undefined || geometryProblem(prepared, geometryTarget, output) === null));
     const apply = async (output: MathEditorOutput, prepared: PartDocument, coefficients: MathWorkRequest['coefficients']) => {
       if (!isCurrent() || applying || !canApply(output)) return;
@@ -132,8 +133,8 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
             if (output.definition === null) throw new Error(t('math.invalidSource'));
             return owner.onApply(output.definition, prepared, abort.signal, client, coefficients);
           }
-          const scalar = mathScalarExpression(output);
-          if (!scalar.ok) throw new Error(scalar.message);
+          const scalar = inspectMathScalarExpression(output);
+          if (!scalar.ok) throw new Error(mathScalarIssueText(scalar.issue));
           return owner.onApply(scalar.value, prepared, abort.signal, client, coefficients);
         };
         const result = await commit();

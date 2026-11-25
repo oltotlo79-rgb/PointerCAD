@@ -662,10 +662,210 @@ export function buildAnalysisSurfaceMeshBinding(oc: OpenCascadeInstance, shape: 
   return { mesh, binding };
 }
 
+interface AnalysisFaceTopology {
+  readonly copyEdges: TopTools_IndexedMapOfShape;
+  readonly vertices: TopTools_IndexedMapOfShape;
+  readonly originalEdgeOf: ReadonlyMap<number, number>;
+  readonly vertexNodes: Map<number, number>;
+  readonly edgeRecords: Map<number, EdgeRecord>;
+  readonly nodes: NodeTable;
+}
+
+interface AnalysisFaceOutput {
+  readonly triangles: number[];
+  readonly triangleFaces: number[];
+  readonly summaries: AnalysisFaceSummary[];
+  readonly plcFaces: AnalyticPlcFaceBinding[];
+  readonly freeformFaces: FreeformFaceDistance[];
+  maxBoundNodeOffset: number;
+}
+
+interface AnalysisFaceRequest {
+  readonly options: AnalysisSurfaceMeshOptions;
+  readonly analytic: AnalysisBindingSink | undefined;
+  readonly materialCheckpoint: (() => void) | undefined;
+}
+
+interface AnalysisBindingSink {
+  readonly checkpoint: () => void;
+  readonly accept: (binding: AnalyticNativeChainBinding) => void;
+}
+
+/** Read one copied face into the shared original-address topology. All per-face native objects leave here. */
+function appendAnalysisFace(oc: OpenCascadeInstance, copiedFace: TopoDS_Shape, faceIndex: number,
+  request: AnalysisFaceRequest, topology: AnalysisFaceTopology, output: AnalysisFaceOutput): void {
+  const { options, analytic, materialCheckpoint } = request;
+  const { copyEdges, vertices, originalEdgeOf, vertexNodes, edgeRecords, nodes } = topology;
+  const { triangles, triangleFaces, summaries, plcFaces, freeformFaces } = output;
+  analytic?.checkpoint();
+  materialCheckpoint?.();
+  const perFace = createAllocations();
+  try {
+    const face: TopoDS_Face = perFace.keep(oc.TopoDS.Face_1(copiedFace));
+    const orientation = face.Orientation_1();
+    const forward = orientation === oc.TopAbs_Orientation.TopAbs_FORWARD;
+    if (!forward && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) {
+      refuse('unsupported-orientation', `${faceLabel(faceIndex)} は内部または外部の向きの面で、境界に使えません。`, faceIndex);
+    }
+    const location = perFace.keep(new oc.TopLoc_Location_1());
+    const triangulationHandle = perFace.keep(oc.BRep_Tool.Triangulation(face, location, 0));
+    if (triangulationHandle.IsNull()) {
+      refuse('missing-triangulation', `${faceLabel(faceIndex)} を三角形分割できませんでした。細かさを変えるか、形を確かめてください。`, faceIndex);
+    }
+    const read = readFaceTriangulation(triangulationHandle, location, perFace);
+    const freeformCheckpoint = materialCheckpoint ?? analytic?.checkpoint;
+    const freeform = options.materialValidation === undefined ? null
+      : freeformCheckpoint === undefined ? null : readNativeFreeformBound(oc, face, perFace, freeformCheckpoint);
+    const distanceRows: { triangleIndex: number; maxNodeOffsetMm: number; maxChordDeviationMm: number }[] = [];
+    const nativeTriangles = borrowHandle(triangulationHandle);
+    if (freeform !== null && !nativeTriangles.HasUVNodes()) throw new Error('freeform-bound: missing native UV nodes');
+    const localNodeCount = read.localPoints.length / 3 - 1;
+    const localToGlobal = new Int32Array(localNodeCount + 1).fill(-1);
+    const poleNodes = new Set<number>();
+    let seamEdges = 0;
+    let degeneratedEdges = 0;
+
+    const bind = (local: number, global: number): void => {
+      if (!Number.isSafeInteger(local) || local < 1 || local > localNodeCount) {
+        refuse('node-conflict', `${faceLabel(faceIndex)} の辺の折れ線が三角形分割にない節点を指しています。`, faceIndex);
+      }
+      const previous = localToGlobal[local];
+      if (previous !== -1 && previous !== global) {
+        refuse('node-conflict', `${faceLabel(faceIndex)} の節点が 2 つの別の辺の点に結び付きました。細かさを変えるか、形を確かめてください。`, faceIndex);
+      }
+      localToGlobal[local] = global;
+      const dx = read.localPoints[3 * local] - nodes.x(global);
+      const dy = read.localPoints[3 * local + 1] - nodes.y(global);
+      const dz = read.localPoints[3 * local + 2] - nodes.z(global);
+      output.maxBoundNodeOffset = Math.max(output.maxBoundNodeOffset, Math.sqrt(dx * dx + dy * dy + dz * dz));
+    };
+
+    const faceEdges = perFace.keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(face, faceEdges, true, true);
+    for (let member = 1; member <= faceEdges.Size(); member += 1) {
+      const item = perFace.keep(faceEdges.FindKey(member));
+      if (item.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) continue;
+      const edge = perFace.keep(oc.TopoDS.Edge_1(item));
+      const edgeNumber = originalEdgeOf.get(copyEdges.FindIndex(edge));
+      if (edgeNumber === undefined) {
+        refuse('unknown-subshape', `${faceLabel(faceIndex)} の辺が元のボディの辺に対応付けられません。`, faceIndex);
+      }
+      const degenerated = oc.BRep_Tool.Degenerated(edge);
+      const seam = oc.BRep_Tool.IsClosed_2(edge, face);
+      if (seam) seamEdges += 1;
+      if (degenerated) degeneratedEdges += 1;
+      // The indexed map keeps one orientation per edge; a seam needs both sides explicitly.
+      let sides: TopoDS_Edge[] = [edge];
+      if (seam) {
+        // Read typed native orientation values from the already-checked face and its reverse.
+        // The generated enum namespace types its constants as {}, unlike Orientation_1().
+        const opposite = perFace.keep(face.Reversed()).Orientation_1();
+        const forwardOrientation = forward ? orientation : opposite;
+        const reversedOrientation = forward ? opposite : orientation;
+        sides = [perFace.keep(oc.TopoDS.Edge_1(perFace.keep(edge.Oriented(forwardOrientation)))),
+          perFace.keep(oc.TopoDS.Edge_1(perFace.keep(edge.Oriented(reversedOrientation))))];
+      }
+      const polygons = sides.map(side => readPolygon(oc, side, triangulationHandle, location, faceIndex, perFace));
+      const known = edgeRecords.get(edgeNumber);
+      const record = known ?? createEdgeRecord(oc, edge, degenerated, polygons[0], vertices, vertexNodes, nodes, faceIndex);
+      if (known === undefined) edgeRecords.set(edgeNumber, record);
+      for (const polygon of polygons) {
+        if (record.degenerated !== degenerated || !sameParameters(record.parameters, polygon.parameters)) {
+          refuse('inconsistent-subdivision',
+            `${faceLabel(faceIndex)} と隣の面で共有する辺の分割が一致しません(T 字の継ぎ目)。細かさを変えるか、形を確かめてください。`, faceIndex);
+        }
+        polygon.locals.forEach((local, k) => { bind(local, record.nodes[k]); });
+        record.uses += 1;
+      }
+      if (degenerated) poleNodes.add(record.nodes[0]);
+    }
+
+    let localTriangles: readonly (readonly [number, number, number])[] = read.local;
+    if (analytic === undefined && freeform?.grid !== undefined
+      && read.local.length <= options.maximumTriangles && localNodeCount <= 3 * options.maximumTriangles) {
+      const parameters: (readonly [number, number])[] = [[0, 0]];
+      const protectedNodes = new Set<number>();
+      for (let local = 1; local <= localNodeCount; local += 1) {
+        freeformCheckpoint?.();
+        const uv = nativeTriangles.UVNode(local);
+        try { parameters.push([uv.X(), uv.Y()]); } finally { uv.delete(); }
+        if (localToGlobal[local] !== -1) protectedNodes.add(local);
+      }
+      localTriangles = reduceAffineFreeformFans(freeform.grid, read.local, parameters, local => {
+        const global = localToGlobal[local];
+        return global === -1
+          ? [read.localPoints[3 * local], read.localPoints[3 * local + 1], read.localPoints[3 * local + 2]]
+          : [nodes.x(global), nodes.y(global), nodes.z(global)];
+      }, protectedNodes, options.maximumTriangles, options.linearDeflection, options.angularDeflection,
+      () => { freeformCheckpoint?.(); });
+    }
+    const usedLocals = localTriangles === read.local ? undefined : new Set(localTriangles.flat());
+    for (let local = 1; local <= localNodeCount; local += 1) {
+      if (localToGlobal[local] === -1 && (usedLocals === undefined || usedLocals.has(local))) {
+        localToGlobal[local] = nodes.add(read.localPoints[3 * local], read.localPoints[3 * local + 1],
+          read.localPoints[3 * local + 2], ANALYSIS_NODE_FACE);
+      }
+    }
+
+    let faceTriangles = 0;
+    let collapsed = 0;
+    const plcTriangles: (number | null)[] = [];
+    for (const [a, b, c] of localTriangles) {
+      analytic?.checkpoint();
+      materialCheckpoint?.();
+      if (a < 1 || b < 1 || c < 1 || a > localNodeCount || b > localNodeCount || c > localNodeCount) {
+        refuse('node-conflict', `${faceLabel(faceIndex)} の三角形が存在しない節点を指しています。`, faceIndex);
+      }
+      const ga = localToGlobal[a], gb = localToGlobal[b], gc = localToGlobal[c];
+      if (ga === gb || gb === gc || ga === gc) {
+        const repeated = ga === gb || ga === gc ? ga : gb;
+        if (poleNodes.has(repeated)) {
+          collapsed += 1;
+          if (analytic !== undefined) plcTriangles.push(null);
+          continue;
+        }
+        refuse('collapsed-triangle', `${faceLabel(faceIndex)} の三角形が 1 点に潰れました。細かさを変えるか、形を確かめてください。`, faceIndex);
+      }
+      if (analytic !== undefined) plcTriangles.push(triangleFaces.length);
+      if (freeform !== null) {
+        freeformCheckpoint?.();
+        const uv: [readonly [number, number], readonly [number, number], readonly [number, number]] = [[0, 0], [0, 0], [0, 0]];
+        let offset = 0;
+        const locals = [a, b, c], globals = [ga, gb, gc];
+        for (let corner = 0; corner < 3; corner += 1) {
+          const parameter = nativeTriangles.UVNode(locals[corner]);
+          try { uv[corner] = [parameter.X(), parameter.Y()]; } finally { parameter.delete(); }
+          const actual = freeform.point(uv[corner]), node = globals[corner];
+          offset = Math.max(offset, Math.hypot(nodes.x(node) - actual[0], nodes.y(node) - actual[1], nodes.z(node) - actual[2]));
+        }
+        if (freeform.grid === undefined) {
+          distanceRows.push({ triangleIndex: triangleFaces.length, maxNodeOffsetMm: offset,
+            maxChordDeviationMm: freeformTriangleDistance(freeform.derivatives, uv, offset) });
+        } else {
+          const point = (node: number): readonly [number, number, number] => [nodes.x(node), nodes.y(node), nodes.z(node)];
+          const bound = partitionedFreeformTriangleDistance(freeform.grid, uv, [point(ga), point(gb), point(gc)],
+            () => { freeformCheckpoint?.(); });
+          distanceRows.push({ triangleIndex: triangleFaces.length, ...bound });
+        }
+      }
+      if (forward) triangles.push(ga, gb, gc); else triangles.push(gb, ga, gc);
+      triangleFaces.push(faceIndex);
+      faceTriangles += 1;
+      if (triangleFaces.length > options.maximumTriangles) {
+        refuse('limit', '解析用の境界の三角形が上限を超えました。細かさを粗くしてください。');
+      }
+    }
+    summaries.push({ index: faceIndex, triangleCount: faceTriangles, reversed: !forward, seamEdges,
+      degeneratedEdges, collapsedPoleTriangles: collapsed });
+    if (freeform !== null) freeformFaces.push({ faceIndex, surfaceKind: freeform.kind, triangles: distanceRows });
+    if (analytic !== undefined) plcFaces.push({ faceIndex, localToGlobal: Array.from(localToGlobal.subarray(1)), plcTriangles });
+  } finally {
+    perFace.release();
+  }
+}
+
 function buildAnalysisSurfaceMeshInternal(oc: OpenCascadeInstance, shape: TopoDS_Shape,
-  options: AnalysisSurfaceMeshOptions, analytic?: {
-    readonly checkpoint: () => void; readonly accept: (binding: AnalyticNativeChainBinding) => void;
-  }, materialCheckpoint?: () => void, acceptNativeVolume?: (volume: number) => void): AnalysisSurfaceMesh {
+  options: AnalysisSurfaceMeshOptions, analytic?: AnalysisBindingSink, materialCheckpoint?: () => void, acceptNativeVolume?: (volume: number) => void): AnalysisSurfaceMesh {
   checkedOptions(options);
   const owned = createAllocations();
   let result: AnalysisSurfaceMesh | undefined;
@@ -725,174 +925,12 @@ function buildAnalysisSurfaceMeshInternal(oc: OpenCascadeInstance, shape: TopoDS
     const summaries: AnalysisFaceSummary[] = [];
     const plcFaces: AnalyticPlcFaceBinding[] = [];
     const freeformFaces: FreeformFaceDistance[] = [];
-    let maxBoundNodeOffset = 0;
 
+    const faceRequest = { options, analytic, materialCheckpoint };
+    const topology = { copyEdges, vertices, originalEdgeOf, vertexNodes, edgeRecords, nodes };
+    const output = { triangles, triangleFaces, summaries, plcFaces, freeformFaces, maxBoundNodeOffset: 0 };
     for (let faceIndex = 0; faceIndex < faceImages.length; faceIndex += 1) {
-      analytic?.checkpoint();
-      materialCheckpoint?.();
-      const perFace = createAllocations();
-      try {
-        const face: TopoDS_Face = perFace.keep(oc.TopoDS.Face_1(faceImages[faceIndex].shape));
-        const orientation = face.Orientation_1();
-        const forward = orientation === oc.TopAbs_Orientation.TopAbs_FORWARD;
-        if (!forward && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) {
-          refuse('unsupported-orientation', `${faceLabel(faceIndex)} は内部または外部の向きの面で、境界に使えません。`, faceIndex);
-        }
-        const location = perFace.keep(new oc.TopLoc_Location_1());
-        const triangulationHandle = perFace.keep(oc.BRep_Tool.Triangulation(face, location, 0));
-        if (triangulationHandle.IsNull()) {
-          refuse('missing-triangulation', `${faceLabel(faceIndex)} を三角形分割できませんでした。細かさを変えるか、形を確かめてください。`, faceIndex);
-        }
-        const read = readFaceTriangulation(triangulationHandle, location, perFace);
-        const freeformCheckpoint = materialCheckpoint ?? analytic?.checkpoint;
-        const freeform = options.materialValidation === undefined ? null
-          : freeformCheckpoint === undefined ? null : readNativeFreeformBound(oc, face, perFace, freeformCheckpoint);
-        const distanceRows: { triangleIndex: number; maxNodeOffsetMm: number; maxChordDeviationMm: number }[] = [];
-        const nativeTriangles = borrowHandle(triangulationHandle);
-        if (freeform !== null && !nativeTriangles.HasUVNodes()) throw new Error('freeform-bound: missing native UV nodes');
-        const localNodeCount = read.localPoints.length / 3 - 1;
-        const localToGlobal = new Int32Array(localNodeCount + 1).fill(-1);
-        const poleNodes = new Set<number>();
-        let seamEdges = 0;
-        let degeneratedEdges = 0;
-
-        const bind = (local: number, global: number): void => {
-          if (!Number.isSafeInteger(local) || local < 1 || local > localNodeCount) {
-            refuse('node-conflict', `${faceLabel(faceIndex)} の辺の折れ線が三角形分割にない節点を指しています。`, faceIndex);
-          }
-          const previous = localToGlobal[local];
-          if (previous !== -1 && previous !== global) {
-            refuse('node-conflict', `${faceLabel(faceIndex)} の節点が 2 つの別の辺の点に結び付きました。細かさを変えるか、形を確かめてください。`, faceIndex);
-          }
-          localToGlobal[local] = global;
-          const dx = read.localPoints[3 * local] - nodes.x(global);
-          const dy = read.localPoints[3 * local + 1] - nodes.y(global);
-          const dz = read.localPoints[3 * local + 2] - nodes.z(global);
-          maxBoundNodeOffset = Math.max(maxBoundNodeOffset, Math.sqrt(dx * dx + dy * dy + dz * dz));
-        };
-
-        const faceEdges = perFace.keep(new oc.TopTools_IndexedMapOfShape_1());
-        oc.TopExp.MapShapes_2(face, faceEdges, true, true);
-        for (let member = 1; member <= faceEdges.Size(); member += 1) {
-          const item = perFace.keep(faceEdges.FindKey(member));
-          if (item.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) continue;
-          const edge = perFace.keep(oc.TopoDS.Edge_1(item));
-          const edgeNumber = originalEdgeOf.get(copyEdges.FindIndex(edge));
-          if (edgeNumber === undefined) {
-            refuse('unknown-subshape', `${faceLabel(faceIndex)} の辺が元のボディの辺に対応付けられません。`, faceIndex);
-          }
-          const degenerated = oc.BRep_Tool.Degenerated(edge);
-          const seam = oc.BRep_Tool.IsClosed_2(edge, face);
-          if (seam) seamEdges += 1;
-          if (degenerated) degeneratedEdges += 1;
-          // The indexed map keeps one orientation per edge; a seam needs both sides explicitly.
-          let sides: TopoDS_Edge[] = [edge];
-          if (seam) {
-            // Read typed native orientation values from the already-checked face and its reverse.
-            // The generated enum namespace types its constants as {}, unlike Orientation_1().
-            const opposite = perFace.keep(face.Reversed()).Orientation_1();
-            const forwardOrientation = forward ? orientation : opposite;
-            const reversedOrientation = forward ? opposite : orientation;
-            sides = [perFace.keep(oc.TopoDS.Edge_1(perFace.keep(edge.Oriented(forwardOrientation)))),
-              perFace.keep(oc.TopoDS.Edge_1(perFace.keep(edge.Oriented(reversedOrientation))))];
-          }
-          const polygons = sides.map(side => readPolygon(oc, side, triangulationHandle, location, faceIndex, perFace));
-          const known = edgeRecords.get(edgeNumber);
-          const record = known ?? createEdgeRecord(oc, edge, degenerated, polygons[0], vertices, vertexNodes, nodes, faceIndex);
-          if (known === undefined) edgeRecords.set(edgeNumber, record);
-          for (const polygon of polygons) {
-            if (record.degenerated !== degenerated || !sameParameters(record.parameters, polygon.parameters)) {
-              refuse('inconsistent-subdivision',
-                `${faceLabel(faceIndex)} と隣の面で共有する辺の分割が一致しません(T 字の継ぎ目)。細かさを変えるか、形を確かめてください。`, faceIndex);
-            }
-            polygon.locals.forEach((local, k) => { bind(local, record.nodes[k]); });
-            record.uses += 1;
-          }
-          if (degenerated) poleNodes.add(record.nodes[0]);
-        }
-
-        let localTriangles: readonly (readonly [number, number, number])[] = read.local;
-        if (analytic === undefined && freeform?.grid !== undefined
-          && read.local.length <= options.maximumTriangles && localNodeCount <= 3 * options.maximumTriangles) {
-          const parameters: (readonly [number, number])[] = [[0, 0]];
-          const protectedNodes = new Set<number>();
-          for (let local = 1; local <= localNodeCount; local += 1) {
-            freeformCheckpoint?.();
-            const uv = nativeTriangles.UVNode(local);
-            try { parameters.push([uv.X(), uv.Y()]); } finally { uv.delete(); }
-            if (localToGlobal[local] !== -1) protectedNodes.add(local);
-          }
-          localTriangles = reduceAffineFreeformFans(freeform.grid, read.local, parameters, local => {
-            const global = localToGlobal[local];
-            return global === -1
-              ? [read.localPoints[3 * local], read.localPoints[3 * local + 1], read.localPoints[3 * local + 2]]
-              : [nodes.x(global), nodes.y(global), nodes.z(global)];
-          }, protectedNodes, options.maximumTriangles, options.linearDeflection, options.angularDeflection,
-          () => { freeformCheckpoint?.(); });
-        }
-        const usedLocals = localTriangles === read.local ? undefined : new Set(localTriangles.flat());
-        for (let local = 1; local <= localNodeCount; local += 1) {
-          if (localToGlobal[local] === -1 && (usedLocals === undefined || usedLocals.has(local))) {
-            localToGlobal[local] = nodes.add(read.localPoints[3 * local], read.localPoints[3 * local + 1],
-              read.localPoints[3 * local + 2], ANALYSIS_NODE_FACE);
-          }
-        }
-
-        let faceTriangles = 0;
-        let collapsed = 0;
-        const plcTriangles: (number | null)[] = [];
-        for (const [a, b, c] of localTriangles) {
-          analytic?.checkpoint();
-          materialCheckpoint?.();
-          if (a < 1 || b < 1 || c < 1 || a > localNodeCount || b > localNodeCount || c > localNodeCount) {
-            refuse('node-conflict', `${faceLabel(faceIndex)} の三角形が存在しない節点を指しています。`, faceIndex);
-          }
-          const ga = localToGlobal[a], gb = localToGlobal[b], gc = localToGlobal[c];
-          if (ga === gb || gb === gc || ga === gc) {
-            const repeated = ga === gb || ga === gc ? ga : gb;
-            if (poleNodes.has(repeated)) {
-              collapsed += 1;
-              if (analytic !== undefined) plcTriangles.push(null);
-              continue;
-            }
-            refuse('collapsed-triangle', `${faceLabel(faceIndex)} の三角形が 1 点に潰れました。細かさを変えるか、形を確かめてください。`, faceIndex);
-          }
-          if (analytic !== undefined) plcTriangles.push(triangleFaces.length);
-          if (freeform !== null) {
-            freeformCheckpoint?.();
-            const uv: [readonly [number, number], readonly [number, number], readonly [number, number]] = [[0, 0], [0, 0], [0, 0]];
-            let offset = 0;
-            const locals = [a, b, c], globals = [ga, gb, gc];
-            for (let corner = 0; corner < 3; corner += 1) {
-              const parameter = nativeTriangles.UVNode(locals[corner]);
-              try { uv[corner] = [parameter.X(), parameter.Y()]; } finally { parameter.delete(); }
-              const actual = freeform.point(uv[corner]), node = globals[corner];
-              offset = Math.max(offset, Math.hypot(nodes.x(node) - actual[0], nodes.y(node) - actual[1], nodes.z(node) - actual[2]));
-            }
-            if (freeform.grid === undefined) {
-              distanceRows.push({ triangleIndex: triangleFaces.length, maxNodeOffsetMm: offset,
-                maxChordDeviationMm: freeformTriangleDistance(freeform.derivatives, uv, offset) });
-            } else {
-              const point = (node: number): readonly [number, number, number] => [nodes.x(node), nodes.y(node), nodes.z(node)];
-              const bound = partitionedFreeformTriangleDistance(freeform.grid, uv, [point(ga), point(gb), point(gc)],
-                () => { freeformCheckpoint?.(); });
-              distanceRows.push({ triangleIndex: triangleFaces.length, ...bound });
-            }
-          }
-          if (forward) triangles.push(ga, gb, gc); else triangles.push(gb, ga, gc);
-          triangleFaces.push(faceIndex);
-          faceTriangles += 1;
-          if (triangleFaces.length > options.maximumTriangles) {
-            refuse('limit', '解析用の境界の三角形が上限を超えました。細かさを粗くしてください。');
-          }
-        }
-        summaries.push({ index: faceIndex, triangleCount: faceTriangles, reversed: !forward, seamEdges,
-          degeneratedEdges, collapsedPoleTriangles: collapsed });
-        if (freeform !== null) freeformFaces.push({ faceIndex, surfaceKind: freeform.kind, triangles: distanceRows });
-        if (analytic !== undefined) plcFaces.push({ faceIndex, localToGlobal: Array.from(localToGlobal.subarray(1)), plcTriangles });
-      } finally {
-        perFace.release();
-      }
+      appendAnalysisFace(oc, faceImages[faceIndex].shape, faceIndex, faceRequest, topology, output);
     }
 
     const coordinates = nodes.coordinates();
@@ -908,7 +946,7 @@ function buildAnalysisSurfaceMeshInternal(oc: OpenCascadeInstance, shape: TopoDS
       triangles: triangleArray, triangleFaces: faceArray,
       nodeCount: nodes.count, triangleCount: triangleFaces.length, faces: summaries, edges: edgeChains,
       ...(options.boundary === 'closed' ? { shells } : {}),
-      metrics: { ...metrics, maxBoundNodeOffsetMm: maxBoundNodeOffset },
+      metrics: { ...metrics, maxBoundNodeOffsetMm: output.maxBoundNodeOffset },
       mesher: { done, status }, deflection: { linear: options.linearDeflection, angular: options.angularDeflection },
       ...(options.materialValidation === undefined ? {} : { freeform: { schema: 'pointercad-freeform-distance/1' as const, faces: freeformFaces } }),
     };

@@ -17,8 +17,9 @@ export interface PcadSaveWorkerPort {
 }
 
 export class PcadSaveWorkerError extends Error {
-  constructor(readonly reason: 'unavailable' | 'crashed' | 'rejected', message: string) {
-    super(message);
+  constructor(readonly reason: 'unavailable' | 'crashed' | 'rejected', message: string,
+    readonly internal = false, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'PcadSaveWorkerError';
   }
 }
@@ -71,12 +72,12 @@ async function encodeInWorker(createWorker: () => PcadSaveWorkerPort, input: Sav
       if (finished) return;
       const reply = event.data;
       if (typeof reply === 'object' && reply !== null && 'id' in reply && typeof reply.id === 'string' && reply.id !== id) return;
-      if (!isPcadSaveReply(reply)) { fail(new PcadSaveWorkerError('rejected', 'Invalid save reply')); return; }
+      if (!isPcadSaveReply(reply)) { fail(new PcadSaveWorkerError('rejected', 'Invalid save reply', true)); return; }
       if (reply.id !== id) return;
       if (reply.kind === 'progress') control.onProgress?.(reply.stage);
       else if (reply.kind === 'failure') fail(new PcadSaveWorkerError('rejected', reply.message));
       // 頼んだ形と違う成功は採らない(部分の依頼に全体、全体の依頼に部分が返るのは取り違え)。
-      else if (('parts' in reply) !== replyAsParts) fail(new PcadSaveWorkerError('rejected', 'Unexpected save reply shape'));
+      else if (('parts' in reply) !== replyAsParts) fail(new PcadSaveWorkerError('rejected', 'Unexpected save reply shape', true));
       else if (cleanup()) {
         // 書き手が入れずに保存した解析の結果を、同じスレッドの符号化と同じ口で呼び出し側へ渡す。
         for (const item of reply.analysisResultIssues ?? []) control.onAnalysisResultIssue?.(item.analysisId, item.issue);
@@ -89,7 +90,7 @@ async function encodeInWorker(createWorker: () => PcadSaveWorkerPort, input: Sav
     if (control.signal?.aborted === true) { cancel(); return; }
     const request: PcadSaveRequest = replyAsParts ? { id, input: owned.input, replyAsParts } : { id, input: owned.input };
     try { worker.postMessage(request, owned.transfer); }
-    catch (error) { fail(new PcadSaveWorkerError('rejected', error instanceof Error ? error.message : String(error))); }
+    catch (error) { fail(new PcadSaveWorkerError('rejected', error instanceof Error ? error.message : String(error), false, { cause: error })); }
   });
 }
 

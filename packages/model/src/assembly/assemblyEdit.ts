@@ -54,6 +54,12 @@ export const COMPONENT_NAME_SEPARATOR = ':';
  */
 export const DEFAULT_COMPONENT_LABEL = '部品';
 
+/** 文書名が空欄なら配置時の既定名を使い、連番の接頭辞を作る。 */
+export function componentNamePrefix(partName: string): string {
+  const label = partName.trim() === '' ? DEFAULT_COMPONENT_LABEL : partName;
+  return `${label}${COMPONENT_NAME_SEPARATOR}`;
+}
+
 /** 置いた部品 1 つを id で引く。無ければ `undefined`。 */
 export function findComponent(
   document: AssemblyDocument,
@@ -71,7 +77,7 @@ export function findComponent(
 export function nextComponentName(document: AssemblyDocument, partName: string): string {
   return nextSerialName(
     document.components.map((component) => component.name),
-    `${partName}${COMPONENT_NAME_SEPARATOR}`,
+    componentNamePrefix(partName),
   );
 }
 

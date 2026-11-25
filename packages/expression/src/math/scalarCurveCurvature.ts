@@ -57,19 +57,7 @@ function reciprocalJet(a: Jet, value: Range, secondOrder: boolean): Jet {
   return composeJet(a, negate(divide(ONE, squared)), secondOrder ? divide(TWO, multiply(squared, value)) : null, secondOrder);
 }
 
-/** Read the shared value intervals synchronously, retaining the same derivative formulas for both orders. */
-function directionalJet(tape: ScalarTape, direction: readonly number[],
-  intervals: ReturnType<typeof createScalarIntervalEvaluation>, secondOrder: boolean): (result: IntervalUnion, inputs: readonly MathInterval[]) => ScalarIntervalJet {
-  if (direction.length !== tape.inputs.length || direction.some(value => !Number.isFinite(value))) {
-    throw new RangeError('各独立変数の有限な微分方向を指定してください。');
-  }
-  const fixedDirection = [...direction];
-  const derivatives: Jet[] = [];
-  const compose = (inner: Jet, first: Range, second: Range) => composeJet(inner, first, second, secondOrder);
-  const sum = (a: Jet, b: Jet) => sumJet(a, b, secondOrder);
-  const product = (a: Jet, aValue: Range, b: Jet, bValue: Range) => productJet(a, aValue, b, bValue, secondOrder);
-  const reciprocal = (a: Jet, value: Range) => reciprocalJet(a, value, secondOrder);
-  const angle = tape.angleUnit === 'degree' ? DEGREE : ONE;
+function directionalBranches(tape: ScalarTape, direction: readonly number[], secondOrder: boolean) {
   const branches = new Map(tape.instructions.flatMap((item, index) => item.kind === 'piecewise'
     ? [[index, item.branches.map(branch => {
       const values = createScalarIntervalEvaluation(branch.value);
@@ -92,6 +80,23 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
     }
     return branchReason;
   };
+  return { selected, selectBranches };
+}
+
+/** Read the shared value intervals synchronously, retaining the same derivative formulas for both orders. */
+function directionalJet(tape: ScalarTape, direction: readonly number[],
+  intervals: ReturnType<typeof createScalarIntervalEvaluation>, secondOrder: boolean): (result: IntervalUnion, inputs: readonly MathInterval[]) => ScalarIntervalJet {
+  if (direction.length !== tape.inputs.length || direction.some(value => !Number.isFinite(value))) {
+    throw new RangeError('各独立変数の有限な微分方向を指定してください。');
+  }
+  const fixedDirection = [...direction];
+  const derivatives: Jet[] = [];
+  const compose = (inner: Jet, first: Range, second: Range) => composeJet(inner, first, second, secondOrder);
+  const sum = (a: Jet, b: Jet) => sumJet(a, b, secondOrder);
+  const product = (a: Jet, aValue: Range, b: Jet, bValue: Range) => productJet(a, aValue, b, bValue, secondOrder);
+  const reciprocal = (a: Jet, value: Range) => reciprocalJet(a, value, secondOrder);
+  const angle = tape.angleUnit === 'degree' ? DEGREE : ONE;
+  const { selected, selectBranches } = directionalBranches(tape, direction, secondOrder);
   return (result, inputs) => {
     const branchReason = selectBranches?.(inputs);
     if (!result.continuous || result.ranges.length !== 1) return branchReason === undefined ? UNKNOWN : { ...UNKNOWN, reason: branchReason };

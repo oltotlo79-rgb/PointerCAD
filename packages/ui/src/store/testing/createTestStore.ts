@@ -211,6 +211,7 @@ export function resetTestStore(): void {
   useAppStore.setState({
     ...createInitialDocumentState(),
     ...createAssemblyInitialState(),
+    partEdit: null,
     beamSession: null,
     beamRunner: null,
     plasticBarSession: null,

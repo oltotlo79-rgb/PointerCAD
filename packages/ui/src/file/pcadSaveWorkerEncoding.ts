@@ -1,4 +1,4 @@
-import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput, type SaveEncodingControl,
+import { concatZipParts, encodeOwnedSaveDocumentParts, type OwnedSaveEncodingControl, type SaveDocumentInput,
   type SaveEncodingStage } from '@pointercad/io';
 import type { DrawingSourceInput } from '@pointercad/model';
 import type { SaveResultIssueReport } from './saveResultIssue.js';
@@ -48,12 +48,35 @@ function releaseBuffer(view: Float32Array | Uint32Array, retained: ReadonlySet<A
   return bytes;
 }
 
+/** 形状・画像・サムネイルの項目は入力の写しをそのまま書くので、その領域は三角形と共有していても残す。 */
+function retainedBuffers(tables: readonly OwnedAttachments[], thumbnails: readonly Uint8Array[]): Set<ArrayBufferLike> {
+  const retained = new Set<ArrayBufferLike>(thumbnails.map(bytes => bytes.buffer));
+  for (const table of tables) for (const bytes of [...table.shapes.values(), ...table.canvases.values()]) retained.add(bytes.buffer);
+  return retained;
+}
+
+/**
+ * 三角形の成分を項目の区切りへ書き終えた知らせ(A-10)を受けて、その成分の領域を読む三角形の成分が残っていなければ
+ * 手放す関数を作る。読み手は、全部の表の全部の三角形の成分で同じ領域を指す物を先に数える(区切りに書かない小さい三角形・
+ * そろっていない三角形も数えるので、それらが読む領域は早く手放さない)。返す値は手放した容量。
+ */
+function componentReleaser(input: SaveDocumentInput): (component: Float32Array | Uint32Array) => number {
+  const { tables, thumbnails } = ownedParts(input);
+  const retained = retainedBuffers(tables, thumbnails), readers = new Map<ArrayBufferLike, number>();
+  for (const table of tables) for (const mesh of table.meshes.values()) {
+    for (const view of [mesh.positions, mesh.normals, mesh.indices]) readers.set(view.buffer, (readers.get(view.buffer) ?? 0) + 1);
+  }
+  return component => {
+    const left = (readers.get(component.buffer) ?? 0) - 1;
+    readers.set(component.buffer, left);
+    return left === 0 ? releaseBuffer(component, retained) : 0;
+  };
+}
+
 /** Worker 自身の写しの三角形の配列を切り離し、手放した容量を返す。原本を持つスレッドから呼ばない。 */
 export function releaseOwnedMeshCopies(input: SaveDocumentInput): number {
   const { tables, thumbnails } = ownedParts(input);
-  // 形状・画像・サムネイルの項目は入力の写しをそのまま書くので、その領域は三角形と共有していても残す。
-  const retained = new Set<ArrayBufferLike>(thumbnails.map(bytes => bytes.buffer));
-  for (const table of tables) for (const bytes of [...table.shapes.values(), ...table.canvases.values()]) retained.add(bytes.buffer);
+  const retained = retainedBuffers(tables, thumbnails);
   let released = 0;
   for (const table of tables) for (const mesh of table.meshes.values()) {
     released += releaseBuffer(mesh.positions, retained) + releaseBuffer(mesh.normals, retained)
@@ -81,13 +104,15 @@ interface OwnedSavePartsEncoding {
 
 /** 全体の道と部分の並びの道で同じ手放し方をする。項目ができた直後(圧縮の前)に三角形の写しを手放す。 */
 async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage: SaveEncodingStage) => void,
-  encode: (input: SaveDocumentInput, control: SaveEncodingControl) => Promise<Encoded>,
+  encode: (input: SaveDocumentInput, control: OwnedSaveEncodingControl) => Promise<Encoded>,
 ): Promise<{ readonly encoded: Encoded; readonly releasedMeshBytes: number;
   readonly analysisResultIssues: readonly SaveResultIssueReport[] }> {
   let releasedMeshBytes = 0;
   const analysisResultIssues: SaveResultIssueReport[] = [];
+  const releaseComponent = componentReleaser(input);
   const encoded = await encode(input, { onProgress,
-    onEntriesBuilt: () => { releasedMeshBytes = releaseOwnedMeshCopies(input); },
+    onMeshComponentWritten: component => { releasedMeshBytes += releaseComponent(component); },
+    onEntriesBuilt: () => { releasedMeshBytes += releaseOwnedMeshCopies(input); },
     onAnalysisResultIssue: (analysisId, issue) => { analysisResultIssues.push({ analysisId, issue }); } });
   return { encoded, releasedMeshBytes, analysisResultIssues };
 }
@@ -95,13 +120,13 @@ async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage
 /** Worker が所有する入力を符号化し、1 つの並びで返す。 */
 export async function encodeOwnedSaveInput(input: SaveDocumentInput,
   onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSaveEncoding> {
-  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, encodeSaveDocument);
+  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, async (owned, control) => concatZipParts(await encodeOwnedSaveDocumentParts(owned, control)));
   return { bytes: encoded, releasedMeshBytes, analysisResultIssues };
 }
 
 /** Worker が所有する入力を符号化し、全体の並びを作らずに部分の並びで返す(部品の保存で部分のまま書く道)。 */
 export async function encodeOwnedSaveInputParts(input: SaveDocumentInput,
   onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSavePartsEncoding> {
-  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, encodeSaveDocumentParts);
+  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, encodeOwnedSaveDocumentParts);
   return { parts: encoded, releasedMeshBytes, analysisResultIssues };
 }

@@ -1,9 +1,10 @@
 import { expect, type ElectronApplication, type Locator, type Page, type BrowserType, type BrowserContext, type TestInfo } from '@playwright/test';
-import { zipPcadEntries, FIXED_ENTRY_MTIME, type PcadZipEntries } from '../../packages/io/src/index.js';
+import { assemblyEnvelopeStoredPrefixLength, zipPcadEntries, FIXED_ENTRY_MTIME, type PcadZipEntries } from '../../packages/io/src/index.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { windowsNativeSource } from './processResourceSampler.js';
 import { readFile, readdir, writeFile, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -372,27 +373,51 @@ export async function readSavePointBuildPins(): Promise<string> {
   return createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
 }
 
-export async function attachSavePointColdArchives(info: TestInfo, archive: SavePointArchive): Promise<void> {
+function zipSavePointColdEntries(entries: PcadZipEntries, kind: string, sourceByteLength: number,
+  sourceSha256: string): Uint8Array {
+  const legacy = zipPcadEntries(entries);
+  if (kind !== 'assembly' || (legacy.byteLength === sourceByteLength &&
+    createHash('sha256').update(legacy).digest('hex') === sourceSha256)) return legacy;
+
+  // Current assembly writers isolate the timestamp of each document envelope in a stored block.
+  for (const [name, [bytes, options]] of entries) {
+    const prefix = assemblyEnvelopeStoredPrefixLength(name, bytes);
+    if (prefix !== undefined) entries.set(name, [bytes, options, prefix]);
+  }
+  return zipPcadEntries(entries);
+}
+
+function readSavePointColdBlobs(archive: SavePointArchive): Map<string, Uint8Array> {
   const blobs: unknown = JSON.parse(archive.blobs);
   if (!Array.isArray(blobs) || blobs.length === 0) throw new Error('Actual ZIP blob metadata missing');
   const actualBlobs = new Map<string, Uint8Array>();
+  const chunksByKey = new Map(archive.chunks.map(chunk => [chunk.key, chunk.bytes]));
+  if (chunksByKey.size !== archive.chunks.length) throw new Error('Duplicate actual ZIP chunk');
   for (const blob of blobs) {
     const value: unknown = blob;
     if (typeof value !== 'object' || value === null || !('sha256' in value) || typeof value.sha256 !== 'string' ||
       !('byteLength' in value) || typeof value.byteLength !== 'number' || !('chunkCount' in value) || typeof value.chunkCount !== 'number' ||
       !Number.isSafeInteger(value.chunkCount) || value.chunkCount <= 0) throw new Error('Unknown actual ZIP blob descriptor');
     const digest = value.sha256, byteLength = value.byteLength, chunkCount = value.chunkCount;
+    if (actualBlobs.has(digest)) throw new Error('Duplicate actual ZIP blob');
     const chunks: Buffer[] = [];
     for (let index = 0; index < chunkCount; index += 1) {
-      const row = archive.chunks.find(chunk => chunk.key === digest + ':' + index);
-      if (row === undefined) throw new Error('Actual ZIP chunk missing');
-      chunks.push(Buffer.from(row.bytes));
+      const key = digest + ':' + index, bytes = chunksByKey.get(key);
+      if (bytes === undefined) throw new Error('Actual ZIP chunk missing');
+      chunks.push(Buffer.from(bytes));
+      chunksByKey.delete(key);
     }
     const bytes = Buffer.concat(chunks);
     expect(bytes.byteLength).toBe(byteLength);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(digest);
     actualBlobs.set(digest, bytes);
   }
+  if (chunksByKey.size !== 0) throw new Error('Unexpected actual ZIP chunk');
+  return actualBlobs;
+}
+
+export async function attachSavePointColdArchives(info: TestInfo, archive: SavePointArchive): Promise<void> {
+  const actualBlobs = readSavePointColdBlobs(archive);
   const points: unknown = JSON.parse(archive.points);
   if (!Array.isArray(points)) throw new Error('Actual point metadata missing');
   let archiveIndex = 0;
@@ -400,7 +425,8 @@ export async function attachSavePointColdArchives(info: TestInfo, archive: SaveP
     const point: unknown = candidate;
     if (typeof point !== 'object' || point === null) throw new Error('Unknown point metadata');
     if ('id' in point && point.id === '__meta__') continue;
-    if (!('sourceSha256' in point) || typeof point.sourceSha256 !== 'string' ||
+    if (!('kind' in point) || (point.kind !== 'part' && point.kind !== 'assembly' && point.kind !== 'drawing') ||
+      !('sourceSha256' in point) || typeof point.sourceSha256 !== 'string' ||
       !('sourceByteLength' in point) || typeof point.sourceByteLength !== 'number' ||
       !('entries' in point) || !Array.isArray(point.entries)) throw new Error('Unknown point archive identity');
     const entries: PcadZipEntries = new Map();
@@ -413,7 +439,7 @@ export async function attachSavePointColdArchives(info: TestInfo, archive: SaveP
       if (bytes === undefined || bytes.byteLength !== entry.byteLength || entries.has(entry.name)) throw new Error('Actual point entry backing missing');
       entries.set(entry.name, [bytes, { level: entry.level, mtime: FIXED_ENTRY_MTIME }]);
     }
-    const bytes = zipPcadEntries(entries);
+    const bytes = zipSavePointColdEntries(entries, point.kind, point.sourceByteLength, point.sourceSha256);
     expect(bytes.byteLength).toBe(point.sourceByteLength);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(point.sourceSha256);
     expect(Buffer.from(bytes.subarray(0, 4)).toString('hex')).toBe('504b0304');

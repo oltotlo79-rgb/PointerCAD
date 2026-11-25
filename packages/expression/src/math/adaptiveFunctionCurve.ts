@@ -1,4 +1,5 @@
 /** Interval-guided subdivision. CAD clipping still runs on the resulting edges before publication. */
+import { FunctionSamplingInputError } from './functionSamplingInputError.js';
 import { intervalUnion, unionAdd, unionOutsideBounds, type IntervalUnion } from './mathIntervalUnion.js';
 import { intervalAdd, intervalMultiply, intervalSubtract, intervalAbsolute, nextFloat } from './mathInterval.js';
 import { functionPointError, validFunctionWorldBounds, type FunctionPoint } from './functionGeometryBounds.js';
@@ -38,13 +39,15 @@ export type FunctionCurveSamplingResult =
   | { readonly status: 'degenerate'; readonly stats: FunctionCurveSamplingStats }
   | { readonly status: 'stopped'; readonly reason: 'cancelled' | 'deadline' | 'samples' | 'cells' | 'subdivision' | 'roundoff'; readonly stats: FunctionCurveSamplingStats };
 
-function validOptions(options: FunctionCurveOptions): boolean {
-  return Number.isFinite(options.lower) && Number.isFinite(options.upper) && options.lower < options.upper
-    && Number.isFinite(options.upper - options.lower) && Number.isFinite(options.tolerance) && options.tolerance > 0
-    && validFunctionWorldBounds(options.minimum, options.maximum)
-    && Number.isSafeInteger(options.maximumSamples) && options.maximumSamples >= 2 && options.maximumSamples <= 200_000
+function validOptions(options: FunctionCurveOptions): true | FunctionSamplingInputError['code'] {
+  if (!(Number.isFinite(options.lower) && Number.isFinite(options.upper) && options.lower < options.upper
+    && Number.isFinite(options.upper - options.lower))) return 'parameterRange';
+  if (!(Number.isFinite(options.tolerance) && options.tolerance > 0)) return 'tolerance';
+  if (!validFunctionWorldBounds(options.minimum, options.maximum)) return 'worldRange';
+  if (!(Number.isSafeInteger(options.maximumSamples) && options.maximumSamples >= 2 && options.maximumSamples <= 200_000
     && Number.isSafeInteger(options.maximumCells) && options.maximumCells >= 1 && options.maximumCells <= 400_000
-    && Number.isSafeInteger(options.maximumDepth) && options.maximumDepth >= 1 && options.maximumDepth <= 52;
+    && Number.isSafeInteger(options.maximumDepth) && options.maximumDepth >= 1 && options.maximumDepth <= 52)) return 'subdivisionLimit';
+  return true;
 }
 /** L1 distance to the exact chord midpoint bounds Euclidean distance to the chord, using directed arithmetic. */
 function enclosureError(values: readonly [IntervalUnion, IntervalUnion, IntervalUnion], start: FunctionCurvePoint, end: FunctionCurvePoint): number {
@@ -110,7 +113,8 @@ function segmentError(evaluator: FunctionCurveEvaluator, tolerance: number, valu
 
 /** No partial geometry is returned on exhaustion or cancellation. The original definition remains untouched. */
 export function sampleFunctionCurve(evaluator: FunctionCurveEvaluator, options: FunctionCurveOptions): FunctionCurveSamplingResult {
-  if (!validOptions(options)) throw new RangeError('有限のXYZ範囲・媒介範囲・精度と分割上限を指定してください。');
+  const validity = validOptions(options);
+  if (validity !== true) throw new FunctionSamplingInputError(validity, '有限のXYZ範囲・媒介範囲・精度と分割上限を指定してください。');
   if (options.domain !== undefined) {
     const conditions = curveConditions(evaluator, options);
     if (conditions !== null) return sampleConditionalCurve(restrictCurve(evaluator, options.domain), options, conditions);

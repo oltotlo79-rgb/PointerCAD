@@ -1,5 +1,5 @@
 import type { PcadAttachments } from '@pointercad/io';
-import type { PartDocument } from '@pointercad/model';
+import { partAttachmentReferences, type PartDocument } from '@pointercad/model';
 
 export interface PartAssetReferences {
   readonly shapes: ReadonlySet<string>;
@@ -9,15 +9,11 @@ export interface PartAssetReferences {
 
 /** 所有文書の集合を呼出側が明示する。抑制・非表示も保存とUndoに必要。 */
 export function partAssetReferences(documents: Iterable<PartDocument>): PartAssetReferences {
-  const shapes = new Set<string>(), meshes = new Set<string>(), canvases = new Set<string>();
+  const refs = { shapes: new Set<string>(), meshes: new Set<string>(), canvases: new Set<string>() };
   for (const document of documents) {
-    for (const feature of document.solids) {
-      if (feature.kind === 'importedSolid') shapes.add(feature.shapeRef);
-      else if (feature.kind === 'importedMesh') meshes.add(feature.meshRef);
-    }
-    for (const canvas of document.canvases) canvases.add(canvas.imageId);
+    for (const [kind, ref] of partAttachmentReferences(document)) refs[kind].add(ref);
   }
-  return { shapes, meshes, canvases };
+  return refs;
 }
 
 /** 除去が無ければ同じ表。元Mapと原本のbytes/typed arraysには触れない。 */

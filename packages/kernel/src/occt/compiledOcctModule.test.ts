@@ -422,6 +422,21 @@ describe('OCCT streaming bytes and native Module', () => {
   });
 });
 
+// 通常の単体検査で、同版の実三点と同一の内容アドレスを照合する。
+it('uses the exact IGES kernel artifacts selected for both distributions', async () => {
+  const dist = new URL('../../node_modules/opencascade.js/dist/', import.meta.url);
+  const expected = [
+    ['opencascade.full.js', 283_262, '08213baa983df239f2149c23e4d3c5a915daef5dae3b6121c167cca55078efcf'],
+    ['opencascade.full.wasm', 20_573_524, 'd98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47'],
+    ['opencascade.full.d.ts', 390_036, 'b5eb63f15f79ecc98340958ee7e6fa6c9669bc58aac08809f6b5ef4c75c97902'],
+  ] as const;
+  for (const [name, size, sha256] of expected) {
+    const bytes = await readFile(new URL(name, dist));
+    expect(bytes.byteLength, name).toBe(size);
+    expect(createHash('sha256').update(bytes).digest('hex'), name).toBe(sha256);
+  }
+});
+
 // 実物の wasm を読んで固定値と照合する実測(`PCAD_OCCT_REAL_MEASURE=1` のときだけ動く)。
 // 固定値の出どころ: 採用した closed 版 OCCT の
 // `vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/pcad-closed-build.json` の
@@ -431,7 +446,7 @@ it.runIf(process.env.PCAD_OCCT_REAL_MEASURE === '1')(
   async () => {
     const started = performance.now();
     const before = process.memoryUsage();
-    const bytes = await readFile(new URL('../../node_modules/opencascade.js/dist/opencascade.full.wasm', import.meta.url));
+    const bytes = await readFile(new URL('../../../../vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/dist/opencascade.full.wasm', import.meta.url));
     const loaded = performance.now();
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const hashed = performance.now();

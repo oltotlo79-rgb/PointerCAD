@@ -40,8 +40,8 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
 import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
-  readCheckpointAfterRead, readForOpen } from './documentOpenGuard.js';
-import { savePcadThrough, withPcadExtension, type PickedFile } from './fileGateway.js';
+  pickForOpen, readPickedCheckpoint, readPickedForOpen } from './documentOpenGuard.js';
+import { savePcadThrough, withPcadExtension, type PickedNativeFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
@@ -285,9 +285,9 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   // 開く前に改めて確認する。
   const request = beginOpenRequest();
   try {
-  let picked: PickedFile | null;
+  let picked: PickedNativeFile | null;
   try {
-    picked = await useAppStore.getState().fileGateway.openPcad('all');
+    picked = await pickForOpen(request, 'all');
   } catch {
     if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
     return;
@@ -313,14 +313,15 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   }
   // 学習の控えの鍵が無ければ、読込の後に picked.bytes を読む所は無い(学習の控えは鍵がある時だけ保存バイトを読む。
   // 移すと決めた後に鍵が現れた時は readCheckpointAfterRead が読み直す)。
-  const transferred = mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
-  const result = await readForOpen(request, 'part', picked.bytes, transferred);
-  if (result === null) return;
+  const transferred = 'bytes' in picked && mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
+  const read = await readPickedForOpen(request, 'part', picked, transferred);
+  if (read === null) return;
+  const { result, saveTargetToken } = read;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
     return;
   }
-  const checkpoint = await readCheckpointAfterRead(picked, transferred, useAppStore.getState().tutorialCheckpointStorage,
+  const checkpoint = await readPickedCheckpoint(picked, transferred, read.savedSha256, useAppStore.getState().tutorialCheckpointStorage,
     savedBytes => ({ part: { document: result.document, savedBytes } }));
   if (!(await mayOpenAfterRead(request, deps))) {
     return;
@@ -345,6 +346,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     if (mayReportOpenFailure(request)) store.setFileMessage({ key: 'file.openFailed', failed: true });
     return;
   }
+  store.endAssemblyPartEdit();
   deps.onAttachmentsLoaded?.(loaded.attachments);
   store.applyDocument(loaded.document, { opensDocument: true, preparedSession });
   store.setFileState(picked.name, loaded.document);
@@ -363,11 +365,11 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   opened.setTutorialCheckpointFailure(checkpoint.ok && !sameSavedContent ? 'staleContent'
     : checkpoint.ok || checkpoint.reason === 'missing' ? null : checkpoint.reason);
   // 中身を検証して文書へ適用し終えたものだけ、開いた先をこの文書の上書き先にする。
-  if (picked.saveTargetToken === null) {
+  if (saveTargetToken === null) {
     store.fileGateway.clearSaveTarget?.();
   } else if (store.fileGateway.confirmSaveTarget !== undefined) {
     try {
-      await store.fileGateway.confirmSaveTarget(picked.saveTargetToken);
+      await store.fileGateway.confirmSaveTarget(saveTargetToken);
     } catch {
       // 確定に失敗したときは、前の文書の先へ誤って上書きするより名前を訊き直す。
       store.fileGateway.clearSaveTarget?.();

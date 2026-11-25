@@ -273,7 +273,7 @@ describe('アセンブリの文書ファイル', () => {
     g.openPcad.mockResolvedValue({ name: 'opened.pcada', saveTargetToken: 'candidate',
       bytes: await writeDocumentBundle(createAssemblyDocumentBundle(document)) });
     await openPart(deps);
-    expect(g.openPcad).toHaveBeenCalledExactlyOnceWith('all');
+    expect(g.openPcad).toHaveBeenCalledExactlyOnceWith('all', expect.any(AbortSignal));
     expect(activeDocument(useAppStore.getState()).kind).toBe('assembly');
     expect(activeFileName(useAppStore.getState())).toBe('opened.pcada');
   });

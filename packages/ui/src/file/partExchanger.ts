@@ -62,6 +62,7 @@ interface PartExchangeSnapshot {
 
 /** `createPartExchanger` に渡すもの。覚え書きは再計算・測定と同じものを持ち回る(NFR-PF-2)。 */
 interface PartExchangerDeps extends CachedResolveDeps {
+  readonly inspectImportedBrep?: ExchangeKernel['inspectImportedBrep'];
   /** 今の文書と外観の照合を読む(ストアの値をそのまま返す)。 */
   readonly snapshot: () => PartExchangeSnapshot;
   /** 形を書き出す口(`KernelBridge.exportShapes`)。 */
@@ -71,6 +72,7 @@ interface PartExchangerDeps extends CachedResolveDeps {
   ) => Promise<ShapeExportOutcome>;
   /** 形を読み込む口(`KernelBridge.importShape`)。 */
   readonly importShape: (options: ShapeImportOptions) => Promise<ShapeImportOutcome>;
+  readonly supportsIges?: () => Promise<boolean>;
 }
 
 /** 面ごとの色を、カーネルへ渡す組(sRGB の 0〜1)の表へ直す。 */
@@ -101,10 +103,11 @@ export function exportBodiesFor(
   steps: readonly ResolvedSolidStep[],
   featureIds: readonly string[],
   withColors: boolean,
+  withFaceColors = withColors,
 ): readonly ShapeExportBody[] {
   const names = new Map(steps.map((step) => [step.featureId, step.name]));
   const bodyColors = withColors ? bodyColorsFor(snapshot.document, featureIds) : null;
-  const faceColors = withColors
+  const faceColors = withFaceColors
     ? faceColorsFor(snapshot.document, featureIds, snapshot.appearanceMatches)
     : null;
   return featureIds.map((featureId) => {
@@ -149,7 +152,7 @@ export function toExchangeExportOutcome(outcome: ShapeExportOutcome): ExchangeEx
 }
 
 /** 読み込んだ立体 1 つを、手続きが受け取る形へ直す(B-rep の枝と三角形の枝を保つ)。 */
-export function toExchangeImportedBody(body: ImportedBody): ExchangeImportedBody {
+export function toExchangeImportedBody(body: ImportedBody, includeBodyColor = false): ExchangeImportedBody {
   if (body.bodyKind === 'mesh') {
     return {
       bodyKind: 'mesh',
@@ -165,6 +168,7 @@ export function toExchangeImportedBody(body: ImportedBody): ExchangeImportedBody
     volume: body.volume,
     triangleCount: body.triangleCount,
     brepBytes: body.brepBytes,
+    ...(includeBodyColor && body.color !== null ? { color: body.color } : {}),
   };
 }
 
@@ -176,6 +180,8 @@ export function toExchangeImportedBody(body: ImportedBody): ExchangeImportedBody
  */
 export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
   return {
+    ...(deps.supportsIges === undefined ? {} : { supportsIges: deps.supportsIges }),
+    ...(deps.inspectImportedBrep === undefined ? {} : { inspectImportedBrep: deps.inspectImportedBrep }),
     async exportShapes(request: ExchangeExportRequest): Promise<ExchangeExportOutcome> {
       const snapshot = deps.snapshot();
       // 書き出しは再計算を起こさない読み取り。解くだけで鍵が揃う。
@@ -183,7 +189,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
       const outcome = await deps.exportShapes(steps, {
         format: request.format,
         ...(request.signal === undefined ? {} : { signal: request.signal }),
-        bodies: exportBodiesFor(snapshot, steps, request.featureIds, request.withColors),
+        bodies: exportBodiesFor(snapshot, steps, request.featureIds, request.withColors, request.withColors && request.format !== 'iges'),
         meshQuality: request.meshQuality,
         withColors: request.withColors,
         ascii: request.ascii,
@@ -199,7 +205,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
         throw new Error(outcome.message);
       }
       return {
-        bodies: outcome.bodies.map((body) => toExchangeImportedBody(body)),
+        bodies: outcome.bodies.map((body) => toExchangeImportedBody(body, format === 'iges')),
         unit: outcome.unit,
       };
     },

@@ -3,6 +3,7 @@ import { expect, test as base, type ElectronApplication, type Locator, type Page
 import { choice, openFramePicker, startAssembly } from './aluminumFrameCatalogFlow.js';
 import { componentRows } from './boltedJointTestSupport.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
+import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { uiMessage, uiMessagePattern } from './uiMessages.js';
 
 /*
@@ -14,6 +15,24 @@ function detailsOf(page: Page, dialog: Locator, key: string): Locator {
   return dialog.locator('details').filter({ has: page.locator('summary', { hasText: uiMessagePattern('catalog', key) }) });
 }
 
+async function fourMemberOpening(page: Page): Promise<Locator> {
+  const dialog = await openFramePicker(page);
+  await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
+  await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
+  const layout = detailsOf(page, dialog, 'catalog.frameLayout.title');
+  await layout.locator('summary').click();
+  await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
+    .fill(['0 0 0', '600 0 0', '600 400 0', '0 400 0'].join('\n'));
+  await layout.getByRole('checkbox', { name: uiMessage('catalog', 'catalog.frameLayout.closed'), exact: true }).check();
+  const token = await beginRecompute(page);
+  await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
+  await waitForRecompute(page, token);
+  await expect(componentRows(page)).toHaveCount(4);
+  await componentRows(page).nth(0).click();
+  for (const index of [1, 2, 3]) await componentRows(page).nth(index).click({ modifiers: ['Shift'] });
+  return dialog;
+}
+
 export function registerFrameDoorTests(test: typeof base,
   appForPage: (page: Page) => ElectronApplication | undefined = () => undefined): void {
   test.describe('E-10 扉', () => {
@@ -23,21 +42,7 @@ export function registerFrameDoorTests(test: typeof base,
       const errors: string[] = [];
       page.on('pageerror', error => errors.push(error.message));
       await startAssembly(page, appForPage(page));
-      const dialog = await openFramePicker(page);
-      await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
-      await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
-      const layout = detailsOf(page, dialog, 'catalog.frameLayout.title');
-      await layout.locator('summary').click();
-      await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
-        .fill(['0 0 0', '600 0 0', '600 400 0', '0 400 0'].join('\n'));
-      await layout.getByRole('checkbox', { name: uiMessage('catalog', 'catalog.frameLayout.closed'), exact: true }).check();
-      let token = await beginRecompute(page);
-      await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
-      await waitForRecompute(page, token);
-      await expect(componentRows(page)).toHaveCount(4);
-
-      await componentRows(page).nth(0).click();
-      for (const index of [1, 2, 3]) await componentRows(page).nth(index).click({ modifiers: ['Shift'] });
+      const dialog = await fourMemberOpening(page);
       const door = detailsOf(page, dialog, 'catalog.frameDoor.title');
       await door.locator('summary').click();
       for (const key of ['catalog.frameDoor.board', 'catalog.frameDoor.frame', 'catalog.frameDoor.hinge']) {
@@ -48,7 +53,7 @@ export function registerFrameDoorTests(test: typeof base,
       // パネル用のフレームの最初の行は幅 44 なので、板は外形から両側 44 を引いた 488 × 288(手で解いた値)。
       await expect(door.getByText(uiMessage('catalog', 'catalog.frameDoor.preview').replace('{width}', '576').replace('{height}', '376')
         .replace('{boardWidth}', '488').replace('{boardHeight}', '288'), { exact: true })).toBeVisible();
-      token = await beginRecompute(page);
+      let token = await beginRecompute(page);
       await door.getByRole('button', { name: uiMessage('catalog', 'catalog.frameDoor.place'), exact: true }).click();
       await waitForRecompute(page, token);
       await expect(door.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.frameDoor.placed').replace('{count}', '7'));
@@ -60,6 +65,35 @@ export function registerFrameDoorTests(test: typeof base,
       await waitForRecompute(page, token);
       await expect(componentRows(page)).toHaveCount(4);
       expect(errors).toEqual([]);
+    });
+
+    test('枠付きパーティションを開口に置き、保存した組立を開くと同じ部品が戻る', async ({ page }, info) => {
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const dialog = await fourMemberOpening(page);
+      const door = detailsOf(page, dialog, 'catalog.frameDoor.title');
+      await door.locator('summary').click();
+      await choice(door, 'catalog', 'catalog.frameDoor.installation').selectOption('partition');
+      await expect(choice(door, 'catalog', 'catalog.frameDoor.hinge')).toHaveCount(0);
+      await choice(door, 'catalog', 'catalog.frameDoor.partitionBoard').selectOption({ index: 1 });
+      await choice(door, 'catalog', 'catalog.frameDoor.partitionFrame').selectOption({ index: 1 });
+      await choice(door, 'catalog', 'catalog.frameDoor.holder').selectOption({ index: 1 });
+      await choice(door, 'catalog', 'catalog.frameDoor.connector').selectOption({ index: 1 });
+      const preview = uiMessage('catalog', 'catalog.frameDoor.partitionPreview').replace('{width}', '576').replace('{height}', '376')
+        .replace('{boardWidth}', '488').replace('{boardHeight}', '288');
+      const fittings = uiMessage('catalog', 'catalog.frameDoor.previewParts').replace('{holders}', '8').replace('{connectors}', '4');
+      await expect(door.getByText(preview + fittings, { exact: true })).toBeVisible();
+      const token = await beginRecompute(page);
+      await door.getByRole('button', { name: uiMessage('catalog', 'catalog.frameDoor.partitionPlace'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(door.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.frameDoor.partitionPlaced').replace('{count}', '17'));
+      await expect(componentRows(page)).toHaveCount(21);
+      const names = await componentRows(page).allTextContents();
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true }).click();
+      const saved = info.outputPath('frame-partition.pcada');
+      await saveFlowFile(page, saved, app);
+      await openSaveFlowFile(page, saved, app);
+      await expect(componentRows(page)).toHaveText(names);
     });
   });
 }

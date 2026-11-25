@@ -1,0 +1,7 @@
+{
+  "mathScalar.stopped": "数式の計算が中止されました。",
+  "mathScalar.notUniqueReal": "この欄には一意に決まる実数が必要です。式と条件を確認してください。",
+  "mathScalar.inexactCoordinate": "計算誤差のある近似値です。作図に適用する精度条件を指定してください。",
+  "mathScalar.outOfRange": "計算値を有限の作図座標で表せません。",
+  "mathScalar.sourceUnavailable": "原式を確認できませんでした。式を確認してください。"
+}

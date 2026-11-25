@@ -82,6 +82,23 @@ export function evaluatedDocumentMathValue(document: PartDocument, value: Expres
 }
 
 /** The caller owns cancellation and current-document identity; this function never mutates or publishes. */
+/** Names used by either a scalar field or an exact/non-scalar formula in this document. */
+function usedDocumentParameterNames(document: PartDocument, fields: readonly { readonly value: ExpressionValue }[],
+  byId: ReadonlyMap<string, Parameter>): ReadonlySet<string> {
+  const used = new Set<string>();
+  mapDocumentNonScalarExpressions(document, definition => {
+    for (const reference of collectMathCoefficients(definition.expression)) {
+      if (byId.get(reference.id)?.name === reference.label) used.add(reference.label);
+    }
+    return definition;
+  });
+  for (const { value } of fields) for (const name of expressionParameterNames(value, document.parameters)) used.add(name);
+  for (const parameter of document.parameters) for (const name of expressionParameterNames(parameter.value, document.parameters)) {
+    if (name !== parameter.name) used.add(name);
+  }
+  return used;
+}
+
 export async function evaluateDocumentMath(document: PartDocument, context: DocumentMathContext): Promise<DocumentMathResult> {
   const current = () => !context.signal?.aborted && context.isCurrent() && context.identity.documentId === document.id;
   const failures: ReevaluationFailure[] = [];
@@ -278,17 +295,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       const result = replacements.get(value);
       return result?.ok ? result.value : value;
     });
-    const used = new Set<string>();
-    mapDocumentNonScalarExpressions(document, definition => {
-      for (const reference of collectMathCoefficients(definition.expression)) {
-        if (byId.get(reference.id)?.name === reference.label) used.add(reference.label);
-      }
-      return definition;
-    });
-    for (const { value } of fields) for (const name of expressionParameterNames(value, document.parameters)) used.add(name);
-    for (const parameter of document.parameters) for (const name of expressionParameterNames(parameter.value, document.parameters)) {
-      if (name !== parameter.name) used.add(name);
-    }
+    const used = usedDocumentParameterNames(document, fields, byId);
     const analysis: ParameterAnalysis = { variables, exactVariables, mathCoefficients: coefficientNames, nonLengthVariables: nonLength, circular,
       failures: document.parameters.flatMap(parameter => {
         const text = parameterFailures.get(parameter.name);

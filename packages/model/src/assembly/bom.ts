@@ -167,6 +167,20 @@ function compareRows(left: BomRow, right: BomRow, settings: BomSettings): number
   return compared === 0 ? left.number - right.number : compared;
 }
 
+/** 族の行を読む既定材質だけを、この部品表を作る間に同じ保存形で共有する。 */
+function bomMaterialId(component: AssemblyComponent, document: MaterialBearingPartDocument | undefined,
+  defaults: Map<string, string>): string {
+  const { source } = component;
+  if (source.kind !== 'standardPart' || source.catalog !== 'catalogItem'
+    || document?.materialId !== undefined || component.materialId !== undefined) return materialOf(component, document);
+  const key = partKeyOf(source);
+  const saved = defaults.get(key);
+  if (saved !== undefined) return saved;
+  const material = materialOf(component, document);
+  defaults.set(key, material);
+  return material;
+}
+
 /**
  * 部品を同一性ごとに集計する。非表示は組み立ての一部なので数え、抑制は数えない。
  * サブアセンブリを展開するときも、循環・深さ超過・未解決なら親を 1 行として残す。
@@ -177,6 +191,7 @@ export function buildBom(
   settings: BomSettings = assembly.bom,
 ): readonly BomRow[] {
   const grouped = new Map<string, MutableBomRow>();
+  const defaultCatalogMaterials = new Map<string, string>();
   // 前の呼びの読み替え(行の確かめ)は、この呼び出しの中で部品の鍵ごとに 1 回だけ(部品表の窓は選択のたびに作り直すため)。
   const currentSizes = new Map<string, StandardPartSource | null>();
   let nextNumber = 1;
@@ -189,7 +204,7 @@ export function buildBom(
   ): void => {
     const partKey = currentResolved.partKeys.get(component.id) ?? partKeyOf(component.source);
     const partDocument = currentResolved.documents?.get(partKey);
-    const materialId = materialOf(component, partDocument);
+    const materialId = bomMaterialId(component, partDocument, defaultCatalogMaterials);
     const configurationName = partDocument?.configurations.find((configuration) => configuration.id === partDocument.activeConfigurationId)?.name ?? null;
     const current = currentSizes.get(partKey) ?? (currentSizes.has(partKey) ? null : currentSizeSource(component));
     currentSizes.set(partKey, current);

@@ -144,7 +144,7 @@ function area(nodes: readonly SolidVector3[]): number {
   const u = nodes[1].map((v, i) => v - nodes[0][i]), v = nodes[2].map((n, i) => n - nodes[0][i]);
   return Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]) / 2;
 }
-function solidInput(shape: Shape, mesh: TetraMeshResult): SolidAnalysisInput {
+function solidInput(shape: Shape, mesh: TetraMeshResult): { solid: SolidAnalysisInput; forcesN: readonly SolidVector3[] } {
   const length = shape === 'beam' ? 12 : 8;
   const nodes = Array.from({ length: mesh.coordinates.length / 3 }, (_, index) => point(mesh, index));
   const loaded: Triangle[] = [];
@@ -165,34 +165,43 @@ function solidInput(shape: Shape, mesh: TetraMeshResult): SolidAnalysisInput {
   const plan = translateSolidAnalysis(input).plan;
   expect(plan.forcesN.reduce((sum, force) => sum + force[0], 0)).toBeCloseTo(FORCE_N, 11);
   expect(plan.forcesN.reduce((sum, force) => sum + force[1] + force[2], 0)).toBe(0);
-  return input;
+  return { solid: input, forcesN: plan.forcesN };
 }
 /** Same physical point for every level; tet4 interpolation for displacement,
  * elementwise constant sigma_xx for stress. Average only if exactly on a shared face.
  */
-function sample(input: SolidAnalysisInput, result: SolidAnalysisResult, at: SolidVector3): { displacementMm: number; stressMPa: number } {
-  let displacementMm = 0, stressMPa = 0, hits = 0;
-  const selection: { element: number; nodeIds: readonly number[]; nodes: readonly SolidVector3[];
+function sample(input: SolidAnalysisInput, result: SolidAnalysisResult, tip: SolidVector3, interior: SolidVector3) {
+  interface Selection { element: number; nodeIds: readonly number[]; nodes: readonly SolidVector3[];
     weights: number[]; centroid: number[]; volumeMm3: number; stressMPa: number;
-    displacementMm: number; pointResidualMm: number }[] = [];
+    displacementMm: number; pointResidualMm: number }
+  const probes = [tip, interior].map(at => ({ at, displacementMm: 0, stressMPa: 0, selection: [] as Selection[] }));
   input.elements.forEach((element, index) => {
-    const nodes = element.nodes.map(node => input.nodes[node]), { gradients } = solidTetGeometry(nodes);
-    const offset = at.map((value, axis) => value - nodes[0][axis]);
-    const weights = gradients.map((gradient, i) => (i === 0 ? 1 : 0) + gradient.reduce((sum, v, axis) => sum + v * offset[axis], 0));
-    if (weights.some(weight => weight < -1e-10 || weight > 1 + 1e-10)) return;
-    displacementMm += weights.reduce((sum, weight, i) => sum + weight * result.displacementMm[element.nodes[i]][0], 0);
-    stressMPa += result.elements[index].stressMPa[0]; hits++;
-    selection.push({ element: index, nodeIds: element.nodes, nodes, weights,
-      centroid: at.map((_, axis) => nodes.reduce((sum, node) => sum + node[axis], 0) / 4),
-      volumeMm3: solidTetGeometry(nodes).volumeMm3, stressMPa: result.elements[index].stressMPa[0],
-      displacementMm: weights.reduce((sum, weight, i) => sum + weight * result.displacementMm[element.nodes[i]][0], 0),
-      pointResidualMm: Math.hypot(...at.map((coordinate, axis) =>
-        weights.reduce((sum, weight, i) => sum + weight * nodes[i][axis], 0) - coordinate)) });
+    const nodes = element.nodes.map(node => input.nodes[node]);
+    const { gradients, volumeMm3 } = solidTetGeometry(nodes);
+    for (const probe of probes) {
+      const { at } = probe;
+      const offset = at.map((value, axis) => value - nodes[0][axis]);
+      const weights = gradients.map((gradient, i) => (i === 0 ? 1 : 0) + gradient.reduce((sum, v, axis) => sum + v * offset[axis], 0));
+      if (weights.some(weight => weight < -1e-10 || weight > 1 + 1e-10)) continue;
+      const displacementMm = weights.reduce((sum, weight, i) => sum + weight * result.displacementMm[element.nodes[i]][0], 0);
+      const stressMPa = result.elements[index].stressMPa[0];
+      probe.displacementMm += displacementMm;
+      probe.stressMPa += stressMPa;
+      probe.selection.push({ element: index, nodeIds: element.nodes, nodes, weights,
+        centroid: at.map((_, axis) => nodes.reduce((sum, node) => sum + node[axis], 0) / 4),
+        volumeMm3, stressMPa, displacementMm,
+        pointResidualMm: Math.hypot(...at.map((coordinate, axis) =>
+          weights.reduce((sum, weight, i) => sum + weight * nodes[i][axis], 0) - coordinate)) });
+    }
   });
-  expect(hits, `fixed probe outside mesh: ${at.join(',')}`).toBeGreaterThan(0);
-  writeEvidenceSync(1, 'SOLID_FIXED_POINT_SELECTION ' + JSON.stringify({ source: input.source, at, hits, selection })
-    + String.fromCharCode(10));
-  return { displacementMm: displacementMm / hits, stressMPa: stressMPa / hits };
+  const report = ({ at, displacementMm, stressMPa, selection }: typeof probes[number]) => {
+    const hits = selection.length;
+    expect(hits, `fixed probe outside mesh: ${at.join(',')}`).toBeGreaterThan(0);
+    writeEvidenceSync(1, 'SOLID_FIXED_POINT_SELECTION ' + JSON.stringify({ source: input.source, at, hits, selection })
+      + String.fromCharCode(10));
+    return { displacementMm: displacementMm / hits, stressMPa: stressMPa / hits };
+  };
+  return [report(probes[0]), report(probes[1])] as const;
 }
 interface Observation {
   readonly elements: number;
@@ -378,7 +387,7 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       const expectedVolume = shape === 'beam' ? 48 : shape === 'perforated-plate' ? 28
         : 4 * (input.tagCount - 2) * Math.sin(2 * Math.PI / (input.tagCount - 2));
       expect(Math.abs(mesh.volumeMm3 - expectedVolume) / expectedVolume).toBeLessThanOrEqual(1e-10);
-      const solid = solidInput(shape, mesh);
+      const { solid, forcesN } = solidInput(shape, mesh);
       const before = JSON.stringify(solid);
       const result = await analyzeSolid(runtime, solid, { wrapper: verified('solidAnalysis.py'),
         wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
@@ -389,7 +398,7 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
           meshSha256: meshContentSha256(mesh), nodes: solid.nodes,
           tetrahedra: solid.elements.map(element => element.nodes), material: MATERIAL,
           constraints: solid.constraints, surfaceLoads: solid.surfaceLoads,
-          forcesN: translateSolidAnalysis(solid).plan.forcesN, displacementMm: result.displacementMm,
+          forcesN, displacementMm: result.displacementMm,
           reactionN: result.reactionN, reservedNumericBytes: result.reservedNumericBytes,
           maximumRelativeEquilibriumResidual: result.maximumRelativeEquilibriumResidual,
           minimumScaledPivot: result.minimumScaledPivot, strainEnergyNmm: result.strainEnergyNmm, reportedVolumeMm3: mesh.volumeMm3 });
@@ -398,14 +407,15 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       expect(solidResultMatches(result, solid, await solidInputSha256(solid))).toBe(true);
       expect(result.method).toBe('oofem-ltrspace-isole-native-ldlt/1');
       expect(result.reactionN.reduce((sum, force) => sum + force[0], 0)).toBeCloseTo(-FORCE_N, 7);
-      const externalWork = translateSolidAnalysis(solid).plan.forcesN.reduce((sum, force, node) =>
+      const externalWork = forcesN.reduce((sum, force, node) =>
         sum + force.reduce((work, component, axis) => work + component * result.displacementMm[node][axis], 0), 0);
       expect(Math.abs(result.strainEnergyNmm - externalWork / 2) / result.strainEnergyNmm).toBeLessThanOrEqual(1e-8);
       const tip: SolidVector3 = shape === 'beam' ? [12, 0, 0] : shape === 'cylinder' ? [8, 0, 0] : [8, 0, 0.5];
       const probe: SolidVector3 = shape === 'beam' ? [6.17, 0.21, 0.13]
         : shape === 'cylinder' ? [4.17, 0.21, 0.13] : [6.37, 1.42, 0.43];
-      const row: Observation = { elements: quality.total, displacementMm: sample(solid, result, tip).displacementMm,
-        energyNmm: result.strainEnergyNmm, stressMPa: sample(solid, result, probe).stressMPa };
+      const [tipSample, interiorSample] = sample(solid, result, tip, probe);
+      const row: Observation = { elements: quality.total, displacementMm: tipSample.displacementMm,
+        energyNmm: result.strainEnergyNmm, stressMPa: interiorSample.stressMPa };
       for (const value of [row.displacementMm, row.energyNmm, row.stressMPa]) expect(value).toBeGreaterThan(0);
       const rows = observations.get(shape) ?? [];
       expect(rows).toHaveLength(level - 1);
@@ -516,8 +526,9 @@ describe('fixed local perforated-plate refinement', () => {
       wheelLocation: join(assets, NETGEN_WHEEL).split(sep).join('/') }, () => undefined);
     const meshedAt = performance.now(), quality = countTetraMeshVolumes(mesh);
     const nodes = mesh.coordinates.length / 3, elements = mesh.tetrahedra.length / 4;
+    const meshSha256 = meshContentSha256(mesh);
     admissionEvidence('SOLID_LOCAL_MESH_INPUT', { series: 'local-perforated-plate/1', stage,
-      input, inputSha256: mesh.inputSha256, meshSha256: meshContentSha256(mesh), nodes, elements,
+      input, inputSha256: mesh.inputSha256, meshSha256, nodes, elements,
       meshingElapsedMs: meshedAt - start, quality, volumeMm3: mesh.volumeMm3 });
     expect(nodes).toBeLessThanOrEqual(5000);
     expect(elements).toBeLessThanOrEqual(SOLID_LIMITS.elements);
@@ -528,23 +539,23 @@ describe('fixed local perforated-plate refinement', () => {
     expect(mesh.boundaryTriangles).toEqual(input.triangles);
     expect(mesh.boundaryTags).toEqual(input.tags);
     expect(mesh.coordinates.slice(0, input.coordinates.length)).toEqual(input.coordinates);
-    const solid = solidInput('perforated-plate', mesh), before = JSON.stringify(solid);
+    const { solid, forcesN } = solidInput('perforated-plate', mesh);
+    const before = JSON.stringify(solid);
     const result = await analyzeSolid(runtime, solid, { wrapper: verified('solidAnalysis.py'),
       wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
     expect(JSON.stringify(solid)).toBe(before);
     expect(solidResultMatches(result, solid, await solidInputSha256(solid))).toBe(true);
     expect(result.method).toBe('oofem-ltrspace-isole-native-ldlt/1');
     expect(result.reactionN.reduce((sum, force) => sum + force[0], 0)).toBeCloseTo(-FORCE_N, 7);
-    const forcesN = translateSolidAnalysis(solid).plan.forcesN;
     const externalWork = forcesN.reduce((sum, force, node) => sum
       + force.reduce((work, component, axis) => work + component * result.displacementMm[node][axis], 0), 0);
     expect(Math.abs(result.strainEnergyNmm - externalWork / 2) / result.strainEnergyNmm).toBeLessThanOrEqual(1e-8);
-    const row: Observation = { elements,
-      displacementMm: sample(solid, result, [8, 0, .5]).displacementMm,
-      energyNmm: result.strainEnergyNmm, stressMPa: sample(solid, result, [6.37, 1.42, .43]).stressMPa };
+    const [tipSample, interiorSample] = sample(solid, result, [8, 0, .5], [6.37, 1.42, .43]);
+    const row: Observation = { elements, displacementMm: tipSample.displacementMm,
+      energyNmm: result.strainEnergyNmm, stressMPa: interiorSample.stressMPa };
     const change = stage > 1 ? difference(localPlateObservations[stage - 2], row) : null;
     admissionEvidence('SOLID_LOCAL_EQUILIBRIUM_RAW', { series: 'local-perforated-plate/1', stage,
-      inputSha256: mesh.inputSha256, meshSha256: meshContentSha256(mesh), nodes: solid.nodes,
+      inputSha256: mesh.inputSha256, meshSha256, nodes: solid.nodes,
       tetrahedra: solid.elements.map(element => element.nodes), material: MATERIAL,
       constraints: solid.constraints, surfaceLoads: solid.surfaceLoads, forcesN,
       displacementMm: result.displacementMm, reactionN: result.reactionN,

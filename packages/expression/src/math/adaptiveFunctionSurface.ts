@@ -1,4 +1,5 @@
 /** Conforming parameter triangles, bounded on the whole cell before actual CAD clipping. */
+import { FunctionSamplingInputError } from './functionSamplingInputError.js';
 import { intervalUnion, unionAdd, unionOutsideBounds } from './mathIntervalUnion.js';
 import { nextFloat, type MathInterval } from './mathInterval.js';
 import { functionPointError, functionRangeDiameter, validFunctionWorldBounds,
@@ -57,13 +58,16 @@ interface FunctionSurfaceLeafObserver {
 function budget(value: number, minimum: number, maximum: number): boolean {
   return Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 }
-function validOptions(options: FunctionSurfaceOptions): boolean {
-  return validFunctionWorldBounds(options.minimum, options.maximum) && options.lower.length === 2 && options.upper.length === 2
+function validOptions(options: FunctionSurfaceOptions): true | FunctionSamplingInputError['code'] {
+  if (!validFunctionWorldBounds(options.minimum, options.maximum)) return 'worldRange';
+  if (!(options.lower.length === 2 && options.upper.length === 2
     && [0,1].every(axis => Number.isFinite(options.lower[axis]) && Number.isFinite(options.upper[axis])
-      && options.lower[axis] < options.upper[axis] && Number.isFinite(options.upper[axis]-options.lower[axis]))
-    && Number.isFinite(options.tolerance) && options.tolerance > 0
-    && budget(options.maximumSamples, 5, FUNCTION_SURFACE_LIMITS.maximumSamples) && budget(options.maximumCells, 1, FUNCTION_SURFACE_LIMITS.maximumCells)
-    && budget(options.maximumTriangles, 4, FUNCTION_SURFACE_LIMITS.maximumTriangles) && budget(options.maximumDepth, 1, FUNCTION_SURFACE_LIMITS.maximumDepth);
+      && options.lower[axis] < options.upper[axis] && Number.isFinite(options.upper[axis]-options.lower[axis])))) return 'parameterRange';
+  if (!(Number.isFinite(options.tolerance) && options.tolerance > 0)) return 'tolerance';
+  if (!(budget(options.maximumSamples, 5, FUNCTION_SURFACE_LIMITS.maximumSamples) && budget(options.maximumCells, 1, FUNCTION_SURFACE_LIMITS.maximumCells)
+    && budget(options.maximumTriangles, 4, FUNCTION_SURFACE_LIMITS.maximumTriangles)
+    && budget(options.maximumDepth, 1, FUNCTION_SURFACE_LIMITS.maximumDepth))) return 'subdivisionLimit';
+  return true;
 }
 function corners(cell: SurfaceCell): readonly SurfaceParameter[] {
   return [[cell.u,cell.v], [cell.u+cell.span,cell.v], [cell.u+cell.span,cell.v+cell.span], [cell.u,cell.v+cell.span]];
@@ -100,7 +104,8 @@ function restrictSurface(evaluator: FunctionSurfaceEvaluator, domain: ScalarCond
 /** No partial mesh on cancellation, unresolved domains, resource exhaustion or unverifiable precision. */
 export function sampleFunctionSurface(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
   observer?: FunctionSurfaceLeafObserver): FunctionSurfaceSamplingResult {
-  if (!validOptions(options)) throw new RangeError('有限のXYZ範囲・2つの媒介範囲・精度と分割上限を指定してください。');
+  const validity = validOptions(options);
+  if (validity !== true) throw new FunctionSamplingInputError(validity, '有限のXYZ範囲・2つの媒介範囲・精度と分割上限を指定してください。');
   const stop = options.shouldStop?.();
   if (stop !== undefined) return { status: 'stopped', reason: stop, stats: { samples: 0, cells: 0, triangles: 0 } };
   const drawn = options.domain === undefined ? evaluator : restrictSurface(evaluator, options.domain);
@@ -225,6 +230,120 @@ function canonicalSurfaceGrid(grid: SurfaceParameter, topology: FunctionSurfaceO
   if ((v === 0 && topology.poles[1][0]) || (v === gridSize && topology.poles[1][1])) u = 0;
   return [u,v];
 }
+interface SurfaceCoverage {
+  readonly gridSize: number;
+  readonly tolerance: number;
+  readonly leafCorners: ReadonlyMap<number, SurfaceLeaf>;
+  readonly leafSelections: Map<SurfaceLeaf, string | null>;
+  readonly covers: SurfaceCover[];
+  readonly coverPoints: Map<number, SurfaceParameter>;
+  readonly key: (grid: SurfaceParameter) => number;
+  readonly parameters: (grid: SurfaceParameter) => SurfaceParameter;
+  readonly sample: (grid: SurfaceParameter) => Sample | null;
+  readonly failed: () => StopReason | undefined;
+}
+
+function surfaceConditionBox(lower: SurfaceParameter, upper: SurfaceParameter): MathInterval[] {
+  return [{ lower: lower[0], upper: upper[0] }, { lower: lower[1], upper: upper[1] }];
+}
+
+/** Find a drawn sample that certifies each visible omitted branch, or send that cell back for refinement. */
+function coverOmittedSurfaceCells(omitted: readonly OmittedSurfaceCell[], conditions: FunctionConditionDomain,
+  coverage: SurfaceCoverage): SurfaceCell[] | StopReason {
+  const { gridSize, tolerance, leafCorners, leafSelections, covers, coverPoints, key, parameters, sample, failed } = coverage;
+  // A drawn leaf that contains a corner of an omitted cell, found from the leaf sizes around it.
+  const leafAt = (x: number, y: number, dx: number, dy: number, span: number): SurfaceLeaf | undefined => {
+    const px = x+dx/2, py = y+dy/2;
+    if (px < 0 || py < 0 || px > gridSize || py > gridSize) return undefined;
+    const probe = (size: number): SurfaceLeaf | undefined => {
+      const leaf = leafCorners.get(Math.floor(px/size)*size*(gridSize+1)+Math.floor(py/size)*size);
+      return leaf !== undefined && leaf.span === size ? leaf : undefined;
+    };
+    for (let size = span; size <= gridSize; size *= 2) { const leaf = probe(size); if (leaf !== undefined) return leaf; }
+    for (let size = span/2; size >= 2; size /= 2) { const leaf = probe(size); if (leaf !== undefined) return leaf; }
+    return undefined;
+  };
+  const leafSelection = (leaf: SurfaceLeaf): string | null => {
+    if (!leafSelections.has(leaf)) {
+      leafSelections.set(leaf, conditions.selection(surfaceConditionBox(parameters([leaf.u,leaf.v]), parameters([leaf.u+leaf.span,leaf.v+leaf.span]))));
+    }
+    return leafSelections.get(leaf) ?? null;
+  };
+  const selectionsAt = new Map<number, readonly string[]>();
+  const drawnSelections = (grid: SurfaceParameter, span: number): readonly string[] => {
+    const id = key(grid), cached = selectionsAt.get(id);
+    if (cached !== undefined) return cached;
+    const found: string[] = [];
+    for (const [dx, dy] of QUADRANTS) {
+      const leaf = leafAt(grid[0], grid[1], dx, dy, span), selection = leaf === undefined ? null : leafSelection(leaf);
+      if (selection !== null && !found.includes(selection)) found.push(selection);
+    }
+    selectionsAt.set(id, found);
+    return found;
+  };
+  type Candidate = SurfaceCover & { readonly total: number };
+  const candidate = (grid: SurfaceParameter, distance: number, best: Candidate | undefined): Candidate | undefined => {
+    if (!(distance < tolerance)) return best;
+    const point = sample(grid);
+    if (point === null) return best;
+    const total = distance === 0 && point.error === 0 ? 0 : nextFloat(distance+point.error, 1);
+    return total <= tolerance && (best === undefined || total < best.total) ? { grid, distance, total } : best;
+  };
+  /** Near a meeting point of boundaries a branch region is a wedge; its drawn corners may lie a few cells away. */
+  const nearbyCover = (cell: SurfaceCell, branch: FunctionConditionBranch): Candidate | undefined => {
+    let best: Candidate | undefined;
+    const visited = new Set<SurfaceLeaf>();
+    for (let ring = 1; ring <= COVER_RINGS && best === undefined; ring++) {
+      for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {
+        if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
+        const leaf = leafAt(cell.u+i*cell.span, cell.v+j*cell.span, 1, 1, cell.span);
+        if (leaf === undefined || visited.has(leaf)) continue;
+        visited.add(leaf);
+        const selection = leafSelection(leaf);
+        if (selection === null) continue;
+        for (const grid of corners(leaf)) {
+          const joint = surfaceConditionBox(parameters([Math.min(cell.u, grid[0]), Math.min(cell.v, grid[1])]),
+            parameters([Math.max(cell.u+cell.span, grid[0]), Math.max(cell.v+cell.span, grid[1])]));
+          best = candidate(grid, functionBranchDistance(conditions.hull(joint, branch.key), conditions.hull(joint, selection)), best);
+          if (failed() !== undefined) return undefined;
+        }
+      }
+    }
+    return best;
+  };
+  const refine: SurfaceCell[] = [];
+  for (const { cell, branches } of omitted) {
+    const found: SurfaceCover[] = [];
+    let complete = true;
+    for (const branch of branches) {
+      if (!branch.visible) continue;
+      let best: Candidate | undefined;
+      for (const grid of corners(cell)) {
+        for (const selection of drawnSelections(grid, cell.span)) {
+          const other = branches.find(item => item.key === selection);
+          best = candidate(grid, other === undefined ? Infinity : functionBranchDistance(branch.hull, other.hull), best);
+          const reason = failed(); if (reason !== undefined) return reason;
+        }
+      }
+      best ??= nearbyCover(cell, branch);
+      const reason = failed(); if (reason !== undefined) return reason;
+      if (best === undefined) {
+        // A branch that holds only on an equality line is never drawn itself. When every other branch is
+        // farther than the tolerance, no smaller cell can cover it either.
+        if (branch.thin && branches.every(other => other === branch || functionBranchSeparation(branch.hull, other.hull) > tolerance)) {
+          throw functionConditionBoundaryProblem();
+        }
+        complete = false;
+        break;
+      }
+      found.push({ grid: best.grid, distance: best.distance });
+    }
+    if (!complete) { refine.push(cell); continue; }
+    for (const cover of found) { covers.push(cover); coverPoints.set(key(cover.grid), cover.grid); }
+  }
+  return refine;
+}
+
 function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
   initial: FunctionPointRanges, initialStopChecked = false, conditions: FunctionConditionDomain | null = null,
   observer?: FunctionSurfaceLeafObserver): FunctionSurfaceSamplingResult {
@@ -254,8 +373,6 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
   // Condition boundaries only: drawn leaves by lower corner, omitted cells and the vertices covering them.
   const omitted: OmittedSurfaceCell[] = [], covers: SurfaceCover[] = [], coverPoints = new Map<number, SurfaceParameter>();
   const leafCorners = new Map<number, SurfaceLeaf>(), leafSelections = new Map<SurfaceLeaf, string | null>();
-  const box = (lower: SurfaceParameter, upper: SurfaceParameter): MathInterval[] =>
-    [{ lower: lower[0], upper: upper[0] }, { lower: lower[1], upper: upper[1] }];
   const split = (cell: SurfaceCell, lower: SurfaceParameter, upper: SurfaceParameter): boolean => {
     const middle = parameters(centre(cell));
     if (middle.some((value, axis) => value === lower[axis] || value === upper[axis])) return false;
@@ -274,7 +391,7 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
       if (unionOutsideBounds(ranges, options.minimum, options.maximum)) continue;
       let conditionBoundary = false;
       if (conditions !== null && !ranges.every(range => range.continuous && range.ranges.length > 0)) {
-        const kind = conditions.classify(box(lower, upper), options.minimum, options.maximum, CONDITION_BOUNDARY_SHARE*options.tolerance);
+        const kind = conditions.classify(surfaceConditionBox(lower, upper), options.minimum, options.maximum, CONDITION_BOUNDARY_SHARE*options.tolerance);
         if (kind.kind === 'empty') continue;
         if (kind.kind === 'boundary') {
           if (kind.branches.some(branch => branch.visible)) omitted.push({ cell, branches: kind.branches });
@@ -317,96 +434,11 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
       if (!split(cell, lower, upper)) return stopped('roundoff');
     }
     if (conditions === null || omitted.length === 0) break;
-    // A drawn leaf that contains a corner of an omitted cell, found from the leaf sizes around it.
-    const leafAt = (x: number, y: number, dx: number, dy: number, span: number): SurfaceLeaf | undefined => {
-      const px = x+dx/2, py = y+dy/2;
-      if (px < 0 || py < 0 || px > gridSize || py > gridSize) return undefined;
-      const probe = (size: number): SurfaceLeaf | undefined => {
-        const leaf = leafCorners.get(Math.floor(px/size)*size*(gridSize+1)+Math.floor(py/size)*size);
-        return leaf !== undefined && leaf.span === size ? leaf : undefined;
-      };
-      for (let size = span; size <= gridSize; size *= 2) { const leaf = probe(size); if (leaf !== undefined) return leaf; }
-      for (let size = span/2; size >= 2; size /= 2) { const leaf = probe(size); if (leaf !== undefined) return leaf; }
-      return undefined;
-    };
-    const leafSelection = (leaf: SurfaceLeaf): string | null => {
-      if (!leafSelections.has(leaf)) {
-        leafSelections.set(leaf, conditions.selection(box(parameters([leaf.u,leaf.v]), parameters([leaf.u+leaf.span,leaf.v+leaf.span]))));
-      }
-      return leafSelections.get(leaf) ?? null;
-    };
-    const selectionsAt = new Map<number, readonly string[]>();
-    const drawnSelections = (grid: SurfaceParameter, span: number): readonly string[] => {
-      const id = key(grid), cached = selectionsAt.get(id);
-      if (cached !== undefined) return cached;
-      const found: string[] = [];
-      for (const [dx, dy] of QUADRANTS) {
-        const leaf = leafAt(grid[0], grid[1], dx, dy, span), selection = leaf === undefined ? null : leafSelection(leaf);
-        if (selection !== null && !found.includes(selection)) found.push(selection);
-      }
-      selectionsAt.set(id, found);
-      return found;
-    };
-    type Candidate = SurfaceCover & { readonly total: number };
-    const candidate = (grid: SurfaceParameter, distance: number, best: Candidate | undefined): Candidate | undefined => {
-      if (!(distance < options.tolerance)) return best;
-      const point = sample(grid);
-      if (point === null) return best;
-      const total = distance === 0 && point.error === 0 ? 0 : nextFloat(distance+point.error, 1);
-      return total <= options.tolerance && (best === undefined || total < best.total) ? { grid, distance, total } : best;
-    };
-    /** Near a meeting point of boundaries a branch region is a wedge; its drawn corners may lie a few cells away. */
-    const nearbyCover = (cell: SurfaceCell, branch: FunctionConditionBranch): Candidate | undefined => {
-      let best: Candidate | undefined;
-      const visited = new Set<SurfaceLeaf>();
-      for (let ring = 1; ring <= COVER_RINGS && best === undefined; ring++) {
-        for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {
-          if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
-          const leaf = leafAt(cell.u+i*cell.span, cell.v+j*cell.span, 1, 1, cell.span);
-          if (leaf === undefined || visited.has(leaf)) continue;
-          visited.add(leaf);
-          const selection = leafSelection(leaf);
-          if (selection === null) continue;
-          for (const grid of corners(leaf)) {
-            const joint = box(parameters([Math.min(cell.u, grid[0]), Math.min(cell.v, grid[1])]),
-              parameters([Math.max(cell.u+cell.span, grid[0]), Math.max(cell.v+cell.span, grid[1])]));
-            best = candidate(grid, functionBranchDistance(conditions.hull(joint, branch.key), conditions.hull(joint, selection)), best);
-            if (failure !== undefined) return undefined;
-          }
-        }
-      }
-      return best;
-    };
-    const refine: SurfaceCell[] = [];
-    for (const { cell, branches } of omitted.splice(0)) {
-      const found: SurfaceCover[] = [];
-      let complete = true;
-      for (const branch of branches) {
-        if (!branch.visible) continue;
-        let best: Candidate | undefined;
-        for (const grid of corners(cell)) {
-          for (const selection of drawnSelections(grid, cell.span)) {
-            const other = branches.find(item => item.key === selection);
-            best = candidate(grid, other === undefined ? Infinity : functionBranchDistance(branch.hull, other.hull), best);
-            if (failure !== undefined) return stopped(failure);
-          }
-        }
-        best ??= nearbyCover(cell, branch);
-        if (failure !== undefined) return stopped(failure);
-        if (best === undefined) {
-          // A branch that holds only on an equality line is never drawn itself. When every other branch is
-          // farther than the tolerance, no smaller cell can cover it either.
-          if (branch.thin && branches.every(other => other === branch || functionBranchSeparation(branch.hull, other.hull) > options.tolerance)) {
-            throw functionConditionBoundaryProblem();
-          }
-          complete = false;
-          break;
-        }
-        found.push({ grid: best.grid, distance: best.distance });
-      }
-      if (!complete) { refine.push(cell); continue; }
-      for (const cover of found) { covers.push(cover); coverPoints.set(key(cover.grid), cover.grid); }
-    }
+    const refine = coverOmittedSurfaceCells(omitted.splice(0), conditions, {
+      gridSize, tolerance: options.tolerance, leafCorners, leafSelections, covers, coverPoints, key, parameters, sample,
+      failed: () => failure,
+    });
+    if (typeof refine === 'string') return stopped(refine);
     if (refine.length === 0) break;
     for (const cell of refine) {
       if (cell.depth >= options.maximumDepth) throw functionConditionBoundaryProblem();

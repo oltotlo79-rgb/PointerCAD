@@ -1,0 +1,1 @@
+{".d.ts": "export declare class OCJS {\n  constructor();\n  static getStandard_FailureData(exceptionPtr: intptr_t): Standard_Failure;\n  delete(): void;\n}\n\n", "kind": "class", "exports": ["OCJS"]}

@@ -9,7 +9,7 @@
  */
 
 import { writeThreeMf, type ThreeMfColor, type ThreeMfMeshInput } from '@pointercad/io';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -105,6 +105,26 @@ describe('実importFileの添付所有', () => {
     useAppStore.setState({ fileGateway: { ...edited.fileGateway, openFile: () => Promise.resolve(null) } });
     await importFile('step'); unchanged();
   });
+});
+
+it('破損したIGESの読込で既存文書・履歴・添付を保持する', async () => {
+  installImport(() => Promise.resolve(importedPair(1)));
+  await importFile('step');
+  const loaded = useAppStore.getState();
+  const read = vi.fn<NonNullable<typeof loaded.exchangeKernel>['importShape']>()
+    .mockRejectedValue(new Error('IGES read failed'));
+  useAppStore.setState({
+    fileGateway: { ...loaded.fileGateway,
+      openFile: () => Promise.resolve({ kind: 'iges', fileName: 'damaged.igs', bytes: Uint8Array.of(255) }) },
+    exchangeKernel: { importShape: read, exportShapes: () => Promise.reject(new Error('Not used')) },
+  });
+  await importFile('iges', true);
+  const current = useAppStore.getState();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(current.document).toBe(loaded.document);
+  expect(current.undoStack).toBe(loaded.undoStack);
+  expect(current.importedShapes).toBe(loaded.importedShapes);
+  expect(current.importedMeshes).toBe(loaded.importedMeshes);
 });
 
 describe('単位を訊く(§0.a-0.6)', () => {

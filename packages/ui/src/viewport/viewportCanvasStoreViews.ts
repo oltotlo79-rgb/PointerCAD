@@ -1,4 +1,4 @@
-import { addVec3, scaleVec3, solveCanvasHomography } from '@pointercad/model';
+import { addVec3, relativePlacement, scaleVec3, solveCanvasHomography } from '@pointercad/model';
 import type { DecodedCanvasImage } from '../file/canvasFile.js';
 import { componentDragPlacements } from '../assembly/dragComponentActions.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
@@ -12,6 +12,7 @@ import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchComm
 import type { AppState } from '../store/appState.js';
 import { shownOccurrencePlacements } from '../store/assemblyOccurrenceDriveSlice.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
+import { assemblyCalculation } from '../store/partEditActions.js';
 import type { useAppStore } from '../store/useAppStore.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
 import { canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
@@ -221,14 +222,27 @@ export function assemblyBundleOf(
     return EMPTY_ASSEMBLY_GEOMETRY;
   }
   const view = state.assemblyView;
+  const calculation = assemblyCalculation(state);
   // History changes retain the previous view until attachAssembly publishes its new request.
   // Only publication identity is checked here; current receipt/accounting still belongs to Scene admission.
   if (view === null || view.sourceDocument !== assembly
-    || state.requestedGeneration !== state.completedGeneration || state.recomputeCancelled
+    || calculation.requestedGeneration !== calculation.completedGeneration || calculation.recomputeCancelled
     || (view.meshOwnership !== undefined && !view.meshOwnership.publicationCurrent())) {
     return EMPTY_ASSEMBLY_GEOMETRY;
   }
   const resolved = view.resolved;
+  const edit = state.partEdit;
+  if (edit !== null) {
+    const anchor = resolved.placements.get(edit.componentId);
+    if (anchor === undefined) return EMPTY_ASSEMBLY_GEOMETRY;
+    const background = flattenAssemblyGeometry(assembly, resolved);
+    return buildAssemblyGeometry({ ...background,
+      components: background.components.filter(component => component.id !== edit.componentId),
+      placements: new Map([...background.placements].map(([id, pose]) => [id, relativePlacement(anchor, pose)])),
+      bodies: view.bodies, appearances: view.appearances, hoveredComponentId: null, selectedComponentIds: [],
+      hoveredTargetId: null, selectedTargetIds: [],
+    });
+  }
   const flattened = flattenAssemblyGeometry(
     assembly,
     resolved,

@@ -285,6 +285,8 @@ export function PointerCadApp(): React.JSX.Element {
         },
         exportShapes: (steps, options) => bridge.exportShapes(steps, options),
         importShape: (options) => bridge.importShape(options),
+        supportsIges: () => bridge.supportsIges?.() ?? Promise.resolve(false),
+        inspectImportedBrep: (bytes) => bridge.inspectImportedBrep(bytes),
         offsets,
         projections,
         subShapes,

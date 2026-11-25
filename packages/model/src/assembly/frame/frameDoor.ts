@@ -13,7 +13,7 @@
  * - 第 3 段: 平たいつなぎ(外形を包む箱)を、扉の枠の 4 隅(中心線の角)の裏の面(n の負の側。枠の断面の奥行の半分)に 1 つずつ、
  *   高さを -n、幅を u、奥行を v の向きに置く(角の 2 本にまたがる)。
  * - 開閉のジョイント・取っ手は作らない(ジョイントの対象にずれが無く、ヒンジの軸の線を原点の軸に持つ扉の部品が無いため。取っ手は行が無い)。
- *   扉の部品を互いに固定した組にまとめるのは、置く側(ui)が行う。
+ * - 枠付きパーティションではヒンジを省き、枠・板・指定した固定部材を同じ方法で計画する。固定した組への追加は置く側(ui)が行う。
  */
 import { addVec3, crossVec3, scaleVec3, type Vec3 } from '../../sketch/vec3.js';
 import { quaternionFromBasis, type RigidPlacement } from '../placementMath.js';
@@ -35,6 +35,8 @@ interface FrameDoorInput {
   /** 平たいつなぎの箱の高さ(裏の面から外へ出る向き)と、扉の枠の断面の奥行(面の法線の向き)。null か無い時は置かない。 */
   readonly connector?: { readonly height: number; readonly frameDepth: number } | null;
 }
+
+type FramePartitionInput = Omit<FrameDoorInput, 'hinge'> & { readonly hinge: null };
 
 /** 枠の開口の理由と、扉の枠の内側が無い・ヒンジが開口に収まらない。 */
 type FrameDoorRejection = Exclude<FramePanelRejection, 'noRoom'> | 'noRoom' | 'hingeNoRoom' | 'holderNoRoom';
@@ -88,12 +90,13 @@ readonly RigidPlacement[] | null {
 }
 
 /** 選んだ 4 本の枠の開口に付ける扉の計画。作れない時は理由。 */
-export function planFrameDoor(members: readonly PlacedFrameMember[], input: FrameDoorInput): FrameDoorResult {
+export function planFrameDoor(members: readonly PlacedFrameMember[], input: FrameDoorInput | FramePartitionInput): FrameDoorResult {
   if (members.length !== 4) return refused('notFour');
   const { hinge } = input;
   const { holder = null, connector = null } = input;
-  if (!positive(input.frameWidth, input.boardThickness, hinge.width, hinge.depth, hinge.height) || !(input.clearance >= 0)
-    || !(hinge.offset >= 0) || (holder !== null && !positive(holder.width, holder.depth, holder.height, holder.pitch))
+  if (!positive(input.frameWidth, input.boardThickness) || !(input.clearance >= 0)
+    || (hinge !== null && (!positive(hinge.width, hinge.depth, hinge.height) || !(hinge.offset >= 0)))
+    || (holder !== null && !positive(holder.width, holder.depth, holder.height, holder.pitch))
     || (connector !== null && !positive(connector.height, connector.frameDepth))) return refused('invalidNumber');
   const opening = openingFrame(members);
   if (typeof opening === 'string') return refused(opening);
@@ -102,7 +105,7 @@ export function planFrameDoor(members: readonly PlacedFrameMember[], input: Fram
   const innerW = round(outerW - 2 * input.frameWidth), innerH = round(outerH - 2 * input.frameWidth);
   if (!(innerW > 0 && innerH > 0)) return refused('noRoom');
   // ヒンジの中心は上下の端から offset。2 つが重ならず、開口からはみ出さない時だけ。
-  if (hinge.offset < hinge.height / 2 || v1 - v0 - 2 * hinge.offset < hinge.height) return refused('hingeNoRoom');
+  if (hinge !== null && (hinge.offset < hinge.height / 2 || v1 - v0 - 2 * hinge.offset < hinge.height)) return refused('hingeNoRoom');
   const inset = input.clearance + input.frameWidth / 2;
   const corners = [[u0 + inset, v0 + inset], [u1 - inset, v0 + inset], [u1 - inset, v1 - inset], [u0 + inset, v1 - inset]] as const;
   const points = corners.map(([along, up]) => roundPoint(openingPoint(opening, along, up)));
@@ -113,8 +116,8 @@ export function planFrameDoor(members: readonly PlacedFrameMember[], input: Fram
   if (boardRotation === null || hingeRotation === null) return refused('notRectangle');
   const centerU = (u0 + u1) / 2, centerV = (v0 + v1) / 2;
   const boardOrigin = openingPoint(opening, centerU, centerV, -input.boardThickness / 2);
-  const hingeU = hinge.side === 'start' ? u0 : u1;
-  const hinges = [v0 + hinge.offset, v1 - hinge.offset].map((up): RigidPlacement => ({
+  const hingeU = hinge?.side === 'start' ? u0 : u1;
+  const hinges = hinge === null ? [] : [v0 + hinge.offset, v1 - hinge.offset].map((up): RigidPlacement => ({
     position: roundPoint(addVec3(openingPoint(opening, hingeU, up), scaleVec3(opening.v, -hinge.height / 2))), rotation: hingeRotation }));
   // 板の縁(扉の枠の内側): 下・上・始まり・終わりの辺。
   const edgeInset = input.clearance + input.frameWidth;

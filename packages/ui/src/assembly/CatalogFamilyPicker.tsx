@@ -24,9 +24,11 @@ import { familyAccessoryProps, pickedAccessory } from './accessoryChoice.js';
 import { DimensionFigure } from './DimensionFigure.js';
 import { familyFigurePart } from './dimensionTable.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
+import { FramePanelDetails } from './FramePanelDetails.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 import { PickerSearch } from './PickerSearch.js';
 import { rememberPlacedPart } from './recentStandardParts.js';
+import { FRAME_PANEL_FAMILIES } from './framePanelActions.js';
 import { catalogItemPlacement, PlacePointButton } from './PlacePointButton.js';
 
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
@@ -148,6 +150,8 @@ React.JSX.Element {
       {family?.stock === 'linear' ? <CatalogStockTable /> : null}
       {family?.sectionBounds === undefined || row === undefined ? null
         : <FrameMemberTools member={{ kind: 'catalogItem', familyId: family.id, itemKey: row.key, values }} />}
+      {family !== undefined && FRAME_PANEL_FAMILIES.includes(family.id) && row !== undefined
+        ? <FramePanelDetails key={row.key} catalogItemKey={row.key} catalogFamilyId={family.id} /> : null}
       {error === null ? null : <p className="pcad-field__message" role="alert">
         {t(error === 'invalidOption' ? 'catalog.mechanical.invalidOption' : 'assembly.standardPart.unknownChoice')}</p>}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>

@@ -78,6 +78,7 @@ export {
   DEFAULT_PAPER_SIZE_ID,
   PAPER_SIZES,
   paperSizeOf,
+  UnknownDrawingPaperError,
   type PaperSize,
 } from './paper/paperSize.js';
 export {

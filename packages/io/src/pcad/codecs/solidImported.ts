@@ -31,6 +31,7 @@ import {
  */
 const IMPORTED_SOURCE_FORMATS: readonly ImportedSourceFormat[] = [
   'step',
+  'iges',
   'stl',
   'obj',
   '3mf',

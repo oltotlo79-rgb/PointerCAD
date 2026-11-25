@@ -32,6 +32,11 @@ function acceptsMenuModifiers(event: MouseEvent, options: RadialMenuAttachmentOp
     && options.allowSelectionModifiers?.() === true;
 }
 
+function placeRadialMenuOnSurface(point: ScreenPoint, bounds: ScreenBounds, scale: number) {
+  return placeRadialMenu(point, { left: bounds.left, top: bounds.top, width: bounds.width,
+    height: bounds.height - 80 * scale }, 152 * scale, 32 * scale);
+}
+
 /** Right drag chooses on release; a short right click leaves the menu for a subsequent left click. */
 export function attachRadialMenuGesture(
   surface: HTMLElement | SVGElement, options: RadialMenuAttachmentOptions,
@@ -73,8 +78,7 @@ export function attachRadialMenuGesture(
     const bounds = surface.getBoundingClientRect();
     const scale = options.scale?.() ?? 1;
     if (!Number.isFinite(scale) || scale <= 0) return;
-    const geometry = placeRadialMenu({ x: event.clientX, y: event.clientY },
-      { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height - 80 * scale }, 152 * scale, 32 * scale);
+    const geometry = placeRadialMenuOnSurface({ x: event.clientX, y: event.clientY }, bounds, scale);
     if (geometry === null) return;
     const gesture = beginRadialMenuGesture({ x: event.clientX, y: event.clientY }, event.pointerId, geometry);
     if (options.clickOnly === true) {
@@ -179,8 +183,7 @@ export function attachRadialMenuGesture(
       cancel();
       const bounds = surface.getBoundingClientRect(), scale = options.scale?.() ?? 1;
       const centre = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
-      const geometry = placeRadialMenu(centre,
-        { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height - 80 * scale }, 152 * scale, 32 * scale);
+      const geometry = placeRadialMenuOnSurface(centre, bounds, scale);
       if (geometry === null) return;
       stop(event);
       const gesture = beginRadialMenuGesture(centre, -1, geometry);

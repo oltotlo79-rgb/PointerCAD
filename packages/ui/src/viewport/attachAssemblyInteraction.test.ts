@@ -1,4 +1,4 @@
-import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, EMPTY_PART_LIBRARY,
+import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY,
   resolveAssembly, resolvePart, type PartDocument, type SolidBody } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachAssemblyInteraction, mateTargetFromFaceHit, pickAssemblyMateTarget } from './attachAssemblyInteraction.js';
@@ -204,6 +204,40 @@ function interactionFixture() {
 }
 
 describe('assemblyの実listener', () => {
+  it.each([false, true])('組立内編集の面選択は表示を取り直し、Esc=%s を尊重する', async cancelled => {
+    const f = interactionFixture();
+    f.interaction.detach();
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, createEmptyPartDocument(), 'part.pcad', '',
+      { importedAt: '2026-11-23T00:00:00.000Z' });
+    const base = createAssemblyDocument('組立');
+    const target = createComponentFor(base, { kind: 'part', partRef: embedded.partRef });
+    const state = useAppStore.getState();
+    state.openAssembly(addComponent(base, target), embedded.library);
+    expect(state.beginAssemblyPartEdit(target.id)).toBe(true);
+    state.setPartEditContextPick('holeCenters');
+
+    let invalidated = true;
+    const settles: ((ready: boolean) => void)[] = [];
+    const receipt = new Promise<boolean>(resolve => { settles.push(resolve); });
+    const prepareMateInput = vi.fn(() => receipt);
+    const interaction = attachAssemblyInteraction(f.canvas, { ...f.scene, assemblyDisplayInvalidated: () => invalidated },
+      { viewDirection: () => [0, 0, 1], prepareMateInput });
+    try {
+      f.send('pointerdown', { pointerId: 1, clientX: 70, clientY: 30 });
+      f.send('pointerup', { pointerId: 1, clientX: 70, clientY: 30 });
+      expect(prepareMateInput).toHaveBeenCalledTimes(1);
+      expect(f.scene.pickAssemblyFace).not.toHaveBeenCalled();
+      if (cancelled) f.send('keydown', { key: 'Escape' });
+      invalidated = false;
+      const [settle] = settles;
+      if (settle === undefined) throw new Error('Missing receipt continuation');
+      settle(true);
+      await receipt;
+      if (cancelled) expect(f.scene.pickAssemblyFace).not.toHaveBeenCalled();
+      else expect(f.scene.pickAssemblyFace).toHaveBeenCalledExactlyOnceWith(70, 30);
+    } finally { interaction.detach(); }
+  });
+
   it.each([
     { key: 's', ctrlKey: true, shiftKey: false },
     { key: 'S', ctrlKey: true, shiftKey: true },

@@ -89,6 +89,30 @@ function presentValues(values: Readonly<Record<string, number | null>>): Readonl
   return Object.fromEntries(Object.entries(values).flatMap(([key, value]): (readonly [string, number])[] => (value === null ? [] : [[key, value]])));
 }
 
+/** 辺ごとの隣り合う溝口に共通の間隔がある時だけ、その間隔を表に出す。 */
+function outlineSlotPitch(outline: NonNullable<TSlotCatalogRecord['outline']>): number | null {
+  const gaps = new Set<number>();
+  for (const edge of outline.vertices.keys()) {
+    const positions = outline.slots.filter((slot) => slot.edge === edge).map((slot) => slot.at).sort((a, b) => a - b);
+    positions.slice(1).forEach((at, index) => gaps.add(at - (positions[index] ?? at)));
+  }
+  const [pitch] = gaps;
+  return gaps.size === 1 ? pitch ?? null : null;
+}
+
+/** 格子用の寸法欄を、外周の指定で実際に作る形の寸法に置き換える。 */
+function outlineDimensions(outline: NonNullable<TSlotCatalogRecord['outline']>): Readonly<Record<string, number>> {
+  const radius = outline.radii[0];
+  const hole = outline.holes[0];
+  const centered = outline.holes.length === 1 && hole?.x === 0 && hole.y === 0;
+  return presentValues({
+    centerHole: centered ? hole.diameter : null,
+    cornerRadius: radius !== undefined && outline.radii.every((value) => value === radius) ? radius : null,
+    holeCount: !centered && hole !== undefined ? outline.holes.length : null,
+    holeDiameter: !centered && hole !== undefined && outline.holes.every((item) => item.diameter === hole.diameter) ? hole.diameter : null,
+  });
+}
+
 function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
   const faces = Object.fromEntries(FACE_KEYS.map(([letter, key]): readonly [string, number] => [key, record.faces.includes(letter) ? 1 : 0]));
   const withheld = record.ixCm4 === null;
@@ -98,10 +122,15 @@ function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
     standardLabel: '製造元の寸法に合わせた物',
     materialLabel: 'アルミ',
     densityMaterialId: 'aluminum',
-    dims: { width: record.width, height: record.height, slotPitch: record.slotPitch, slotsAcross: record.slotsAcross, ...faces,
+    dims: { width: record.width, height: record.height,
+      ...presentValues({ slotPitch: record.outline === undefined ? record.slotPitch : outlineSlotPitch(record.outline) }),
+      slotsAcross: record.slotsAcross, ...faces,
       slotOpening: record.slotOpening, shoulder: record.shoulder, slotInnerWidth: record.slotInnerWidth, slotDepth: record.slotDepth,
-      centerHole: record.centerHole, cornerRadius: record.cornerRadius, cornerHoleDiameter: record.cornerHoleDiameter,
-      cornerHoleInset: record.cornerHoleInset, unitMassKgPerM: record.unitMassKgPerM,
+      ...(record.outline === undefined
+        ? { centerHole: record.centerHole, cornerRadius: record.cornerRadius, cornerHoleDiameter: record.cornerHoleDiameter,
+          cornerHoleInset: record.cornerHoleInset }
+        : outlineDimensions(record.outline)),
+      unitMassKgPerM: record.unitMassKgPerM,
       // outlineSection: 外周の指定を持つ(外周が長方形でない)行の印。端のキャップの候補に、同じ外形の四角のキャップを出さないのに使う。
       ...presentValues({ areaMm2: record.areaMm2, ixCm4: record.ixCm4, iyCm4: record.iyCm4, zxCm3: record.zxCm3, zyCm3: record.zyCm3,
         armWidth: record.armWidth ?? null, outlineSection: record.outline === undefined ? null : 1 }) },
@@ -192,7 +221,7 @@ function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[],
       return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
     },
     sectionBounds: (row) => section.bounds(row),
-    sectionSlots: (row) => section.slots(row),
+    sectionSlots: (row) => section.slots(row)?.map((groove) => ({ ...groove, nominalWidth: slot })) ?? null,
     partName: (row, values) => frameName(row, values),
   };
 }

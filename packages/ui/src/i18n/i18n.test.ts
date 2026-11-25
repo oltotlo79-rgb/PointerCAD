@@ -59,6 +59,24 @@ function hasHardcodedComponentJapanese(file: string, source: string): boolean {
   return !file.endsWith('.test.tsx') && containsJapanese(stripComments(source));
 }
 
+function igesDiagnosticReads(file: string): string[] {
+  const path = join(sourceRoot, 'file', file);
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true);
+  const keys: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node) && node.text.startsWith('exchangeError.iges')) {
+      const parent = node.parent;
+      const returned = ts.isReturnStatement(parent) && parent.expression === node;
+      const translated = ts.isCallExpression(parent) && parent.arguments[0] === node
+        && ['t', 'deps.messageOf'].includes(parent.expression.getText(source));
+      if (returned || translated) keys.push(node.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return keys;
+}
+
 describe('UI 文字列リソース(NFR-MA-5)', () => {
   it('キーが 1 件以上あり、すべて空でない文字列を返す', () => {
     expect(MESSAGE_KEYS.length).toBeGreaterThan(0);
@@ -91,27 +109,31 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
     expect(t('statusBar.unitHint').length).toBeGreaterThan(0);
   });
 
-  it('入出力の断りの文言は ui が組み立てる 5 つだけ(P6 タスク5、統括の決定 2026-09-06)', () => {
-    /*
-     * §2.8 の断りの表のうち、**kernel / io が日本語の文そのものを組み立てて返すもの**
-     * (`DXF_UNSUPPORTED_FORMAT_MESSAGE` など、読み込みの失敗・壊れたファイル・大きすぎる形)は
-     * ここに置かない。同じ文が 2 か所にあると片方だけ直したときに食い違うため(統括の決定)。
-     *
-     * 残すのは **`@pointercad/model` の `ExportNoticeKey` が返す 5 つ**だけで、model は
-     * キーを返し文言は持たない(`exchange/types.ts` の注釈)。**名前は `ExportNoticeKey` と
-     * 1 対 1 にそろえてある**ので、パネル(タスク32)は対応表を 1 つ書くだけで済む。
-     */
+  it('入出力は既存の5つの断り・警告と、IGES固有の3つの断りを表示する', () => {
+    // ExportNoticeKey の5件と J-04 のIGES固有の3件だけを UI で組み立てる。
+    // kernel / io が返す既存の文 (DXF_UNSUPPORTED_FORMAT_MESSAGE など) の複製は置かない。
+    const expected = [
+      ['exchangeError.nothingToExport', '書き出せるソリッドがありません。'],
+      ['exchangeError.shellNotSupported', '閉じていない面を含む形は STL・3MF に書き出せません。'],
+      ['exchangeError.igesUnavailable', 'この環境では IGES の読み書きに対応していません。'],
+      ['exchangeError.igesUnit', 'ミリメートルまたはインチで書かれた IGES ファイルを選んでください。'],
+      ['exchangeError.igesMeshNotSupported', '読み込んだ三角形の形は IGES に書き出せません。STL・3MF・OBJ・glTF なら書き出せます。'],
+      ['exchangeError.meshNotSupported', '読み込んだ三角形の形は STEP に書き出せません。STL・3MF・OBJ・glTF なら書き出せます。'],
+      ['exchangeError.colorNotSupported', 'この環境では色を書き出せません。形だけを書き出します。'],
+      ['exchangeError.qualityIgnored', 'この形式では品質の指定は効きません。'],
+    ] as const satisfies readonly (readonly [MessageKey, string])[];
     const keys = MESSAGE_KEYS.filter((key) => key.startsWith('exchangeError.'));
-    expect(keys).toEqual([
-      'exchangeError.nothingToExport',
-      'exchangeError.shellNotSupported',
-      'exchangeError.meshNotSupported',
-      'exchangeError.colorNotSupported',
-      'exchangeError.qualityIgnored',
-    ]);
-    for (const key of keys) {
-      expect(t(key).length, key).toBeGreaterThan(0);
+    expect(keys).toEqual(expected.map(([key]) => key));
+    for (const [key, message] of expected) {
+      expect(t(key), key).toBe(message);
     }
+  });
+
+  it('IGES固有の3つの鍵をパネルとファイルの4箇所で使う', () => {
+    expect(igesDiagnosticReads('ExchangePanel.tsx')).toEqual(['exchangeError.igesUnavailable']);
+    expect(igesDiagnosticReads('exchangeFile.ts')).toEqual([
+      'exchangeError.igesMeshNotSupported', 'exchangeError.igesUnit', 'exchangeError.igesUnavailable',
+    ]);
   });
 
   it('ファイルの種別の説明が 8 種そろっている(P6 タスク4・5)', () => {

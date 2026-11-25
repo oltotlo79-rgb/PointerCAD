@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { collectErrors } from './runtimeErrors.js';
 import { disableFilePickers } from './filePickers.js';
+import { igesRoundTripFlow, plainIgesRoundTripFlow, prepareIgesInput } from './igesRoundTripFlow.js';
 import { openToolMenu, toolMenuPanel } from './toolMenus.js';
 
 import { KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
@@ -410,6 +411,30 @@ test.describe('P6 ファイルの往復(要件§9 P6、計画書 §0.59)', () =>
     await solidRows(page).first().click();
     await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
 
+    const pcadPath = testInfo.outputPath('exchange-a.pcad');
+    const download = page.waitForEvent('download');
+    await fileAction(page, '保存').click();
+    await (await download).saveAs(pcadPath);
+    await expect(page.locator('.pcad-statusbar__text')).toHaveText('保存しました');
+
+    await newDocument(page);
+    const chooser = page.waitForEvent('filechooser');
+    await fileAction(page, '開く').click();
+    await (await chooser).setFiles(pcadPath);
+    await openSolidSection(page);
+    await expect(solidRows(page)).toHaveCount(2, { timeout: KERNEL_TIMEOUT_MS });
+    await waitForRecompute(page);
+    await solidRows(page).nth(1).click();
+    const inspect = propertyPanel(page).getByRole('button', { name: '取り込んだ形を点検', exact: true });
+    await inspect.click();
+    await expect(propertyPanel(page).getByRole('status').filter({ hasText: 'ソリッドの点検' })).toHaveText(
+      'ソリッドの点検で形状の不整合は見つかりませんでした。',
+      { timeout: KERNEL_TIMEOUT_MS },
+    );
+    await expect(page.locator('.pcad-statusbar__file')).not.toContainText('*');
+    await solidRows(page).first().click();
+    await expect(inspect).toHaveCount(0);
+
     expect(errors).toEqual([]);
   });
 
@@ -609,4 +634,13 @@ await expect(panel.getByRole('checkbox')).not.toBeChecked();
 
     expect(errors).toEqual([]);
   });
+});
+
+test('J-04 IGESの読込・点検・修繕・保存再開・書出しを実ブラウザーで通す', async ({ page }, info) => {
+  const input = await prepareIgesInput(info);
+  await igesRoundTripFlow(page, info, input);
+});
+
+test('J-04 IGESを通常のファイル操作で読み込み、そのまま書き出す', async ({ page }, info) => {
+  await plainIgesRoundTripFlow(page, info);
 });

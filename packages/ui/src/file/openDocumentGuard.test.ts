@@ -1,3 +1,4 @@
+import * as pcadReadHost from './pcadReadWorker.js';
 /**
  * 開く(組立・図面)の読込の待ちの間に文書が変わったときの採用判定の回帰検査
  * (docs/review-2026-09-28-codex.md R02・§6.1 の1、付録C の再現を公開入口から移したもの)。
@@ -268,4 +269,63 @@ vi.mock('./pcadReadWorker.js', async importOriginal => {
   return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
     kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
       ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
+});
+
+
+describe('通常Openの範囲読取の確定と取消', () => {
+  async function openCandidate() {
+    const { g } = await savedAssembly();
+    const before = useAppStore.getState();
+    const close = vi.fn(() => Promise.resolve());
+    const complete = vi.fn(() => Promise.resolve('opened-target'));
+    const read = vi.fn(() => Promise.reject(new Error('This test controls the Worker response')));
+    const openPcadSource = vi.fn(() => Promise.resolve({ name: 'candidate.pcada', source: { size: 268435457, read }, close, complete }));
+    useAppStore.setState({ fileGateway: { ...before.fileGateway, openPcadSource } });
+    const deps = depsWith(() => Promise.resolve(true));
+    return { g, before, close, complete, openPcadSource, deps };
+  }
+
+  it('読み込みの中止はWorkerのsignalを取り消し、元の文書・履歴・保存先を保つ', async () => {
+    const { g, before, close, complete, deps } = await openCandidate();
+    const started = deferred<AbortSignal>();
+    const worker = vi.spyOn(pcadReadHost, 'readPcadRangesInWorker').mockImplementation((_, __, ___, control) =>
+      new Promise<never>((_resolve, reject) => {
+        const signal = control.signal;
+        if (signal === undefined) { reject(new Error('Missing Open owner')); return; }
+        signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+        started.resolve(signal);
+      }));
+    try {
+      const opening = openPart(deps);
+      const signal = await started.promise;
+      const cancel = useAppStore.getState().cancelDocumentOpen;
+      if (cancel === null) throw new Error('Missing manual cancel action');
+      cancel();
+      await opening;
+      expect(signal.aborted).toBe(true);
+      expect(close).toHaveBeenCalledOnce();
+      expect(complete).not.toHaveBeenCalled();
+      const after = useAppStore.getState();
+      expect(after.cancelDocumentOpen).toBeNull();
+      expect(after.assembly).toBe(before.assembly);
+      expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(g.confirmSaveTarget).not.toHaveBeenCalled();
+      expect(g.clearSaveTarget).not.toHaveBeenCalled();
+    } finally { worker.mockRestore(); }
+  });
+
+  it('検証失敗では保存先候補を作る前に止まり、短縮された本文の案内を出す', async () => {
+    const { g, before, close, complete, deps } = await openCandidate();
+    const worker = vi.spyOn(pcadReadHost, 'readPcadRangesInWorker').mockRejectedValue(new pcadReadHost.PcadReadWorkerError('range', 'Short read'));
+    try {
+      await openPart(deps);
+      expect(close).toHaveBeenCalledOnce();
+      expect(complete).not.toHaveBeenCalled();
+      const after = useAppStore.getState();
+      expect(after.assembly).toBe(before.assembly);
+      expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(after.fileMessage).toEqual({ key: 'file.error.corrupted', failed: true });
+      expect(g.confirmSaveTarget).not.toHaveBeenCalled();
+    } finally { worker.mockRestore(); }
+  });
 });

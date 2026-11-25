@@ -173,7 +173,7 @@ describe('actual read Worker entry and strict IO parity', () => {
     try {
       const entry = await workerEntry(), bytes = Uint8Array.of(1, 2, 3), before = hash(bytes);
       expect(await entry.send({ id: 'exception', kind: 'part', bytes })).toEqual({
-        id: 'exception', kind: 'failure', message: 'reader exception',
+        id: 'exception', kind: 'failure', reason: 'rejected', message: 'reader exception',
       });
       expect(entry.returned).toEqual([[]]); expect(hash(bytes)).toBe(before);
     } finally { vi.doUnmock('@pointercad/io'); }

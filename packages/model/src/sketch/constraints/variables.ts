@@ -381,28 +381,7 @@ function addDerivedGroup(
   );
 }
 
-/**
- * 拘束の変数を切り出す。`resolved` は拘束を無視した解決の結果で、初期値の出どころ。
- *
- * `plane` はこのスケッチの作図面。**この平面を指しているフィーチャーの座標だけ**が変数になる
- * (3D スケッチ・別の作図面の要素は定数)。
- */
-export function collectVariables(
-  document: SketchDocument,
-  resolved: ResolvedSketch,
-  plane: WorkPlane,
-): VariableSet {
-  const builder: Builder = {
-    planeFeatureIds: new Set(document.features.filter(feature => feature.planeId === plane.id).map(feature => feature.id)),
-    constraintPoints: new Set<string>(),
-    plane,
-    slots: [],
-    aliases: new Map<string, string>(),
-    elementFeatureIds: new Set<string>(),
-    followsBase: new Set<string>(),
-    keysByFeature: new Map<string, string[]>(),
-  };
-
+function indexResolvedSketch(resolved: ResolvedSketch) {
   const pointsById = new Map<string, ResolvedPoint>();
   const pointsByFeature = new Map<string, ResolvedPoint[]>();
   for (const point of resolved.points) {
@@ -430,6 +409,39 @@ export function collectVariables(
   for (const spline of resolved.splines) {
     splineByFeature.set(spline.featureId, spline);
   }
+  return { pointsById, pointsByFeature, segmentByFeature, arcByFeature, ellipseByFeature, splineByFeature };
+}
+
+function variableBuilder(document: SketchDocument, plane: WorkPlane): Builder {
+  const builder: Builder = {
+    planeFeatureIds: new Set(document.features.filter(feature => feature.planeId === plane.id).map(feature => feature.id)),
+    constraintPoints: new Set<string>(),
+    plane,
+    slots: [],
+    aliases: new Map<string, string>(),
+    elementFeatureIds: new Set<string>(),
+    followsBase: new Set<string>(),
+    keysByFeature: new Map<string, string[]>(),
+  };
+
+  return builder;
+}
+
+/**
+ * 拘束の変数を切り出す。`resolved` は拘束を無視した解決の結果で、初期値の出どころ。
+ *
+ * `plane` はこのスケッチの作図面。**この平面を指しているフィーチャーの座標だけ**が変数になる
+ * (3D スケッチ・別の作図面の要素は定数)。
+ */
+export function collectVariables(
+  document: SketchDocument,
+  resolved: ResolvedSketch,
+  plane: WorkPlane,
+): VariableSet {
+  const builder = variableBuilder(document, plane);
+
+  const { pointsById, pointsByFeature, segmentByFeature, arcByFeature, ellipseByFeature, splineByFeature } =
+    indexResolvedSketch(resolved);
   /** 円弧の端点の暗黙の式。変数が決まってから、定数だけの式を落とす。 */
   const implicit: ImplicitCircleEquation[] = [];
   const constraintCurves = new Map<string, 'line' | 'circle'>();

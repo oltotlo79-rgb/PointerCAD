@@ -186,6 +186,175 @@ function releaseCacheEntry(entry: ShapeCacheEntry): void {
   release();
 }
 
+interface ShapeCacheMeshOwners<T extends ShapeCacheEntry> {
+  readonly entries: ReadonlyMap<string, T>;
+  readonly references: ReadonlyMap<string, number>;
+  readonly retired: ReadonlyMap<string, readonly T[]>;
+  readonly failedEntries: ReadonlyMap<T, unknown>;
+}
+
+function readShapeCacheBackings<T extends ShapeCacheEntry>(owners: ShapeCacheMeshOwners<T>,
+  meshBuffersOf?: (entry: T) => readonly ArrayBufferLike[]): MeshBufferSnapshot {
+  const { entries, references, retired, failedEntries } = owners;
+  if (meshBuffersOf === undefined) return { status: 'unknown', reason: 'callback-missing' };
+  const all = new Set([...entries.values(), ...Array.from(retired.values()).flat(), ...failedEntries.keys()]);
+  const measured = new Map<T, readonly ArrayBuffer[]>();
+  for (const entry of all) {
+    let buffers: readonly ArrayBufferLike[];
+    try { buffers = meshBuffersOf(entry); }
+    catch { return { status: 'unknown', reason: 'callback-error' }; }
+    try { measured.set(entry, uniqueMeshBackingBuffers(buffers)); }
+    catch { return { status: 'unknown', reason: 'invalid-byte-count' }; }
+  }
+  const active = new Set<ArrayBuffer>();
+  const held = new Set<ArrayBuffer>();
+  const protectedBuffers = new Set<ArrayBuffer>();
+  for (const [key, entry] of entries) {
+    const buffers = measured.get(entry);
+    if (buffers === undefined) return { status: 'unknown', reason: 'invalid-byte-count' };
+    for (const buffer of buffers) {
+      active.add(buffer);
+      if (references.has(key)) protectedBuffers.add(buffer);
+    }
+  }
+  for (const entry of new Set([...Array.from(retired.values()).flat(), ...failedEntries.keys()])) {
+    const buffers = measured.get(entry);
+    if (buffers === undefined) return { status: 'unknown', reason: 'invalid-byte-count' };
+    for (const buffer of buffers) {
+      held.add(buffer);
+      protectedBuffers.add(buffer);
+    }
+  }
+  const exclusiveRetired = [...held].filter(buffer => !active.has(buffer));
+  try {
+    meshBackingBytes([...active, ...exclusiveRetired]);
+    meshBackingBytes(protectedBuffers);
+  } catch (error) {
+    return { status: 'unknown', reason: error instanceof MeshBackingBytesOverflowError
+      ? 'overflow' : 'invalid-byte-count' };
+  }
+  return { status: 'known', active: [...active], retired: exclusiveRetired, protected: [...protectedBuffers] };
+}
+
+function measureShapeCacheBytes<T extends ShapeCacheEntry>(owners: ShapeCacheMeshOwners<T>, all: readonly T[],
+  meshBytesOf?: (entry: T) => number, meshBuffersOf?: (entry: T) => readonly ArrayBufferLike[]) {
+  const { entries, references, retired, failedEntries } = owners;
+  type ByteCounts = ShapeCacheStats['meshByteCounts'];
+  let meshByteCounts: ByteCounts = { status: 'unknown', reason: 'callback-missing' };
+  let legacyMeshBytes = 0;
+  if (meshBytesOf !== undefined) {
+    const measured = new Map<T, number>();
+    let reason: 'callback-error' | 'invalid-byte-count' | 'overflow' | undefined;
+    for (const entry of all) {
+      if (measured.has(entry)) continue;
+      try {
+        const bytes = meshBytesOf(entry);
+        if (!Number.isSafeInteger(bytes) || bytes < 0) {
+          reason = 'invalid-byte-count';
+          break;
+        }
+        measured.set(entry, bytes);
+      } catch {
+        reason = 'callback-error';
+        break;
+      }
+    }
+    if (reason === undefined) {
+      const active = new Set(entries.values());
+      const held = new Set([...Array.from(retired.values()).flat(), ...failedEntries.keys()]);
+      const protectedEntries = new Set<T>(held);
+      for (const [key, entry] of entries) {
+        if (references.has(key)) protectedEntries.add(entry);
+      }
+      const sum = (items: Iterable<T>): number => {
+        let bytes = 0;
+        for (const entry of items) {
+          const entryBytes = measured.get(entry);
+          if (entryBytes === undefined) return Number.NaN;
+          bytes += entryBytes;
+          if (!Number.isSafeInteger(bytes)) return Number.NaN;
+        }
+        return bytes;
+      };
+      const activeBytes = sum(active);
+      const retiredBytes = sum(Array.from(held).filter(entry => !active.has(entry)));
+      const protectedBytes = sum(protectedEntries);
+      const totalBytes = activeBytes + retiredBytes;
+      legacyMeshBytes = sum(all);
+      meshByteCounts = [activeBytes, retiredBytes, protectedBytes, totalBytes]
+        .every(Number.isSafeInteger)
+        ? { status: 'known', activeBytes, retiredBytes, protectedBytes, totalBytes }
+        : { status: 'unknown', reason: 'overflow' };
+    } else {
+      meshByteCounts = { status: 'unknown', reason };
+    }
+  }
+  // Preserve the old scalar diagnostic, but use explicit whole-buffer ownership for admission.
+  if (meshBuffersOf !== undefined && (meshByteCounts.status === 'known'
+    || meshByteCounts.reason === 'callback-missing')) {
+    const snapshot = readShapeCacheBackings(owners, meshBuffersOf);
+    if (snapshot.status === 'unknown') meshByteCounts = snapshot;
+    else {
+      const activeBytes = meshBackingBytes(snapshot.active);
+      const retiredBytes = meshBackingBytes(snapshot.retired);
+      const protectedBytes = meshBackingBytes(snapshot.protected);
+      meshByteCounts = { status: 'known', activeBytes, retiredBytes, protectedBytes,
+        totalBytes: meshBackingBytes([...snapshot.active, ...snapshot.retired]) };
+      if (meshBytesOf === undefined) legacyMeshBytes = activeBytes + retiredBytes;
+    }
+  }
+  return { meshByteCounts, legacyMeshBytes };
+}
+
+interface ShapeCacheLeases<T extends ShapeCacheEntry> {
+  readonly references: Map<string, number>;
+  readonly tokens: Map<AcquireToken, ReadonlySet<string>>;
+  readonly retired: Map<string, T[]>;
+  readonly failedReleases: Map<AcquireToken, { readonly entries: ReadonlySet<T>; readonly error: unknown }>;
+  retiredCount: number;
+}
+
+/** Return a loan once, retaining an opaque native failure for later callers. */
+function releaseShapeCacheToken<T extends ShapeCacheEntry>(leases: ShapeCacheLeases<T>, token: AcquireToken,
+  failedEntries: ReadonlyMap<T, unknown>, changed: () => void, disposeEntry: (entry: T) => void, trim: () => void): void {
+  const { references, tokens, retired, failedReleases } = leases;
+  const previous = failedReleases.get(token);
+  if (previous !== undefined) throw previous.error;
+  const keys = tokens.get(token);
+  if (keys === undefined) return;
+  changed();
+  // Decrement protection exactly once. Every destructor is attempted at most once.
+  tokens.delete(token);
+  const failures: unknown[] = [];
+  const failed = new Set<T>();
+  for (const key of keys) {
+    const remaining = (references.get(key) ?? 0) - 1;
+    if (remaining > 0) references.set(key, remaining);
+    else {
+      references.delete(key);
+      const old = retired.get(key) ?? [];
+      retired.delete(key); leases.retiredCount -= old.length;
+      for (const entry of new Set(old)) {
+        try { disposeEntry(entry); }
+        catch (error) { failed.add(entry); failures.push(error); }
+      }
+    }
+  }
+  const previouslyFailed = new Set(failedEntries.keys());
+  try { trim(); }
+  catch (error) {
+    failures.push(error);
+    for (const [entry, cause] of failedEntries) {
+      if (!previouslyFailed.has(entry) || cause === error) failed.add(entry);
+    }
+  }
+  if (failures.length > 0) {
+    const error = new AggregateError(failures, 'Shape cache release partially failed');
+    failedReleases.set(token, { entries: failed, error });
+    throw error;
+  }
+}
+
 /**
  * 形のキャッシュを作る。OCCT には触れないので、預けるものの型は呼び出し側が決める。
  * 既定は makeBox 等が返す OcctShapeHandle({ shape, delete() })。
@@ -213,7 +382,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   const failedReleases = new Map<AcquireToken, { readonly entries: ReadonlySet<T>; readonly error: unknown }>();
   let ownershipGeneration = 0;
   const changed = (): void => { ownershipGeneration = Number.isSafeInteger(ownershipGeneration + 1) ? ownershipGeneration + 1 : Number.NaN; };
-  let retiredCount = 0;
+  const leases: ShapeCacheLeases<T> = { references, tokens, retired, failedReleases, retiredCount: 0 };
   let evictions = 0;
   let released = 0;
   let clearWithActiveTokensCount = 0;
@@ -249,7 +418,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   }
 
   function trim(): void {
-    while (entries.size + retiredCount > capacity && dropOldest()) {
+    while (entries.size + leases.retiredCount > capacity && dropOldest()) {
       // 保護対象だけになったら超過を許し、stats の診断で呼び手へ知らせる。
     }
   }
@@ -259,46 +428,8 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
     entries.set(key, entry);
   }
 
-  function meshBufferSnapshot(): MeshBufferSnapshot {
-    if (meshBuffersOf === undefined) return { status: 'unknown', reason: 'callback-missing' };
-    const all = new Set([...entries.values(), ...Array.from(retired.values()).flat(), ...failedEntries.keys()]);
-    const measured = new Map<T, readonly ArrayBuffer[]>();
-    for (const entry of all) {
-      let buffers: readonly ArrayBufferLike[];
-      try { buffers = meshBuffersOf(entry); }
-      catch { return { status: 'unknown', reason: 'callback-error' }; }
-      try { measured.set(entry, uniqueMeshBackingBuffers(buffers)); }
-      catch { return { status: 'unknown', reason: 'invalid-byte-count' }; }
-    }
-    const active = new Set<ArrayBuffer>();
-    const held = new Set<ArrayBuffer>();
-    const protectedBuffers = new Set<ArrayBuffer>();
-    for (const [key, entry] of entries) {
-      const buffers = measured.get(entry);
-      if (buffers === undefined) return { status: 'unknown', reason: 'invalid-byte-count' };
-      for (const buffer of buffers) {
-        active.add(buffer);
-        if (references.has(key)) protectedBuffers.add(buffer);
-      }
-    }
-    for (const entry of new Set([...Array.from(retired.values()).flat(), ...failedEntries.keys()])) {
-      const buffers = measured.get(entry);
-      if (buffers === undefined) return { status: 'unknown', reason: 'invalid-byte-count' };
-      for (const buffer of buffers) {
-        held.add(buffer);
-        protectedBuffers.add(buffer);
-      }
-    }
-    const exclusiveRetired = [...held].filter(buffer => !active.has(buffer));
-    try {
-      meshBackingBytes([...active, ...exclusiveRetired]);
-      meshBackingBytes(protectedBuffers);
-    } catch (error) {
-      return { status: 'unknown', reason: error instanceof MeshBackingBytesOverflowError
-        ? 'overflow' : 'invalid-byte-count' };
-    }
-    return { status: 'known', active: [...active], retired: exclusiveRetired, protected: [...protectedBuffers] };
-  }
+  const owners = { entries, references, retired, failedEntries };
+  const meshBufferSnapshot = () => readShapeCacheBackings(owners, meshBuffersOf);
 
   return {
     meshBufferSnapshot,
@@ -321,43 +452,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       return token;
     },
 
-    release(token): void {
-      const previous = failedReleases.get(token);
-      if (previous !== undefined) throw previous.error;
-      const keys = tokens.get(token);
-      if (keys === undefined) return;
-      changed();
-      // Decrement protection exactly once. Every destructor is attempted at most once.
-      tokens.delete(token);
-      const failures: unknown[] = [];
-      const failed = new Set<T>();
-      for (const key of keys) {
-        const remaining = (references.get(key) ?? 0) - 1;
-        if (remaining > 0) references.set(key, remaining);
-        else {
-          references.delete(key);
-          const old = retired.get(key) ?? [];
-          retired.delete(key); retiredCount -= old.length;
-          for (const entry of new Set(old)) {
-            try { disposeEntry(entry); }
-            catch (error) { failed.add(entry); failures.push(error); }
-          }
-        }
-      }
-      const previouslyFailed = new Set(failedEntries.keys());
-      try { trim(); }
-      catch (error) {
-        failures.push(error);
-        for (const [entry, cause] of failedEntries) {
-          if (!previouslyFailed.has(entry) || cause === error) failed.add(entry);
-        }
-      }
-      if (failures.length > 0) {
-        const error = new AggregateError(failures, 'Shape cache release partially failed');
-        failedReleases.set(token, { entries: failed, error });
-        throw error;
-      }
-    },
+    release(token): void { releaseShapeCacheToken(leases, token, failedEntries, changed, disposeEntry, trim); },
 
     get(key: string): T | undefined {
       const entry = entries.get(key);
@@ -376,13 +471,13 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
         const old = retired.get(key) ?? [];
         old.push(existing);
         retired.set(key, old);
-        retiredCount += 1;
+        leases.retiredCount += 1;
       }
       // 以前貸した形を再び現行に戻した場合も、同じ実体を二重解放しない。
       const old = retired.get(key);
       if (old !== undefined) {
         const remaining = old.filter((value) => value !== entry);
-        retiredCount -= old.length - remaining.length;
+        leases.retiredCount -= old.length - remaining.length;
         if (remaining.length === 0) retired.delete(key);
         else retired.set(key, remaining);
       }
@@ -433,7 +528,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       const all = [...new Set([...entries.values(), ...Array.from(retired.values()).flat(), ...failedEntries.keys()])];
       entries.clear();
       retired.clear();
-      retiredCount = 0;
+      leases.retiredCount = 0;
       references.clear();
       tokens.clear();
       const failures: unknown[] = [];
@@ -460,70 +555,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       if (clearWithActiveTokensCount > 0) {
         diagnostics.push('確保が残った状態で clear が呼ばれました');
       }
-      type ByteCounts = ShapeCacheStats['meshByteCounts'];
-      let meshByteCounts: ByteCounts = { status: 'unknown', reason: 'callback-missing' };
-      let legacyMeshBytes = 0;
-      if (meshBytesOf !== undefined) {
-        const measured = new Map<T, number>();
-        let reason: 'callback-error' | 'invalid-byte-count' | 'overflow' | undefined;
-        for (const entry of all) {
-          if (measured.has(entry)) continue;
-          try {
-            const bytes = meshBytesOf(entry);
-            if (!Number.isSafeInteger(bytes) || bytes < 0) {
-              reason = 'invalid-byte-count';
-              break;
-            }
-            measured.set(entry, bytes);
-          } catch {
-            reason = 'callback-error';
-            break;
-          }
-        }
-        if (reason === undefined) {
-          const active = new Set(entries.values());
-          const held = new Set([...Array.from(retired.values()).flat(), ...failedEntries.keys()]);
-          const protectedEntries = new Set<T>(held);
-          for (const [key, entry] of entries) {
-            if (references.has(key)) protectedEntries.add(entry);
-          }
-          const sum = (items: Iterable<T>): number => {
-            let bytes = 0;
-            for (const entry of items) {
-              const entryBytes = measured.get(entry);
-              if (entryBytes === undefined) return Number.NaN;
-              bytes += entryBytes;
-              if (!Number.isSafeInteger(bytes)) return Number.NaN;
-            }
-            return bytes;
-          };
-          const activeBytes = sum(active);
-          const retiredBytes = sum(Array.from(held).filter(entry => !active.has(entry)));
-          const protectedBytes = sum(protectedEntries);
-          const totalBytes = activeBytes + retiredBytes;
-          legacyMeshBytes = sum(all);
-          meshByteCounts = [activeBytes, retiredBytes, protectedBytes, totalBytes]
-            .every(Number.isSafeInteger)
-            ? { status: 'known', activeBytes, retiredBytes, protectedBytes, totalBytes }
-            : { status: 'unknown', reason: 'overflow' };
-        } else {
-          meshByteCounts = { status: 'unknown', reason };
-        }
-      }
-      // Preserve the old scalar diagnostic, but use explicit whole-buffer ownership for admission.
-      if (meshBuffersOf !== undefined && (meshByteCounts.status === 'known'
-        || meshByteCounts.reason === 'callback-missing')) {
-        const snapshot = meshBufferSnapshot();
-        if (snapshot.status === 'unknown') meshByteCounts = snapshot;
-        else {
-          const activeBytes = meshBackingBytes(snapshot.active);
-          const retiredBytes = meshBackingBytes(snapshot.retired);
-          const protectedBytes = meshBackingBytes(snapshot.protected);
-          meshByteCounts = { status: 'known', activeBytes, retiredBytes, protectedBytes,
-            totalBytes: meshBackingBytes([...snapshot.active, ...snapshot.retired]) };
-          if (meshBytesOf === undefined) legacyMeshBytes = activeBytes + retiredBytes;
-        }
-      }
+      const { meshByteCounts, legacyMeshBytes } = measureShapeCacheBytes(owners, all, meshBytesOf, meshBuffersOf);
       return {
         size: entries.size, evictions, released,
         shapeCount: all.length,

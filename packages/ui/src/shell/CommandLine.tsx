@@ -48,6 +48,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   const numericInput = useAppStore((state) => state.numericInput);
   const focusRequest = useAppStore((state) => state.focusRequest);
   const inputRef = useRef<HTMLInputElement>(null);
+  const tableRevision = useRef(0);
 
   const [text, setText] = useState('');
   const [tableCount, setTableCount] = useState<number | null>(null);
@@ -102,15 +103,19 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
     const source = event.clipboardData.getData('text/plain');
     if (!source.includes('\n')) return;
     event.preventDefault();
-    const outcome = submitCommandTable(source);
+    const revision = ++tableRevision.current;
+    const outcome = submitCommandTable(source, {
+      isCurrent: () => tableRevision.current === revision && inputRef.current?.value === text,
+      onCreated: count => {
+        changeText('');
+        setTableCount(count);
+        useAppStore.getState().requestViewportFocus();
+      },
+    });
     if (outcome.kind === 'error') {
       setTableCount(null);
       onFailureChange(outcome);
-      return;
     }
-    changeText('');
-    setTableCount(outcome.count);
-    useAppStore.getState().requestViewportFocus();
   };
 
   const acceptSuggestion = (index: number): void => {
@@ -131,6 +136,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   };
 
   const leave = (): void => {
+    tableRevision.current += 1;
     setTableCount(null);
     setText('');
     setHistoryIndex(-1);

@@ -21,11 +21,11 @@
  * **「書き出せる形式」「読み込める形式」はこれの部分集合**で、下の `ExportFormat` /
  * `ImportFormat` が正本になる。
  */
-export type FileKind = 'pcad' | 'pcadt' | 'pcadscript' | 'pcadinput' | 'step' | 'stl' | 'obj' | 'glb' | '3mf' | 'dxf' | 'dwg';
+export type FileKind = 'pcad' | 'pcadt' | 'pcadscript' | 'pcadinput' | 'step' | 'iges' | 'stl' | 'obj' | 'glb' | '3mf' | 'dxf' | 'dwg';
 
 /** ファイルの種類の実行時の一覧(`LENGTH_UNITS` と同じ流儀。同じ並びを 2 か所に書かない)。 */
 export const FILE_KINDS: readonly FileKind[] = [
-  'pcad', 'pcadt', 'pcadscript', 'pcadinput', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg',
+  'pcad', 'pcadt', 'pcadscript', 'pcadinput', 'step', 'iges', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg',
 ];
 
 /**
@@ -38,20 +38,20 @@ export const FILE_KINDS: readonly FileKind[] = [
  * 依頼は別に作る。ただし**品質(なめらかさ)の扱いだけは形式ごとの
  * 性質**なので、`exportPart.ts` の `usesTriangles` は `FileKind` で受けて DXF も答える。
  */
-export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
+export type ExportFormat = 'step' | 'iges' | 'stl' | '3mf' | 'obj' | 'glb';
 
 /** 書き出せる形式の一覧(FR-803)。`packages/io/src/schemaVersion.test.ts` がこの並びを固定する。 */
-export const EXPORT_FORMATS: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
+export const EXPORT_FORMATS: readonly ExportFormat[] = ['step', 'iges', 'stl', '3mf', 'obj', 'glb'];
 
 /**
  * 読み込める形式(FR-802 の Must の 3 つ)。3MF と glTF の読み込みは Could(FR-809)、
  * DXF の読み込みはスケッチになる別の口(FR-813)なので、
  * どちらもここには入れない。**増やすときは `canRoundTrip` の意味も見直すこと。**
  */
-export type ImportFormat = 'step' | 'stl' | 'obj';
+export type ImportFormat = 'step' | 'iges' | 'stl' | 'obj';
 
 /** 読み込める形式の一覧(FR-802)。 */
-export const IMPORT_FORMATS: readonly ImportFormat[] = ['step', 'stl', 'obj'];
+export const IMPORT_FORMATS: readonly ImportFormat[] = ['step', 'iges', 'stl', 'obj'];
 
 /**
  * 書き出す立体の選び方(FR-427)。`'all'` は文書の中のすべての立体、

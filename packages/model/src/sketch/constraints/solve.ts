@@ -588,6 +588,38 @@ function boundedConvergedRows(rows: readonly LinearizedRow[], columns: number): 
   return true;
 }
 
+/** Reuse the dense normal-equation buffers across damping attempts of one job. */
+function createDenseNormalSolver(n: number) {
+  const normal = new Float64Array(n * n);
+  const gradient = new Float64Array(n);
+  const work = new Float64Array(n * n);
+  const rhs = new Float64Array(n);
+  function assemble(rows: readonly LinearizedRow[]): void {
+    // JᵀJ と Jᵀf を疎な勾配から組む。1 行の非ゼロだけを回すので、
+    // 変数 400・式 200 でも 200 × 4² = 3200 回で済む(素朴な組み方は 200 × 16 万回)。
+    normal.fill(0);
+    gradient.fill(0);
+    for (const row of rows) {
+      const entries = [...row.gradient];
+      for (const [i, gi] of entries) {
+        gradient[i] += gi * row.value;
+        for (const [j, gj] of entries) {
+          normal[i * n + j] += gi * gj;
+        }
+      }
+    }
+  }
+  function solve(damping: number): Float64Array | null {
+    work.set(normal);
+    for (let i = 0; i < n; i += 1) {
+      work[i * n + i] += damping;
+      rhs[i] = -gradient[i];
+    }
+    return eliminate(work, rhs, n);
+  }
+  return { assemble, solve };
+}
+
 export function createLevenbergMarquardtJob(
   initial: readonly number[],
   evaluate: (x: readonly number[]) => readonly LinearizedRow[],
@@ -626,10 +658,7 @@ export function createLevenbergMarquardtJob(
     outcome = finish('converged', 0);
   }
 
-  const normal = useSparse ? null : new Float64Array(n * n);
-  const gradient = useSparse ? null : new Float64Array(n);
-  const work = useSparse ? null : new Float64Array(n * n);
-  const rhs = useSparse ? null : new Float64Array(n);
+  const dense = useSparse ? null : createDenseNormalSolver(n);
   const candidate = new Float64Array(n);
 
   let iteration = 1;
@@ -651,13 +680,8 @@ export function createLevenbergMarquardtJob(
     attempts += 1;
     attemptsStarted += 1;
     let step: Float64Array | null;
-    if (normal !== null && gradient !== null && work !== null && rhs !== null) {
-      work.set(normal);
-      for (let i = 0; i < n; i += 1) {
-        work[i * n + i] += damping;
-        rhs[i] = -gradient[i];
-      }
-      step = eliminate(work, rhs, n);
+    if (dense !== null) {
+      step = dense.solve(damping);
     } else {
       linearJob = sparseSystem?.createSolveJob(damping) ?? null;
       step = null;
@@ -752,21 +776,7 @@ export function createLevenbergMarquardtJob(
         return unitCost;
       }
       if (!assembled) {
-        // JᵀJ と Jᵀf を疎な勾配から組む。1 行の非ゼロだけを回すので、
-        // 変数 400・式 200 でも 200 × 4² = 3200 回で済む(素朴な組み方は 200 × 16 万回)。
-        if (normal !== null && gradient !== null) {
-          normal.fill(0);
-          gradient.fill(0);
-          for (const row of rows) {
-            const entries = [...row.gradient];
-            for (const [i, gi] of entries) {
-              gradient[i] += gi * row.value;
-              for (const [j, gj] of entries) {
-                normal[i * n + j] += gi * gj;
-              }
-            }
-          }
-        }
+        dense?.assemble(rows);
         assembled = true;
       }
       attemptWork = attempt();

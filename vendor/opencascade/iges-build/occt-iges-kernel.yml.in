@@ -1,0 +1,56 @@
+name: Reproduce OCCT IGES kernel
+
+on:
+  push:
+    branches: [build/occt-iges-*]
+    paths: [.github/workflows/occt-iges-kernel.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  iges-kernel:
+    if: ${{ github.event.created && !github.event.deleted && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    steps:
+      - name: Checkout the dedicated build commit and its parent
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/occt-iges-kernel.yml
+            /LICENSE
+            /docs/standards/licenses/runtime-notices.json
+            /docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt
+            /docs/standards/licenses/runtime-occt-freetype-version-1-*.txt
+            /vendor/opencascade/iges-build/
+            /vendor/opencascade/patches/opencascade.js@2.0.0-beta.b5ff984.patch
+            /vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/
+      - name: Verify the reviewed parent and build inputs
+        run: python3 -B vendor/opencascade/iges-build/hosted.py preflight
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.3
+      - name: Build, record and verify the matching three outputs
+        run: python3 -B vendor/opencascade/iges-build/hosted.py build
+      - name: Store the verified outputs and corresponding source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: occt-iges-${{ github.run_id }}-${{ github.run_attempt }}
+          path: occt-iges-output/success
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Store diagnostics for a failed attempt
+        if: ${{ failure() && hashFiles('occt-iges-output/diagnostics/failure.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: occt-iges-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: occt-iges-output/diagnostics
+          if-no-files-found: error
+          retention-days: 14

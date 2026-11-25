@@ -7,6 +7,7 @@ import type { StateCreator } from 'zustand';
 import type { AppState } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
 import { documentSessionId, type PreparedDocumentSession } from './documentIdentity.js';
+import { finishAssemblyPartEdit } from './partEditActions.js';
 
 export interface OpenDrawingOptions {
   readonly preparedSession?: PreparedDocumentSession;
@@ -110,6 +111,7 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     const sources = options?.sources ?? emptyDrawingSourceLibrary();
     const importedShapes: ImportedShapeBytes = options?.importedShapes ?? new Map<string, Uint8Array>();
     set((state) => ({
+      ...finishAssemblyPartEdit(state),
       ...createDrawingInitialState(),
       strengthSession: null,
       exportHandoff: null,

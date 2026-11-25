@@ -74,6 +74,7 @@ export function bodyReference(
  */
 const IMPORTED_SOURCE_FORMAT_NAMES: Readonly<Record<ImportedSourceFormat, string>> = {
   step: 'STEP',
+  iges: 'IGES',
   stl: 'STL',
   obj: 'OBJ',
   '3mf': '3MF',

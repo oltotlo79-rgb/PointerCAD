@@ -2,6 +2,12 @@ export type PaperSeries = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
 export type PaperOrientation = 'landscape' | 'portrait';
 export type PaperSizeId = `${PaperSeries}-${PaperOrientation}`;
 
+export class UnknownDrawingPaperError extends Error {
+  constructor(readonly paperSizeId: string, message = '知らない用紙です。') {
+    super(message);
+  }
+}
+
 export interface PaperSize {
   readonly id: PaperSizeId;
   readonly label: string;

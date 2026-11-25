@@ -91,7 +91,7 @@ overrides:
   ajv@8.20.0>fast-uri: 3.1.9
   postcss@8.5.26>source-map-js: 1.2.2
   eslint-plugin-react-hooks@7.1.1>zod: 4.6.6
-  opencascade.js: file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677
+  opencascade.js: file:vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315
 
 importers:
 
@@ -103,9 +103,15 @@ importers:
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.62.1
+      '@pointercad/io':
+        specifier: workspace:*
+        version: link:packages/io
       '@pointercad/kernel':
         specifier: workspace:*
         version: link:packages/kernel
+      '@pointercad/model':
+        specifier: workspace:*
+        version: link:packages/model
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.1
@@ -272,8 +278,8 @@ importers:
         specifier: 'catalog:'
         version: 4.4.2
       opencascade.js:
-        specifier: file:../../vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677
-        version: file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677(ws@8.21.3)
+        specifier: file:../../vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315
+        version: file:vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315(ws@8.21.3)
     devDependencies:
       '@pointercad/test-utils':
         specifier: workspace:*
@@ -1664,8 +1670,8 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677:
-    resolution: {directory: vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677, type: directory}
+  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315:
+    resolution: {directory: vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315, type: directory}
     peerDependencies:
       ws: ^8.5.0
 
@@ -3576,7 +3582,7 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677(ws@8.21.3):
+  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315(ws@8.21.3):
     dependencies:
       ws: 8.21.3
 

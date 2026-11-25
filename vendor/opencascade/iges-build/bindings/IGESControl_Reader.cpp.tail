@@ -1,0 +1,26 @@
+
+#include <IGESData_IGESModel.hxx>
+#include <IGESData_GlobalSection.hxx>
+#include <stdexcept>
+
+EMSCRIPTEN_BINDINGS(IGESControl_Reader) {
+  class_<IGESControl_Reader, base<XSControl_Reader>>("IGESControl_Reader")
+    .function("FileUnitFlag", +[](IGESControl_Reader& reader) -> Standard_Integer {
+      const auto model = reader.IGESModel();
+      if (model.IsNull()) throw std::logic_error("IGES model is unavailable");
+      return model->GlobalSection().UnitFlag();
+    })
+    .function("FileUnitValue", +[](IGESControl_Reader& reader) -> Standard_Real {
+      const auto model = reader.IGESModel();
+      if (model.IsNull()) throw std::logic_error("IGES model is unavailable");
+      return model->GlobalSection().UnitValue();
+    })
+    .function("FileScale", +[](IGESControl_Reader& reader) -> Standard_Real {
+      const auto model = reader.IGESModel();
+      if (model.IsNull()) throw std::logic_error("IGES model is unavailable");
+      return model->GlobalSection().Scale();
+    })
+  ;
+}
+
+namespace emscripten { namespace internal { template<> void raw_destructor<IGESControl_Reader>(IGESControl_Reader* ptr) { /* do nothing */ } } }

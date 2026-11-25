@@ -30,8 +30,8 @@ describe('入出力の骨組み', () => {
     },
   );
 
-  it('書き出しは STEP / STL / 3MF / OBJ / glTF に対応する(FR-803)', () => {
-    expect([...EXPORT_FORMATS]).toEqual(['step', 'stl', '3mf', 'obj', 'glb']);
+  it('書き出しは STEP / IGES / STL / 3MF / OBJ / glTF に対応する(FR-803)', () => {
+    expect([...EXPORT_FORMATS]).toEqual(['step', 'iges', 'stl', '3mf', 'obj', 'glb']);
   });
 
   it('読み込める形式はすべて書き出しもできる', () => {

@@ -18,7 +18,7 @@ import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { SolidResultSuggestion } from '../solid/SolidResultSuggestion.js';
 import { currentStagedSolid, type StagedSolidState } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyNumericTransition, previewExtrudeTransition } from './commitToStore.js';
+import { applyNumericTransition, previewExtrudeTransition, stagesImportedSew } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
 import { NumericMathDialog, type NumericMathTarget } from './NumericMathDialog.js';
 import { coordinateModesFor } from './freeSketch.js';
@@ -206,7 +206,7 @@ function SolidStageMessages({ input }: { readonly input: NumericInputState }): R
   const stagedMessageKey = useAppStore(store => extrude ? stagedExtrusionMessageKey(store) : null);
   const otherStage = !extrude && (supportsSolidOperation(input.toolId) || input.step === 'holeTranslateVector'
     || input.step === 'faceRotateAngle' || input.step === 'faceOffsetDistance' || input.step === 'cutPlane');
-  const directStage = useAppStore(store => otherStage ? currentStagedSolid(store) : null);
+  const directStage = useAppStore(store => (otherStage || stagesImportedSew(input.toolId, store)) ? currentStagedSolid(store) : null);
   const directMessage = solidStageMessage(directStage);
   return (
     <>
@@ -372,8 +372,124 @@ export interface NumericInputPopoverProps {
 
 function canPreviewSolidInput(store: ReturnType<typeof useAppStore.getState>): boolean {
   const tool = store.numericInput?.toolId;
-  return tool !== undefined && supportsSolidOperation(tool)
-    && (tool !== 'extrude' || selectedExtrudeProfiles(store.document, store.selection).length < 2);
+  return tool !== undefined && (stagesImportedSew(tool, store)
+    || (supportsSolidOperation(tool)
+      && (tool !== 'extrude' || selectedExtrudeProfiles(store.document, store.selection).length < 2)));
+}
+
+type NumericInputLengthUnit = ReturnType<typeof useAppStore.getState>['displaySettings']['lengthUnit'];
+
+function renderNumericExpressionFields(state: NumericInputState, evaluation: ReturnType<typeof evaluateNumericInput>,
+  lengthUnit: NumericInputLengthUnit, update: (next: NumericInputState) => void,
+  setMathTarget: (target: NumericMathTarget) => void): React.JSX.Element | null {
+  // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
+  // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は座標の段と同じ
+  // 固定幅に揃える(欄ごとに見出しの長さが大きく違っても列がずれないようにするため)。
+  const wideFields = state.fields.length === 1;
+
+  /*
+    欄を持たない段(スプラインの決め方)では入れ物ごと出さない。
+    .pcad-popover は縦並びの gap を持つので、空の入れ物を置くと見出しと選択肢の間に
+    すき間が 1 つ余分に空くため(欄が 0 個の段がある)。
+  */
+  return state.fields.length === 0 ? null : (
+    <div className={wideFields ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
+      {state.fields.map((field, index) => (
+        <ExpressionField
+          key={field.key}
+          field={field}
+          result={evaluation.results[index]}
+          lengthUnit={lengthUnit}
+          focused={index === state.focusedIndex}
+          onMath={() => { const current = useAppStore.getState(); setMathTarget({ document: current.document,
+            documentVersion: current.documentVersion, input: state, index, lengthUnit }); }}
+          onChange={(source) => {
+            update(reduceNumericInput(state, { type: 'edit', index, source }));
+          }}
+          onFocus={() => {
+            update(reduceNumericInput(state, { type: 'focus', index }));
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface NumericInputActions {
+  readonly state: NumericInputState;
+  readonly canPreview: boolean;
+  readonly canCommit: boolean;
+  readonly update: (next: NumericInputState) => void;
+  readonly handleKey: (key: NumericInputKey) => void;
+  readonly keepFocus: (event: React.MouseEvent) => void;
+  readonly preview: () => void;
+}
+
+function renderNumericInputActions(actions: NumericInputActions): React.JSX.Element {
+  const { state, canPreview, canCommit, update, handleKey, keepFocus, preview } = actions;
+  return (
+    <div className="pcad-popover__actions">
+      {/*
+        スプラインだけは「点をいくつ置くか」が決まっていないので、Enter は点を 1 つ置く
+        合図のままにして、置き終えたことを伝えるボタンをここへ出す(FR-317)。
+        押すと「決め方」の段(通過点/制御点・閉じる)へ進む。
+      */}
+      {state.step === 'splinePoint' ? (
+        <button
+          type="button"
+          className="pcad-button pcad-button--action"
+          title={t('numericInput.splineFinishTooltip')}
+          onMouseDown={keepFocus}
+          onClick={() => {
+            update(splineFinishStateFrom(state));
+          }}
+        >
+          {t('numericInput.splineFinish')}
+        </button>
+      ) : null}
+      {/*
+        結果を選べる道具では、確定する前に同じ候補の形を計算して表示できる。
+        確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
+      */}
+      {canPreview ? (
+        <button
+          type="button"
+          className="pcad-button"
+          aria-disabled={!canCommit}
+          title={t('numericInput.extrudePreviewTooltip')}
+          onMouseDown={keepFocus}
+          onClick={() => {
+            preview();
+          }}
+        >
+          {t('numericInput.extrudePreview')}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="pcad-button pcad-button--action"
+        aria-disabled={!canCommit}
+        title={t(NUMERIC_INPUT_KEYS.commitTooltip)}
+        onMouseDown={keepFocus}
+        onClick={() => {
+          handleKey('Enter');
+        }}
+      >
+        {t(NUMERIC_INPUT_KEYS.commit)}
+      </button>
+      <button
+        type="button"
+        className="pcad-button"
+        title={t(NUMERIC_INPUT_KEYS.cancelTooltip)}
+        onMouseDown={keepFocus}
+        onClick={() => {
+          handleKey('Escape');
+        }}
+      >
+        {t(NUMERIC_INPUT_KEYS.cancel)}
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -440,11 +556,6 @@ export function NumericInputPopover({
 
   const evaluation = evaluateNumericInput(state, analysis.variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables, pendingVariables });
   const coordinateStep = asksCoordinate(state.step);
-  // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
-  // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は座標の段と同じ
-  // 固定幅に揃える(欄ごとに見出しの長さが大きく違っても列がずれないようにするため)。
-  const wideFields = state.fields.length === 1;
-
   const update = (next: NumericInputState): void => {
     useAppStore.getState().updateNumericInput(next);
   };
@@ -538,32 +649,7 @@ export function NumericInputPopover({
         </div>
       ) : null}
 
-      {/*
-        欄を持たない段(スプラインの決め方)では入れ物ごと出さない。
-        .pcad-popover は縦並びの gap を持つので、空の入れ物を置くと見出しと選択肢の間に
-        すき間が 1 つ余分に空くため(欄が 0 個の段がある)。
-      */}
-      {state.fields.length === 0 ? null : (
-        <div className={wideFields ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
-          {state.fields.map((field, index) => (
-            <ExpressionField
-              key={field.key}
-              field={field}
-              result={evaluation.results[index]}
-              lengthUnit={lengthUnit}
-              focused={index === state.focusedIndex}
-              onMath={() => { const current = useAppStore.getState(); setMathTarget({ document: current.document,
-                documentVersion: current.documentVersion, input: state, index, lengthUnit }); }}
-              onChange={(source) => {
-                update(reduceNumericInput(state, { type: 'edit', index, source }));
-              }}
-              onFocus={() => {
-                update(reduceNumericInput(state, { type: 'focus', index }));
-              }}
-            />
-          ))}
-        </div>
-      )}
+      {renderNumericExpressionFields(state, evaluation, lengthUnit, update, setMathTarget)}
 
       {state.choices.map((choice, choiceIndex) => (
         <ChoiceGroup
@@ -621,67 +707,9 @@ export function NumericInputPopover({
       <SolidStageMessages input={state} />
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
-      <div className="pcad-popover__actions">
-        {/*
-          スプラインだけは「点をいくつ置くか」が決まっていないので、Enter は点を 1 つ置く
-          合図のままにして、置き終えたことを伝えるボタンをここへ出す(FR-317)。
-          押すと「決め方」の段(通過点/制御点・閉じる)へ進む。
-        */}
-        {state.step === 'splinePoint' ? (
-          <button
-            type="button"
-            className="pcad-button pcad-button--action"
-            title={t('numericInput.splineFinishTooltip')}
-            onMouseDown={keepFocus}
-            onClick={() => {
-              update(splineFinishStateFrom(state));
-            }}
-          >
-            {t('numericInput.splineFinish')}
-          </button>
-        ) : null}
-        {/*
-          結果を選べる道具では、確定する前に同じ候補の形を計算して表示できる。
-          確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
-        */}
-        {canPreview ? (
-          <button
-            type="button"
-            className="pcad-button"
-            aria-disabled={!evaluation.canCommit}
-            title={t('numericInput.extrudePreviewTooltip')}
-            onMouseDown={keepFocus}
-            onClick={() => {
-              previewExtrudeTransition(applyNumericInputKey(state, 'Enter', { ...analysis, lengthUnit }));
-            }}
-          >
-            {t('numericInput.extrudePreview')}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="pcad-button pcad-button--action"
-          aria-disabled={!evaluation.canCommit}
-          title={t(NUMERIC_INPUT_KEYS.commitTooltip)}
-          onMouseDown={keepFocus}
-          onClick={() => {
-            handleKey('Enter');
-          }}
-        >
-          {t(NUMERIC_INPUT_KEYS.commit)}
-        </button>
-        <button
-          type="button"
-          className="pcad-button"
-          title={t(NUMERIC_INPUT_KEYS.cancelTooltip)}
-          onMouseDown={keepFocus}
-          onClick={() => {
-            handleKey('Escape');
-          }}
-        >
-          {t(NUMERIC_INPUT_KEYS.cancel)}
-        </button>
-      </div>
+      {renderNumericInputActions({ state, canPreview, canCommit: evaluation.canCommit, update, handleKey, keepFocus,
+        preview: () => { previewExtrudeTransition(applyNumericInputKey(state, 'Enter', { ...analysis, lengthUnit })); },
+      })}
     </div>
     {mathTarget === null ? null : <NumericMathDialog target={mathTarget} onClose={() => setMathTarget(null)} />}</>
   );

@@ -44,7 +44,7 @@ overrides:
   "ajv@8.20.0>fast-uri": "3.1.9"
   "postcss@8.5.26>source-map-js": "1.2.2"
   "eslint-plugin-react-hooks@7.1.1>zod": "4.6.6"
-  "opencascade.js": "file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677"
+  "opencascade.js": "file:vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315"
 
 # pnpm 11ではallowBuildsで導入時の処理を明示する。旧onlyBuiltDependenciesは廃止済み。
 # ただし electron 44 は package.json に postinstall を持たず、バイナリは

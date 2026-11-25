@@ -5,6 +5,7 @@ import { ReferenceRepairSection } from '../solid/referenceRepairPanel.js';
 import { SelectionSetSection } from '../solid/SelectionSetSection.js';
 import { CanvasSection } from '../sketch/CanvasSection.js';
 import { PrintCheckSection } from '../solid/PrintCheckSection.js';
+import { ImportedShapeInspection } from '../file/ImportedShapeInspection.js';
 import { InferConstraintsSection } from '../sketch/InferConstraintsSection.js';
 import { AppearanceSection } from '../appearance/AppearanceSection.js';
 import { FACE_COLORS } from '../appearance/appearancePropertyValues.js';
@@ -42,6 +43,7 @@ import {
   type PrimitiveFeature,
   type RuledFeature,
   type SketchFeature,
+  type SolidBody,
   type SolidFeature,
 } from '@pointercad/model';
 
@@ -237,6 +239,173 @@ function CoordinateBaseRow({
   );
 }
 
+function renderSketchParameterSection(summary: ReturnType<typeof summarizeFeature>, feature: SketchFeature,
+  renderField: (item: FeatureFieldSummary) => React.JSX.Element, setRectangleView: (mode: RectangleView) => void,
+  apply: (next: SketchFeature) => void): React.JSX.Element | null {
+  return summary.coordinates.length === 0 &&
+  summary.scalars.length === 0 &&
+  summary.toggles.length === 0 &&
+  summary.choices.length === 0 ? null : (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
+      {/*
+        矩形の見せ方(対角 2 点 / 中心+幅+高さ)の切替は履歴を変えないので、
+        他の選択肢より先に、欄の並びの上へ出す(何の欄を見ているかが先に分かる)。
+      */}
+      {summary.choices
+        .filter((choice) => choice.key === 'rectangleMode')
+        .map((choice) => (
+          <div className="pcad-choice" key={choice.key}>
+            <span className="pcad-choice__label">{t(choice.labelKey)}</span>
+            <div
+              className="pcad-segmented pcad-choice__options"
+              role="group"
+              aria-label={t(choice.labelKey)}
+            >
+              {RECTANGLE_VIEWS.map((view) => {
+                const option = choice.options.find((candidate) => candidate.value === view);
+                return option === undefined ? null : (
+                  <button title={t('controlGuide.button.rectangleInput')}
+                    key={view}
+                    type="button"
+                    className="pcad-button"
+                    aria-pressed={choice.value === view}
+                    onClick={() => {
+                      setRectangleView(view);
+                    }}
+                  >
+                    {t(option.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      {summary.coordinates.map((group, index) => (
+        <div className="pcad-coordinate" key={group.path}>
+          <h4 className="pcad-coordinate__title">
+            {group.ordinal === null
+              ? t(group.labelKey)
+              : `${t(group.labelKey)} ${String(group.ordinal)}`}
+            {/* スプラインの点は 1 つずつ足せる・消せる(FR-317)。 */}
+            {group.path.startsWith('points.') ? (
+              <span className="pcad-coordinate__actions">
+                <button
+                  type="button"
+                  className="pcad-button pcad-coordinate__action"
+                  title={t('propertyPanel.addPointTooltip')}
+                  aria-label={t('propertyPanel.addPointTooltip')}
+                  onClick={() => {
+                    apply(addSplinePoint(feature, index));
+                  }}
+                >
+                  {t('propertyPanel.addPointMark')}
+                </button>
+                <button
+                  type="button"
+                  className="pcad-button pcad-coordinate__action"
+                  title={t('propertyPanel.removePointTooltip')}
+                  aria-label={t('propertyPanel.removePointTooltip')}
+                  disabled={!group.removable}
+                  onClick={() => {
+                    apply(removeSplinePoint(feature, index));
+                  }}
+                >
+                  {t('propertyPanel.removePointMark')}
+                </button>
+              </span>
+            ) : null}
+          </h4>
+          <div
+            className="pcad-segmented pcad-coordinate__modes"
+            role="group"
+            aria-label={t('numericInput.modeGroupLabel')}
+          >
+            {COORDINATE_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className="pcad-button"
+                aria-pressed={group.mode === mode}
+                title={t(MODE_TOOLTIP_KEYS[mode])}
+                onClick={() => {
+                  const next = setFeatureCoordinateMode(feature, group.path, mode);
+                  if (next !== feature) {
+                    useAppStore.getState().replaceSketchFeature(feature.id, next);
+                  }
+                }}
+              >
+                {t(MODE_LABEL_KEYS[mode])}
+              </button>
+            ))}
+          </div>
+          <CoordinateBaseRow group={group} />
+          <div className="pcad-coordinate__fields">{group.fields.map(renderField)}</div>
+          {/*
+            拘束で決まった、いまの位置(FR-313)。動いた欄だけ出る。
+            数字だけ表示用に有効数字 9 桁へ丸める(保存値は丸めない)。
+          */}
+          {group.solvedText === null ? null : (
+            <p className="pcad-coordinate__solved" title={`${t('propertyPanel.solvedTooltip')} ${group.solvedText}`}>
+              {roundSolvedCoordinateText(group.solvedText)}
+            </p>
+          )}
+        </div>
+      ))}
+      {summary.scalars.length === 0 ? null : (
+        <div className="pcad-coordinate__fields">{summary.scalars.map(renderField)}</div>
+      )}
+      {summary.choices
+        .filter((choice) => choice.key !== 'rectangleMode')
+        .map((choice) => (
+          <div className="pcad-choice" key={choice.key}>
+            <span className="pcad-choice__label">{t(choice.labelKey)}</span>
+            <div
+              className="pcad-segmented pcad-choice__options"
+              role="group"
+              aria-label={t(choice.labelKey)}
+            >
+              {choice.options.map((option) => (
+                <button title={t('controlGuide.button.choose').replace('{group}', t(choice.labelKey)).replace('{value}', t(option.labelKey))}
+                  key={option.value}
+                  type="button"
+                  className="pcad-button"
+                  aria-pressed={choice.value === option.value}
+                  onClick={() => {
+                    apply(setFeatureChoice(feature, choice.key, option.value));
+                  }}
+                >
+                  {t(option.labelKey)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      {summary.toggles.length === 0 ? null : (
+        <div className="pcad-toggles">
+          {summary.toggles.map((toggle) => (
+            <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
+              key={toggle.key}
+              type="button"
+              role="switch"
+              className="pcad-switch"
+              aria-checked={toggle.value}
+              onClick={() => {
+                apply(setFeatureToggle(feature, toggle.key, !toggle.value));
+              }}
+            >
+              <span className="pcad-switch__track" aria-hidden="true">
+                <span className="pcad-switch__thumb" />
+              </span>
+              <span>{t(toggle.labelKey)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * 選ばれている要素 1 つの中身(FR-202、FR-311)。
  *
@@ -377,168 +546,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
       {functionPoint?<FunctionPointProperties pointId={feature.id} reference={functionPoint}/>:null}
       {feature.kind==='line'?<FunctionDirectionProperties key={feature.id} feature={feature}/>:null}
 
-      {summary.coordinates.length === 0 &&
-      summary.scalars.length === 0 &&
-      summary.toggles.length === 0 &&
-      summary.choices.length === 0 ? null : (
-        <div className="pcad-section">
-          <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
-          {/*
-            矩形の見せ方(対角 2 点 / 中心+幅+高さ)の切替は履歴を変えないので、
-            他の選択肢より先に、欄の並びの上へ出す(何の欄を見ているかが先に分かる)。
-          */}
-          {summary.choices
-            .filter((choice) => choice.key === 'rectangleMode')
-            .map((choice) => (
-              <div className="pcad-choice" key={choice.key}>
-                <span className="pcad-choice__label">{t(choice.labelKey)}</span>
-                <div
-                  className="pcad-segmented pcad-choice__options"
-                  role="group"
-                  aria-label={t(choice.labelKey)}
-                >
-                  {RECTANGLE_VIEWS.map((view) => {
-                    const option = choice.options.find((candidate) => candidate.value === view);
-                    return option === undefined ? null : (
-                      <button title={t('controlGuide.button.rectangleInput')}
-                        key={view}
-                        type="button"
-                        className="pcad-button"
-                        aria-pressed={choice.value === view}
-                        onClick={() => {
-                          setRectangleView(view);
-                        }}
-                      >
-                        {t(option.labelKey)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          {summary.coordinates.map((group, index) => (
-            <div className="pcad-coordinate" key={group.path}>
-              <h4 className="pcad-coordinate__title">
-                {group.ordinal === null
-                  ? t(group.labelKey)
-                  : `${t(group.labelKey)} ${String(group.ordinal)}`}
-                {/* スプラインの点は 1 つずつ足せる・消せる(FR-317)。 */}
-                {group.path.startsWith('points.') ? (
-                  <span className="pcad-coordinate__actions">
-                    <button
-                      type="button"
-                      className="pcad-button pcad-coordinate__action"
-                      title={t('propertyPanel.addPointTooltip')}
-                      aria-label={t('propertyPanel.addPointTooltip')}
-                      onClick={() => {
-                        apply(addSplinePoint(feature, index));
-                      }}
-                    >
-                      {t('propertyPanel.addPointMark')}
-                    </button>
-                    <button
-                      type="button"
-                      className="pcad-button pcad-coordinate__action"
-                      title={t('propertyPanel.removePointTooltip')}
-                      aria-label={t('propertyPanel.removePointTooltip')}
-                      disabled={!group.removable}
-                      onClick={() => {
-                        apply(removeSplinePoint(feature, index));
-                      }}
-                    >
-                      {t('propertyPanel.removePointMark')}
-                    </button>
-                  </span>
-                ) : null}
-              </h4>
-              <div
-                className="pcad-segmented pcad-coordinate__modes"
-                role="group"
-                aria-label={t('numericInput.modeGroupLabel')}
-              >
-                {COORDINATE_MODES.map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className="pcad-button"
-                    aria-pressed={group.mode === mode}
-                    title={t(MODE_TOOLTIP_KEYS[mode])}
-                    onClick={() => {
-                      const next = setFeatureCoordinateMode(feature, group.path, mode);
-                      if (next !== feature) {
-                        useAppStore.getState().replaceSketchFeature(feature.id, next);
-                      }
-                    }}
-                  >
-                    {t(MODE_LABEL_KEYS[mode])}
-                  </button>
-                ))}
-              </div>
-              <CoordinateBaseRow group={group} />
-              <div className="pcad-coordinate__fields">{group.fields.map(renderField)}</div>
-              {/*
-                拘束で決まった、いまの位置(FR-313)。動いた欄だけ出る。
-                数字だけ表示用に有効数字 9 桁へ丸める(保存値は丸めない)。
-              */}
-              {group.solvedText === null ? null : (
-                <p className="pcad-coordinate__solved" title={`${t('propertyPanel.solvedTooltip')} ${group.solvedText}`}>
-                  {roundSolvedCoordinateText(group.solvedText)}
-                </p>
-              )}
-            </div>
-          ))}
-          {summary.scalars.length === 0 ? null : (
-            <div className="pcad-coordinate__fields">{summary.scalars.map(renderField)}</div>
-          )}
-          {summary.choices
-            .filter((choice) => choice.key !== 'rectangleMode')
-            .map((choice) => (
-              <div className="pcad-choice" key={choice.key}>
-                <span className="pcad-choice__label">{t(choice.labelKey)}</span>
-                <div
-                  className="pcad-segmented pcad-choice__options"
-                  role="group"
-                  aria-label={t(choice.labelKey)}
-                >
-                  {choice.options.map((option) => (
-                    <button title={t('controlGuide.button.choose').replace('{group}', t(choice.labelKey)).replace('{value}', t(option.labelKey))}
-                      key={option.value}
-                      type="button"
-                      className="pcad-button"
-                      aria-pressed={choice.value === option.value}
-                      onClick={() => {
-                        apply(setFeatureChoice(feature, choice.key, option.value));
-                      }}
-                    >
-                      {t(option.labelKey)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          {summary.toggles.length === 0 ? null : (
-            <div className="pcad-toggles">
-              {summary.toggles.map((toggle) => (
-                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
-                  key={toggle.key}
-                  type="button"
-                  role="switch"
-                  className="pcad-switch"
-                  aria-checked={toggle.value}
-                  onClick={() => {
-                    apply(setFeatureToggle(feature, toggle.key, !toggle.value));
-                  }}
-                >
-                  <span className="pcad-switch__track" aria-hidden="true">
-                    <span className="pcad-switch__thumb" />
-                  </span>
-                  <span>{t(toggle.labelKey)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {renderSketchParameterSection(summary, feature, renderField, setRectangleView, apply)}
 
       {summary.references.length === 0 ? null : (
         <div className="pcad-section">
@@ -845,6 +853,111 @@ export function createSolidPropertyFieldEdit(
   } };
 }
 
+interface SolidParameterSection {
+  readonly summary: ReturnType<typeof summarizeSolid>;
+  readonly feature: SolidFeature;
+  readonly location: ReturnType<typeof reconcileCylindricalPropertySelection>;
+  readonly selectLocation: (index: number) => void;
+  readonly renderField: (item: SolidFieldSummary) => React.JSX.Element;
+  readonly renderReadOnlyField: (item: SolidFieldSummary) => React.JSX.Element;
+  readonly apply: (next: SolidFeature) => void;
+  readonly units: FieldUnits;
+  readonly part: PartDocument;
+}
+
+function renderSolidParameterSection(section: SolidParameterSection): React.JSX.Element | null {
+  const { summary, feature, location, selectLocation, renderField, renderReadOnlyField, apply, units, part } = section;
+  const axis = summary.axis;
+  return summary.fields.length === 0 &&
+  summary.toggles.length === 0 &&
+  summary.choices.length === 0 &&
+  axis === null ? null : (
+    <div className="pcad-section" data-help-topic={toolCommandHelpTopic(feature.kind)}>
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
+      <PlanarHoleBasisInfo feature={feature} />
+      {location.locationCount <= 1 ? null : (
+        <div className="pcad-choice">
+          <span className="pcad-choice__label">{t('propertyPanel.holeLocation')}</span>
+          <div className="pcad-segmented pcad-choice__options" role="group" aria-label={t('propertyPanel.holeLocation')}>
+            {Array.from({ length: location.locationCount }, (_, index) => (
+              <button key={index} type="button" className="pcad-button"
+                title={t('propertyPanel.holeLocationTooltip')} aria-pressed={location.index === index}
+                onClick={() => { selectLocation(index); }}>
+                {t('propertyPanel.holeLocationNumber').replace('{index}', String(index + 1))}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {summary.fields.length === 0 ? null : (
+        <div className="pcad-coordinate__fields">
+          {summary.fields.map((item) => (item.readOnly ? renderReadOnlyField(item) : renderField(item)))}
+        </div>
+      )}
+      {axis === null ? null : (
+        <div className="pcad-choice">
+          <span className="pcad-choice__label">{t('propertyPanel.axis')}</span>
+          {axis.kind === 'line' ? (
+            <span className="pcad-choice__value">{axis.name}</span>
+          ) : (
+            <div
+              className="pcad-segmented pcad-choice__options"
+              role="group"
+              aria-label={t('propertyPanel.axis')}
+            >
+              {WORLD_AXIS_CHOICES.map((choice) => (
+                <button title={t('controlGuide.button.solidAxis')}
+                  key={choice.axis}
+                  type="button"
+                  className="pcad-button"
+                  aria-pressed={axis.axis === choice.axis}
+                  onClick={() => {
+                    apply(setSolidAxis(feature, choice.axis));
+                  }}
+                >
+                  {t(choice.labelKey)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {summary.choices.map((choice) => (
+        <ChoiceButtons
+          key={choice.key}
+          choice={choice}
+          onChoose={(value) => {
+            const calculated = tryMathComposition(() => setSolidChoice(feature, choice.key, value, units.variables, units, part));
+            if (!calculated.ok) { useAppStore.getState().setShapeError(calculated.message); return; }
+            apply(calculated.value);
+          }}
+        />
+      ))}
+      {summary.toggles.length === 0 ? null : (
+        <div className="pcad-toggles">
+          {summary.toggles.map((toggle) => (
+            <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
+              key={toggle.key}
+              type="button"
+              role="switch"
+              className="pcad-switch"
+              aria-checked={toggle.value}
+              onClick={() => {
+                apply(setSolidToggle(feature, toggle.key, !toggle.value));
+              }}
+            >
+              <span className="pcad-switch__track" aria-hidden="true">
+                <span className="pcad-switch__thumb" />
+              </span>
+              <span>{t(toggle.labelKey)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * 選ばれている立体 1 つの中身(FR-202、FR-311、FR-501)。
  *
@@ -1000,8 +1113,6 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
     );
   };
 
-  const axis = summary.axis;
-
   return (
     <>
       {errorMessage === null ? null : <p className="pcad-panel__error">{errorMessage}</p>}
@@ -1017,97 +1128,12 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         </dl>
       </div>
 
-      {summary.fields.length === 0 &&
-      summary.toggles.length === 0 &&
-      summary.choices.length === 0 &&
-      axis === null ? null : (
-        <div className="pcad-section" data-help-topic={toolCommandHelpTopic(feature.kind)}>
-          <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
-          <PlanarHoleBasisInfo feature={feature} />
-          {location.locationCount <= 1 ? null : (
-            <div className="pcad-choice">
-              <span className="pcad-choice__label">{t('propertyPanel.holeLocation')}</span>
-              <div className="pcad-segmented pcad-choice__options" role="group" aria-label={t('propertyPanel.holeLocation')}>
-                {Array.from({ length: location.locationCount }, (_, index) => (
-                  <button key={index} type="button" className="pcad-button"
-                    title={t('propertyPanel.holeLocationTooltip')} aria-pressed={location.index === index}
-                    onClick={() => {
-                      setLocationState({ ...location, index });
-                      setDraftState(initialDraftVersionState<SolidFieldDraft>(documentVersion));
-                    }}>
-                    {t('propertyPanel.holeLocationNumber').replace('{index}', String(index + 1))}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {summary.fields.length === 0 ? null : (
-            <div className="pcad-coordinate__fields">
-              {summary.fields.map((item) => (item.readOnly ? renderReadOnlyField(item) : renderField(item)))}
-            </div>
-          )}
-          {axis === null ? null : (
-            <div className="pcad-choice">
-              <span className="pcad-choice__label">{t('propertyPanel.axis')}</span>
-              {axis.kind === 'line' ? (
-                <span className="pcad-choice__value">{axis.name}</span>
-              ) : (
-                <div
-                  className="pcad-segmented pcad-choice__options"
-                  role="group"
-                  aria-label={t('propertyPanel.axis')}
-                >
-                  {WORLD_AXIS_CHOICES.map((choice) => (
-                    <button title={t('controlGuide.button.solidAxis')}
-                      key={choice.axis}
-                      type="button"
-                      className="pcad-button"
-                      aria-pressed={axis.axis === choice.axis}
-                      onClick={() => {
-                        apply(setSolidAxis(feature, choice.axis));
-                      }}
-                    >
-                      {t(choice.labelKey)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {summary.choices.map((choice) => (
-            <ChoiceButtons
-              key={choice.key}
-              choice={choice}
-              onChoose={(value) => {
-                const calculated = tryMathComposition(() => setSolidChoice(feature, choice.key, value, units.variables, units, part));
-                if (!calculated.ok) { useAppStore.getState().setShapeError(calculated.message); return; }
-                apply(calculated.value);
-              }}
-            />
-          ))}
-          {summary.toggles.length === 0 ? null : (
-            <div className="pcad-toggles">
-              {summary.toggles.map((toggle) => (
-                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
-                  key={toggle.key}
-                  type="button"
-                  role="switch"
-                  className="pcad-switch"
-                  aria-checked={toggle.value}
-                  onClick={() => {
-                    apply(setSolidToggle(feature, toggle.key, !toggle.value));
-                  }}
-                >
-                  <span className="pcad-switch__track" aria-hidden="true">
-                    <span className="pcad-switch__thumb" />
-                  </span>
-                  <span>{t(toggle.labelKey)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {renderSolidParameterSection({ summary, feature, location, renderField, renderReadOnlyField, apply, units, part,
+        selectLocation: (index) => {
+          setLocationState({ ...location, index });
+          setDraftState(initialDraftVersionState<SolidFieldDraft>(documentVersion));
+        },
+      })}
 
       {summary.references.length === 0 && summary.subShapeCounts.length === 0 ? null : (
         <div className="pcad-section">
@@ -1152,36 +1178,48 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           onClick={() => useAppStore.getState().openSheetMetalTool(feature.kind, feature.id)}>{t('sheetMetal.editReferences')}</button>
       </div> : null}
 
-      <div className="pcad-section">
-        <h3 className="pcad-section__title">{t('propertyPanel.sectionResult')}</h3>
-        <dl className="pcad-properties">
-          <dt className="pcad-properties__key">{t('propertyPanel.volume')}</dt>
-          <dd className="pcad-properties__value" title={body === undefined ? undefined : `${formatVolume(body.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}>
-            {body === undefined
-              ? missing
-              : `${formatVolume(body.volume, units.lengthUnit, (value) => displayNumber(value).text)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
-          <dd className="pcad-properties__value">
-            {body === undefined ? missing : String(body.mesh.triangleCount)}
-          </dd>
-          {/*
-            読み込んだ形(FR-802)だけに出す面の数。
-            **素性の節ではなくここに出す**のは、面の数が文書には入っておらず、
-            計算した形からしか分からないため(体積・三角形の数と同じ出どころ)。
-            読み込んだ形は「その上へ穴や面取りを積めるか」の目安になるので出す。
-          */}
-          {feature.kind === 'importedSolid' ? (
-            <>
-              <dt className="pcad-properties__key">{t('propertyPanel.importedFaceCount')}</dt>
-              <dd className="pcad-properties__value">
-                {body === undefined ? missing : String(body.faces.length)}
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      </div>
+      <SolidResultSection feature={feature} body={body} units={units} missing={missing} />
     </>
+  );
+}
+
+function SolidResultSection({ feature, body, units, missing }: {
+  readonly feature: SolidFeature;
+  readonly body: SolidBody | undefined;
+  readonly units: FieldUnits;
+  readonly missing: string;
+}): React.JSX.Element {
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionResult')}</h3>
+      <dl className="pcad-properties">
+        <dt className="pcad-properties__key">{t('propertyPanel.volume')}</dt>
+        <dd className="pcad-properties__value" title={body === undefined ? undefined : `${formatVolume(body.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}>
+          {body === undefined
+            ? missing
+            : `${formatVolume(body.volume, units.lengthUnit, (value) => displayNumber(value).text)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
+        </dd>
+        <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
+        <dd className="pcad-properties__value">
+          {body === undefined ? missing : String(body.mesh.triangleCount)}
+        </dd>
+        {/*
+          読み込んだ形(FR-802)だけに出す面の数。
+          **素性の節ではなくここに出す**のは、面の数が文書には入っておらず、
+          計算した形からしか分からないため(体積・三角形の数と同じ出どころ)。
+          読み込んだ形は「その上へ穴や面取りを積めるか」の目安になるので出す。
+        */}
+        {feature.kind === 'importedSolid' ? (
+          <>
+            <dt className="pcad-properties__key">{t('propertyPanel.importedFaceCount')}</dt>
+            <dd className="pcad-properties__value">
+              {body === undefined ? missing : String(body.faces.length)}
+            </dd>
+          </>
+        ) : null}
+      </dl>
+      {feature.kind === 'importedSolid' ? <ImportedShapeInspection feature={feature} /> : null}
+    </div>
   );
 }
 

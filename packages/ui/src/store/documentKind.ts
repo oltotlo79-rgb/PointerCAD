@@ -72,6 +72,7 @@ export interface DocumentKindState {
   readonly assembly: AssemblyDocument | null;
   /** 図面文書。開いていなければ null。 */
   readonly drawing: DrawingDocument | null;
+  readonly partEdit?: AppState['partEdit'];
 }
 
 /**
@@ -91,9 +92,14 @@ export function activeDocumentKind(state: DocumentKindState): DocumentKind {
   return state.document === null ? 'empty' : 'part';
 }
 
-/** いま画面に出ている部品文書。アセンブリを開いているあいだは null。 */
+/** 作図・立体・計算が扱う部品。保存は activeDocument を使う。 */
 export function activePartDocument(state: DocumentKindState): PartDocument | null {
-  return activeDocumentKind(state) === 'part' ? state.document : null;
+  return activeDocumentKind(state) === 'part' || (state.partEdit != null && state.assembly !== null && state.drawing === null)
+    ? state.document : null;
+}
+
+export function editingDocumentKind(state: AppState): Exclude<DocumentKind, 'empty'> {
+  return state.partEdit === null ? activeDocumentKind(state) : 'part';
 }
 
 /** いま画面に出ているアセンブリ文書。部品を開いているあいだは null。 */

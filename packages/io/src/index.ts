@@ -4,7 +4,8 @@
  */
 
 // 圧縮入力・展開後・メッシュ配列・DXF 本文の読み込み上限（単一正本）。
-export { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput, type SaveDocumentEncoder,
+export { encodeOwnedSaveDocumentParts, encodeSaveDocument, encodeSaveDocumentParts, type OwnedSaveEncodingControl,
+  type SaveDocumentInput, type SaveDocumentEncoder,
   type SaveDocumentPartsEncoder, type SaveEncodingControl, type SaveEncodingStage } from './pcad/saveDocumentEncoding.js';
 export { concatZipParts } from './pcad/zipSteps.js';
 export {
@@ -61,6 +62,8 @@ export {
 export { readArchive, type ArchiveReadLimits, type ReadArchiveResult } from './pcad/readArchive.js';
 // .pcad(ZIP コンテナ)の読み書き(FR-801、要件§8)。
 export {
+  canPersistPartAttachments,
+  canPersistAssemblyPartEdit,
   decodeImportedMeshBytes,
   emptyPcadAttachments,
   encodeImportedMeshBytes,
@@ -83,8 +86,11 @@ export {
   PCAD_THUMBNAIL_ENTRY,
   FIXED_ENTRY_MTIME,
   zipPcadEntries,
+  assemblyEnvelopeStoredPrefixLength,
   type PcadZipEntry,
   type PcadZipEntries,
+  readPcadFromSource,
+  readAssemblyFromSource,
   readPcadaFile,
   readPcaddFile,
   readPcadFile,
@@ -253,5 +259,8 @@ export { type DxfWriteEntity, type DxfWriteOptions } from './dxf/dxfDrawingTypes
 
 export * from './pcad/drawingTemplateJson.js';
 export * from './pcad/drawingTemplateFile.js';
-export { readDrawingBundle, writeDrawingBundle } from './pcad/drawingBundle.js';
+export { readDrawingBundle, readDrawingFromSource, writeDrawingBundle } from './pcad/drawingBundle.js';
 export { decodeScriptFile, encodeScriptFile } from './script/scriptFile.js';
+
+export { ARCHIVE_READ_CHUNK_BYTES, validArchiveReadRange } from './limits.js';
+export { ArchiveReadSourceError, readArchiveRange, type ArchiveReadSource } from './pcad/archiveReadSource.js';

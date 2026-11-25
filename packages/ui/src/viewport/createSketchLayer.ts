@@ -338,6 +338,92 @@ function createSquareBorderGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+function createSketchFaceSet(faceGroup: THREE.Group) {
+  /**
+   * いま出している面。`faceGroup.children` から取り出すと型が広がって材質を辿れないので、
+   * 作ったものを自分で覚えておき、片付けるときはここから消す。
+   */
+  const faceSurfaces: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[] = [];
+
+  /** 前回描いた面。三角形が同じなら作り直さずに色だけ塗り替えるための控え。 */
+  let lastFaces: readonly SketchFaceDraw[] = [];
+
+  /** 面のメッシュを片付ける。 */
+  function clearFaces(): void {
+    for (const surface of faceSurfaces) {
+      faceGroup.remove(surface);
+      surface.geometry.dispose();
+      surface.material.dispose();
+    }
+    faceSurfaces.length = 0;
+  }
+
+  function rebuildFaces(faces: readonly SketchFaceDraw[], colors: ThemeColors): void {
+    clearFaces();
+    for (const face of faces) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(face.positions, 3));
+      geometry.setAttribute('normal', new THREE.BufferAttribute(face.normals, 3));
+      geometry.setIndex(new THREE.BufferAttribute(face.indices, 1));
+      geometry.computeBoundingSphere();
+      const surface = new THREE.Mesh(geometry, faceMaterial(face, colors));
+      // どの面フィーチャーかを名前で持つ(userData は型が any になるので使わない)。
+      surface.name = face.featureId;
+      faceGroup.add(surface);
+      faceSurfaces.push(surface);
+    }
+  }
+
+  /** 三角形が前回と同じ面の並びか。同じならメッシュを作り直さずに済む。 */
+  function hasSameFaceGeometry(faces: readonly SketchFaceDraw[]): boolean {
+    if (faces.length !== lastFaces.length) {
+      return false;
+    }
+    for (let index = 0; index < faces.length; index += 1) {
+      const next = faces[index];
+      const previous = lastFaces[index];
+      if (
+        next.featureId !== previous.featureId ||
+        next.positions !== previous.positions ||
+        next.indices !== previous.indices
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * 面を反映する。ホバーや選択が変わっただけのときは三角形が同じなので、
+   * メッシュを作り直さず材質の色だけを塗り替える(マウスを動かすたびの作り直しを避ける)。
+   */
+  function updateFaces(faces: readonly SketchFaceDraw[], colors: ThemeColors): void {
+    if (hasSameFaceGeometry(faces)) {
+      for (let index = 0; index < faces.length; index += 1) {
+        applyFaceMaterial(faceSurfaces[index].material, faces[index], colors);
+      }
+    } else {
+      rebuildFaces(faces, colors);
+    }
+    lastFaces = faces;
+  }
+
+  return {
+    update: updateFaces,
+    recolor(colors: ThemeColors): void {
+      // いま出している面の強調(発光)も、次の組み立てを待たずにその場で塗り替える。
+      const shared = Math.min(faceSurfaces.length, lastFaces.length);
+      for (let index = 0; index < shared; index += 1) {
+        applyFaceMaterial(faceSurfaces[index].material, lastFaces[index], colors);
+      }
+    },
+    dispose(): void {
+      clearFaces();
+      lastFaces = [];
+    },
+  };
+}
+
 export function createSketchLayer(): SketchLayer {
   const group = new THREE.Group();
 
@@ -413,74 +499,7 @@ export function createSketchLayer(): SketchLayer {
 
   let lastBundle: SketchGeometryBundle | null = null;
 
-  /**
-   * いま出している面。`faceGroup.children` から取り出すと型が広がって材質を辿れないので、
-   * 作ったものを自分で覚えておき、片付けるときはここから消す。
-   */
-  const faceSurfaces: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[] = [];
-
-  /** 前回描いた面。三角形が同じなら作り直さずに色だけ塗り替えるための控え。 */
-  let lastFaces: readonly SketchFaceDraw[] = [];
-
-  /** 面のメッシュを片付ける。 */
-  function clearFaces(): void {
-    for (const surface of faceSurfaces) {
-      faceGroup.remove(surface);
-      surface.geometry.dispose();
-      surface.material.dispose();
-    }
-    faceSurfaces.length = 0;
-  }
-
-  function rebuildFaces(faces: readonly SketchFaceDraw[]): void {
-    clearFaces();
-    for (const face of faces) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(face.positions, 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(face.normals, 3));
-      geometry.setIndex(new THREE.BufferAttribute(face.indices, 1));
-      geometry.computeBoundingSphere();
-      const surface = new THREE.Mesh(geometry, faceMaterial(face, colors));
-      // どの面フィーチャーかを名前で持つ(userData は型が any になるので使わない)。
-      surface.name = face.featureId;
-      faceGroup.add(surface);
-      faceSurfaces.push(surface);
-    }
-  }
-
-  /** 三角形が前回と同じ面の並びか。同じならメッシュを作り直さずに済む。 */
-  function hasSameFaceGeometry(faces: readonly SketchFaceDraw[]): boolean {
-    if (faces.length !== lastFaces.length) {
-      return false;
-    }
-    for (let index = 0; index < faces.length; index += 1) {
-      const next = faces[index];
-      const previous = lastFaces[index];
-      if (
-        next.featureId !== previous.featureId ||
-        next.positions !== previous.positions ||
-        next.indices !== previous.indices
-      ) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  /**
-   * 面を反映する。ホバーや選択が変わっただけのときは三角形が同じなので、
-   * メッシュを作り直さず材質の色だけを塗り替える(マウスを動かすたびの作り直しを避ける)。
-   */
-  function updateFaces(faces: readonly SketchFaceDraw[]): void {
-    if (hasSameFaceGeometry(faces)) {
-      for (let index = 0; index < faces.length; index += 1) {
-        applyFaceMaterial(faceSurfaces[index].material, faces[index], colors);
-      }
-    } else {
-      rebuildFaces(faces);
-    }
-    lastFaces = faces;
-  }
+  const faces = createSketchFaceSet(faceGroup);
 
   function applyDisplayStyle(displayStyle: DisplayStyle): void {
     // 立体の表示スタイル(FR-105)に合わせる。面は稜線だけの表示で消し、
@@ -522,7 +541,7 @@ export function createSketchLayer(): SketchLayer {
             bundle.faceOutlines[emphasis],
           );
         }
-        updateFaces(bundle.faces);
+        faces.update(bundle.faces, colors);
       }
       applyDisplayStyle(displayStyle);
     },
@@ -552,11 +571,7 @@ export function createSketchLayer(): SketchLayer {
       if (lastEditPreview !== null) {
         applyEditPreviewMaterial(lastEditPreview);
       }
-      // いま出している面の強調(発光)も、次の組み立てを待たずにその場で塗り替える。
-      const shared = Math.min(faceSurfaces.length, lastFaces.length);
-      for (let index = 0; index < shared; index += 1) {
-        applyFaceMaterial(faceSurfaces[index].material, lastFaces[index], colors);
-      }
+      faces.recolor(colors);
     },
 
     setEditPreview(preview): void {
@@ -593,8 +608,7 @@ export function createSketchLayer(): SketchLayer {
     },
 
     dispose(): void {
-      clearFaces();
-      lastFaces = [];
+      faces.dispose();
       workPlaneFill.geometry.dispose();
       workPlaneFill.material.dispose();
       workPlaneBorder.geometry.dispose();

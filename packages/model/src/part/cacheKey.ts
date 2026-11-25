@@ -1213,6 +1213,45 @@ function blendKeyText(material: BlendPlan<string>): string {
   return 'blend' + JSON.stringify([a.sourceKey, a.query, b.sourceKey, b.query, keyNumber(weightA), keyNumber(weightB), flipB]);
 }
 
+function keyHoleMaterial(material: HoleKeyMaterial): string {
+  return (
+    `hole{targetKey=${material.targetKey}` +
+    `;face=${material.face}` +
+    `;centers=${keyVec3List(material.centers)}` +
+    (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
+    (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
+    (material.pointPlacementReferences === undefined ? '' : `;pointPlacementReferences=${keyLogicalValue(material.pointPlacementReferences)}`) +
+    `;diameter=${keyNumber(material.diameter)}` +
+    `;depth=${keyOptionalNumber(material.depth)}` +
+    `;tiltAngle=${keyNumber(material.tiltAngle)}` +
+    `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
+    `;transforms=${keyTransformList(material.transforms)}` +
+    `${keyHoleEntryExtra(material.entry)}` +
+    `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
+  );
+}
+
+function keyThreadMaterial(material: ThreadKeyMaterial): string {
+  return (
+    `thread{targetKey=${material.targetKey}` +
+    `;face=${material.face}` +
+    `;centers=${keyVec3List(material.centers)}` +
+    (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
+    (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
+    `;drillDiameter=${keyNumber(material.drillDiameter)}` +
+    `;majorDiameter=${keyNumber(material.majorDiameter)}` +
+    `;pitch=${keyNumber(material.pitch)}` +
+    `;threadLength=${keyNumber(material.threadLength)}` +
+    `;depth=${keyOptionalNumber(material.depth)}` +
+    `;modeled=${keyBoolean(material.modeled)}` +
+    `;tiltAngle=${keyNumber(material.tiltAngle)}` +
+    `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
+    `;transforms=${keyTransformList(material.transforms)}` +
+    `${keyHoleEntryExtra(material.entry)}` +
+    `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
+  );
+}
+
 /**
  * 鍵の材料を、`hash64` に渡す前の1本の文字列にする。
  * 段の種類(先頭のキーワード)と各配列の長さを混ぜてあるので、
@@ -1253,40 +1292,9 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         optionalBooleanPattern(material) + '}'
       );
     case 'hole':
-      return (
-        `hole{targetKey=${material.targetKey}` +
-        `;face=${material.face}` +
-        `;centers=${keyVec3List(material.centers)}` +
-        (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
-        (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
-        (material.pointPlacementReferences === undefined ? '' : `;pointPlacementReferences=${keyLogicalValue(material.pointPlacementReferences)}`) +
-        `;diameter=${keyNumber(material.diameter)}` +
-        `;depth=${keyOptionalNumber(material.depth)}` +
-        `;tiltAngle=${keyNumber(material.tiltAngle)}` +
-        `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
-        `;transforms=${keyTransformList(material.transforms)}` +
-        `${keyHoleEntryExtra(material.entry)}` +
-        `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
-      );
+      return keyHoleMaterial(material);
     case 'thread':
-      return (
-        `thread{targetKey=${material.targetKey}` +
-        `;face=${material.face}` +
-        `;centers=${keyVec3List(material.centers)}` +
-        (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
-        (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
-        `;drillDiameter=${keyNumber(material.drillDiameter)}` +
-        `;majorDiameter=${keyNumber(material.majorDiameter)}` +
-        `;pitch=${keyNumber(material.pitch)}` +
-        `;threadLength=${keyNumber(material.threadLength)}` +
-        `;depth=${keyOptionalNumber(material.depth)}` +
-        `;modeled=${keyBoolean(material.modeled)}` +
-        `;tiltAngle=${keyNumber(material.tiltAngle)}` +
-        `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
-        `;transforms=${keyTransformList(material.transforms)}` +
-        `${keyHoleEntryExtra(material.entry)}` +
-        `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
-      );
+      return keyThreadMaterial(material);
     case 'fillet':
       return (
         `fillet{targetKey=${material.targetKey}` +

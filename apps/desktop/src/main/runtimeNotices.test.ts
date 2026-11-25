@@ -36,7 +36,7 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       expect(() => runtimeDependencySelection(folder)).toThrow('still locked');
     }
   });
-  it('数学以外の部品も含め、固定した11件と、11原文+OCCTの追加条項1件を両版へ渡す', () => {
+  it('数学以外の部品も含め、固定した11件と、11原文とOCCTの追加原文6件を両版へ渡す', () => {
     const dependencies = installedRuntimeDependencies(root), distribution = collectRuntimeNotices(root);
     expect(dependencies).toHaveLength(11);
     expect(dependencies.some(item => ['quickjs-wasi', '@cortex-js/compute-engine', '@arnog/colors', 'complex-esm'].includes(item.name))).toBe(false);
@@ -50,16 +50,36 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       expect(bytes).toEqual(readFileSync(new URL('../../../../docs/standards/licenses/' + name, import.meta.url)));
       originals += 1;
     }
-    expect(originals).toBe(12);
+    expect(originals).toBe(17);
     expect(distribution.assets.get('LICENSE')).toEqual(readFileSync(new URL('../../../../LICENSE', import.meta.url)));
     expect(distribution.assets.get('NOTICE')).toEqual(readFileSync(new URL('../../../../NOTICE', import.meta.url)));
   });
-  it('OCCTのLGPL例外条項をopencascade.jsへ紐づけて配布資産へ配線する(P13-6c)', () => {
+  it('OCCTの例外条項と組込み依存の原文をopencascade.jsへ紐づける', () => {
     const distribution = collectRuntimeNotices(root);
     expect(distribution.additionalNotices).toEqual([{
       appliesTo: 'opencascade.js',
       file: 'runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt',
       sha256: '04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b',
+    }, {
+      appliesTo: 'opencascade.js',
+      file: 'runtime-occt-freetype-version-1-license.txt',
+      sha256: 'f6333b3a9106f10190e96d9f994f934deb7a5632851a1aaf846b94651a80f4da',
+    }, {
+      appliesTo: 'opencascade.js',
+      file: 'runtime-occt-freetype-version-1-ftl.txt',
+      sha256: 'f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8',
+    }, {
+      appliesTo: 'opencascade.js',
+      file: 'runtime-occt-freetype-version-1-gplv2.txt',
+      sha256: 'c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18',
+    }, {
+      appliesTo: 'opencascade.js',
+      file: 'runtime-occt-rapidjson-license.txt',
+      sha256: 'a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32',
+    }, {
+      appliesTo: 'opencascade.js',
+      file: 'runtime-occt-emscripten-3.1.14-license.txt',
+      sha256: '620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86',
     }]);
     const path = 'licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt';
     expect(distribution.assets.has(path)).toBe(true);

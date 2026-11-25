@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { unzipSync } from 'fflate';
+import { strFromU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument, createDrawingTemplate, createEmptyPartDocument,
   embedDrawingSource, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, emptyEmbeddedPartAttachments } from '@pointercad/model';
 import type { BeamAnalysisResult, SavedAnalysisResult } from '@pointercad/model/beam-analysis';
-import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput } from './saveDocumentEncoding.js';
+import { encodeOwnedSaveDocumentParts, encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput } from './saveDocumentEncoding.js';
 import { concatZipParts } from './zipSteps.js';
-import { readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from './pcadFile.js';
+import { canPersistAssemblyPartEdit, documentBundleEntries, readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from './pcadFile.js';
 import { readDrawingBundle, writeDrawingBundle } from './drawingBundle.js';
 import { readDrawingTemplateFile, writeDrawingTemplateFile } from './drawingTemplateFile.js';
 import { PCAD_TEMPLATE_KIND } from './schema.js';
@@ -104,6 +104,69 @@ describe('part保存の新規mesh scratch所有権', () => {
 });
 
 describe('保存専用エンコーダーと従来のIOの一致', () => {
+  it('独立した三角形の区切りで部品・組立・図面を書き、既設の全ZIPと一致する', async () => {
+    const part = sharedMeshPart();
+    const attachments = part.options.attachments;
+    if (attachments === undefined) throw new Error('Missing mesh');
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, part.document, 'mesh.pcad', '', { attachments, importedAt: savedAt });
+    const bundle = createAssemblyDocumentBundle(createAssemblyDocument('組立'), embedded.library);
+    const source = { sourceKind: 'assembly' as const, document: bundle.document, library: embedded.library };
+    const embeddedSource = await embedDrawingSource(emptyDrawingSourceLibrary(), source, 'assembly.pcada', '', { importedAt: savedAt });
+    const drawing = createDrawingDocument('図面', embeddedSource.source);
+    const inputs: readonly SaveDocumentInput[] = [part, { kind: 'assembly', bundle, options: { savedAt } },
+      { kind: 'drawing', document: drawing, options: { savedAt, source } }];
+    for (const input of inputs) {
+      const events: string[] = [];
+      const actual = concatZipParts(await encodeOwnedSaveDocumentParts(input, {
+        onProgress: stage => events.push(stage), onEntriesBuilt: () => events.push('entries'),
+        onMeshComponentWritten: () => events.push('mesh'),
+      }));
+      expect(events).toEqual(['preparing', 'mesh', 'mesh', 'mesh', 'entries', 'compressing']);
+      expect(viewDigest(actual)).toBe(viewDigest(await encodeSaveDocument(input)));
+      if (input.kind === 'part') expect(readPcadFile(actual)).toMatchObject({ ok: true });
+      if (input.kind === 'assembly') expect(await readDocumentBundle(actual, 'assembly')).toMatchObject({ ok: true });
+      if (input.kind === 'drawing') expect(await readDrawingBundle(actual)).toMatchObject({ ok: true });
+    }
+  });
+
+  it.each([0, 1_050_000])('親の確定時と保存時で時刻によらず必要なZIPサイズが一致する (部品名長 %i)', async nameLength => {
+    const name = '2026-11-24T07:18:33.718Z'.repeat(Math.ceil(nameLength / 24)).slice(0, nameLength) || '部品';
+    const part = { ...createEmptyPartDocument(), name };
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, part, 'part.pcad', '', { importedAt: savedAt });
+    const bundle = createAssemblyDocumentBundle(createAssemblyDocument('組立'), embedded.library);
+    const admissionTime = '1970-01-01T00:00:00.000Z';
+    const writeTime = '2026-11-24T07:18:33.718Z';
+    const admission = await writeDocumentBundle(bundle, { savedAt: admissionTime });
+    const saved = await encodeSaveDocument({ kind: 'assembly', bundle, options: { savedAt: writeTime } });
+    expect(await canPersistAssemblyPartEdit(bundle)).toBe(true);
+    expect(saved.byteLength).toBe(admission.byteLength);
+    expect(saved).not.toEqual(admission);
+    const entries = unzipSync(saved);
+    for (const name of ['document.json', `parts/${embedded.partRef}.json`]) {
+      expect(strFromU8(entries[name])).toContain(`"savedAt": "${writeTime}"`);
+    }
+    expect(await readDocumentBundle(saved, 'assembly')).toMatchObject({ ok: true, savedAt: writeTime });
+  });
+
+  it('小さい旧ZIPの埋込み部品と子組立を再保存し、時刻変更では現行の出力を使う', async () => {
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, createEmptyPartDocument(), 'part.pcad', '', { importedAt: savedAt });
+    const library = { ...embedded.library, assemblies: new Map([['child', createAssemblyDocument('子組立')]]) };
+    const bundle = createAssemblyDocumentBundle(createAssemblyDocument('親組立'), library);
+    const entries = await documentBundleEntries(bundle, { savedAt });
+    const zippable: Zippable = {};
+    for (const [name, [bytes, options]] of entries) zippable[name] = [bytes, options];
+    const legacy = zipSync(zippable);
+    const read = await readDocumentBundle(legacy, 'assembly');
+    if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('Missing legacy assembly');
+    expect(read.bundle.embeddedDocuments.has(embedded.partRef)).toBe(true);
+    expect(read.bundle.embeddedAssemblies.has('child')).toBe(true);
+    expect(await writeDocumentBundle(read.bundle, { savedAt: read.savedAt })).toEqual(legacy);
+    const nextTime = '2026-10-05T12:34:56.789Z';
+    const updated = await writeDocumentBundle(read.bundle, { savedAt: nextTime });
+    expect(updated).toEqual(await writeDocumentBundle(bundle, { savedAt: nextTime }));
+    expect(await readDocumentBundle(updated, 'assembly')).toMatchObject({ ok: true, savedAt: nextTime });
+  });
+
   it('部品・ひな形・組立・図面を同じ時刻で全エントリ・全バイト照合し従来の読み手で再開する', async () => {
     const document = { ...createEmptyPartDocument(), name: '保存試験' };
     const attachments = { ...emptyEmbeddedPartAttachments(),

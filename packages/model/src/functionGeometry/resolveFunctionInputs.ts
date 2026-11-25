@@ -9,7 +9,7 @@ import type { PartDocument } from '../part/types.js';
 import type { FunctionDefinition } from './functionDefinitionTypes.js';
 import { mapFunctionDefinition } from './mapFunctionDefinition.js';
 import { resolveFunctionRanges } from './resolveFunctionRanges.js';
-import { FailureTextError } from '../failureText.js';
+import { FailureTextError, plainText } from '../failureText.js';
 
 /**
  * The calculation tape (`scalarMathTape.ts`) has no `equal` outside a `which` condition, so only
@@ -34,7 +34,11 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
   analysis: ParameterAnalysis, isCurrent: () => boolean) {
   // Unconditional and checked first, so an old file's "=" form always explains what to type
   // instead of reaching the tape's own unclear error further down (sampling, after this function returns).
-  if (implicitEquationRootHasEquals(definition)) throw new Error(IMPLICIT_EQUATION_EQUALS_MESSAGE);
+  if (implicitEquationRootHasEquals(definition)) {
+    const failure = new FailureTextError({ key: 'functionPlot.implicitEqualsNotSupported', parameters: {} });
+    failure.message = IMPLICIT_EQUATION_EQUALS_MESSAGE;
+    throw failure;
+  }
   // No plot formula may feed a geometry-derived coefficient into an operation that jumps at a value boundary.
   // The rule is static, so it runs before any range or coefficient value is looked up (a refusal never reads as
   // "pending"); a document without geometry-derived coefficients skips it and keeps its previous path.
@@ -49,7 +53,10 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
       : { ok: true, value: evaluated.value });
   } });
   if (!isCurrent() || ranges.status === 'cancelled') return { status: 'cancelled' } as const;
-  if (ranges.status === 'invalid') throw new Error(ranges.issues.map(issue => `${issue.field}: ${issue.message}`).join('\n'));
+  if (ranges.status === 'invalid') {
+    const message = ranges.issues.map(issue => `${issue.field}: ${issue.message}`).join('\n');
+    throw new FailureTextError(plainText(message));
+  }
   const references = new Map<string, string>();
   mapFunctionDefinition(definition, value => value, expression => {
     for (const reference of collectMathCoefficients(expression.expression)) {
@@ -63,9 +70,9 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
     if (mathGeometryDefinitionIdOf(id) !== null) throw new FailureTextError(mathGeometryOutsideCoefficientMessage(label));
     const parameter = document.parameters.find(item => item.mathId === id && item.name === label);
     const decimal = parameter === undefined ? undefined : analysis.exactVariables.get(parameter.name);
-    if (decimal === undefined) throw new Error(`係数の原式を再計算できません: ${label}`);
+    if (decimal === undefined) throw new FailureTextError({ key: 'functionPlot.failure.coefficientRecompute', parameters: { label } });
     const original = analysis.mathCoefficients?.get(label);
-    if (original === undefined || original.id !== id) throw new Error(`係数の原式を確認できません: ${label}`);
+    if (original === undefined || original.id !== id) throw new FailureTextError({ key: 'functionPlot.failure.coefficientMissing', parameters: { label } });
     return original;
   });
   return { status: 'ready', ranges: ranges.ranges, coefficients } as const;

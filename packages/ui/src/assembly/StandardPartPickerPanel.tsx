@@ -111,6 +111,242 @@ function steelChoiceNotes(steel: SteelProduct): React.JSX.Element {
   );
 }
 
+interface StandardPartFields {
+  readonly category: Parameters<typeof defaultStandardPartChoice>[0];
+  readonly first: React.RefObject<HTMLSelectElement | null>;
+  readonly changeCategory: (value: string) => void;
+  readonly isSteel: boolean;
+  readonly steelMaterial: StructuralMaterialChoice;
+  readonly setSteelMaterial: (next: StructuralMaterialChoice) => void;
+  readonly activeShape: SteelSectionCatalog | undefined;
+  readonly shapes: readonly SteelSectionCatalog[];
+  readonly setSteelShape: (next: SteelSectionCatalog) => void;
+  readonly choices: ReturnType<typeof standardPartChoices>;
+  readonly choice: ReturnType<typeof defaultStandardPartChoice>;
+  readonly setChoiceKey: (key: string) => void;
+  readonly setError: (error: null) => void;
+  readonly dimensionSeries: FastenerDimensionSeries;
+  readonly setDimensionSeries: (next: FastenerDimensionSeries) => void;
+  readonly threadSeries: ThreadSeries;
+  readonly setThreadSeries: (next: ThreadSeries) => void;
+  readonly dimensionGroups: ReturnType<typeof steelPartDimensionGroups> | null;
+  readonly dimensionGroup: NonNullable<ReturnType<typeof steelPartDimensionGroups>>['groups'][number] | undefined;
+  readonly sizeField: React.JSX.Element;
+  readonly steel: ReturnType<typeof defaultStandardPartChoice>['steelProduct'];
+  readonly bendEnabled: boolean;
+  readonly setBendEnabled: (enabled: boolean) => void;
+  readonly setBendPlacementError: (failed: boolean) => void;
+  readonly editable: boolean;
+  readonly setEditable: (editable: boolean) => void;
+  readonly setEditableMessage: (message: null) => void;
+  readonly bending: boolean;
+  readonly bendSources: SteelBendSources;
+  readonly setBendSources: (sources: SteelBendSources) => void;
+  readonly bend: ReturnType<typeof buildSteelBendChoice> | null;
+  readonly lengthSource: string;
+  readonly setLengthSource: (source: string) => void;
+  readonly error: 'unknownChoice' | 'invalidLength' | null;
+}
+
+function renderStandardPartFields(fields: StandardPartFields): React.JSX.Element {
+  const {
+    category, first, changeCategory, isSteel, steelMaterial, setSteelMaterial, activeShape, shapes, setSteelShape,
+    choices, choice, setChoiceKey, setError, dimensionSeries, setDimensionSeries, threadSeries, setThreadSeries,
+    dimensionGroups, dimensionGroup, sizeField, steel, bendEnabled, setBendEnabled, setBendPlacementError,
+    editable, setEditable, setEditableMessage, bending, bendSources, setBendSources, bend, lengthSource, setLengthSource, error,
+  } = fields;
+  return (
+    <div className="pcad-popover__fields">
+      <label className="pcad-field">
+        <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>
+        <select title={t('assembly.guide.standardCategory')} ref={first} className="pcad-field__input" value={category}
+          onChange={(event) => { changeCategory(event.currentTarget.value); }}>
+          {categoryOptions()}
+        </select>
+      </label>
+      {isSteel ? <>
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t('assembly.steel.material')}</span>
+          <select className="pcad-field__input" title={t('assembly.steel.materialGuide')} value={steelMaterial}
+            onChange={(event) => {
+              const next = STRUCTURAL_MATERIAL_CHOICES.find((item) => item === event.currentTarget.value);
+              if (next === undefined) return;
+              const shape = next === 'unspecified' ? undefined : steelSectionCatalogs(next)[0];
+              setSteelMaterial(next);
+              if (shape !== undefined) setSteelShape(shape);
+              setChoiceKey(structuralPartChoices(next, shape)[0].key);
+              setError(null);
+            }}>
+            {STRUCTURAL_MATERIAL_CHOICES.map((item) => <option key={item} value={item}>
+              {item === 'unspecified' ? t('assembly.steel.unspecified') : item}
+            </option>)}
+          </select>
+        </label>
+        {steelMaterial === 'unspecified' ? null : <label className="pcad-field">
+          <span className="pcad-field__label">{t('assembly.steel.shape')}</span>
+          <select className="pcad-field__input" title={t('assembly.steel.shapeGuide')} value={activeShape}
+            onChange={(event) => {
+              const next = shapes.find((item) => item === event.currentTarget.value);
+              if (next === undefined) return;
+              setSteelShape(next);
+              setChoiceKey(structuralPartChoices(steelMaterial, next)[0].key);
+              setError(null);
+            }}>
+            {shapes.map((item) => <option key={item} value={item}>{t(steelShapeLabelKey(item, steelMaterial))}</option>)}
+          </select>
+        </label>}
+      </> : null}
+      {standardPartUsesDimensionSeries(category) ? (
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t('assembly.standardPart.dimensionSeries')}</span>
+          <select title={t('assembly.guide.standardDimensions')} className="pcad-field__input" value={dimensionSeries}
+            onChange={(event) => {
+              const next: FastenerDimensionSeries = event.currentTarget.value === 'main'
+                ? 'main' : 'annexJA';
+              setDimensionSeries(next);
+              setChoiceKey(defaultStandardPartChoice(category, next).key);
+              setError(null);
+            }}>
+            <option value="annexJA">{t('assembly.standardPart.dimensionSeries.annexJA')}</option>
+            <option value="main">{t('assembly.standardPart.dimensionSeries.main')}</option>
+          </select>
+        </label>
+      ) : null}
+      {standardPartUsesThreadSeries(category) ? (
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t('assembly.standardPart.threadSeries')}</span>
+          <select title={t('assembly.guide.standardThread')} className="pcad-field__input" value={threadSeries}
+            onChange={(event) => {
+              setThreadSeries(event.currentTarget.value === 'fine' ? 'fine' : 'coarse');
+              setError(null);
+            }}>
+            <option value="coarse">{t('assembly.standardPart.threadSeries.coarse')}</option>
+            <option value="fine">{t('assembly.standardPart.threadSeries.fine')}</option>
+          </select>
+        </label>
+      ) : null}
+      {dimensionGroups === null || dimensionGroup === undefined ? sizeField : <>
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t(dimensionGroups.dimension === 'thickness'
+            ? 'assembly.steel.selectThickness' : 'assembly.steel.selectDiameter')}</span>
+          <select className="pcad-field__input" value={String(dimensionGroup.value)}
+            title={t(dimensionGroups.dimension === 'thickness'
+              ? 'assembly.steel.selectThicknessGuide' : 'assembly.steel.selectDiameterGuide')}
+            onChange={(event) => {
+              const next = steelPartChoiceAtDimension(choices, choice.key, event.currentTarget.value);
+              if (next === undefined) return;
+              setChoiceKey(next.key); setError(null);
+            }}>
+            {dimensionGroups.groups.map((group) => <option key={group.value} value={String(group.value)}>
+              {group.value} mm
+            </option>)}
+          </select>
+        </label>
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t(dimensionGroups.dimension === 'thickness'
+            ? 'assembly.steel.selectWidth' : 'assembly.standardPart.size')}</span>
+          <select className="pcad-field__input" value={choice.key} title={t('assembly.steel.selectWidthGuide')}
+            onChange={(event) => {
+              if (!dimensionGroup.choices.some((item) => item.key === event.currentTarget.value)) return;
+              setChoiceKey(event.currentTarget.value); setError(null);
+            }}>
+            {dimensionGroup.choices.map((item) => <option key={item.key} value={item.key}>
+              {dimensionGroups.dimension === 'thickness' ? `${item.steelProduct?.dimensions?.width} mm` : item.size}
+              {item.steelProduct !== undefined && dimensionGroup.choices.some((other) => other.key !== item.key
+                && other.size === item.size) ? ` / ${t(STEEL_CONDITION_LABELS[item.steelProduct.condition])}` : ''}
+            </option>)}
+          </select>
+        </label>
+        <details className="pcad-popover__hint">
+          <summary>{t('assembly.steel.allSizes')}</summary>
+          {sizeField}
+        </details>
+      </>}
+      {steel === undefined ? null : <label className="pcad-field">
+        <span className="pcad-field__label">{t('assembly.steel.bend.enable')}</span>
+        <input type="checkbox" checked={bendEnabled} title={t('assembly.steel.bend.enableGuide')}
+          onChange={(event) => { setBendEnabled(event.currentTarget.checked); setBendPlacementError(false); }} />
+      </label>}
+      {steel === undefined ? null : <label className="pcad-field">
+        <span className="pcad-field__label">{t('assembly.steel.editable.enable')}</span>
+        <input type="checkbox" checked={editable} title={t('assembly.steel.editable.enableGuide')}
+          onChange={(event) => { setEditable(event.currentTarget.checked); setEditableMessage(null); }} />
+      </label>}
+      {bending ? <SteelBendFields sources={bendSources} result={bend}
+        onChange={(next) => { setBendSources(next); setBendPlacementError(false); }} /> : null}
+      {choice.requiresLength && !bending ? (
+        <label className={'pcad-field' + (error === 'invalidLength' ? ' pcad-field--error' : '')}>
+          <span className="pcad-field__label">{t('assembly.standardPart.length')}</span>
+          <input title={t('assembly.guide.standardLength')} className="pcad-field__input" value={lengthSource}
+            aria-invalid={error === 'invalidLength' ? true : undefined}
+            onChange={(event) => { setLengthSource(event.currentTarget.value); setError(null); }} />
+          <span className="pcad-field__unit">mm</span>
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+interface SteelStockCsvControls {
+  readonly csvBusy: boolean;
+  readonly csvError: string;
+  readonly csvStatus: string;
+  readonly exportCsv: () => void;
+  readonly cancelCsv: () => void;
+}
+
+function renderSteelStockList(show: boolean, stock: ReturnType<typeof buildSteelStockList> | null,
+  stockOpen: boolean, setStockOpen: (open: boolean) => void, csv: SteelStockCsvControls): React.JSX.Element | null {
+  const { csvBusy, csvError, csvStatus, exportCsv, cancelCsv } = csv;
+  return show ? (
+    <details className="pcad-popover__hint" open={stockOpen}
+      onToggle={(event) => { setStockOpen(event.currentTarget.open); }}>
+      <summary>{t('assembly.steel.stockList')}</summary>
+      {stock === null ? null : <>
+      <p>{t('assembly.steel.stockScope')}</p>
+      {stock.issues.length === 0 ? null : <p role="status">{t('assembly.steel.stockPartial')}</p>}
+      {stock.rows.length === 0 ? <p>{t('assembly.steel.stockEmpty')}</p> : (
+        <div className="pcad-bom__scroll"><table className="pcad-bom__table">
+          <thead><tr>
+            <th scope="col">{t('assembly.steel.material')}</th>
+            <th scope="col">{t('assembly.standardPart.size')}</th>
+            <th scope="col">{t('assembly.steel.stockLength')} (mm)</th>
+            <th scope="col">{t('assembly.steel.finishedLength')} (mm)</th>
+            <th scope="col">{t('assembly.steel.quantity')}</th>
+            <th scope="col">{t('assembly.steel.totalLength')} (mm)</th>
+            <th scope="col">{t('assembly.steel.csv.catalogRevision')}</th>
+            <th scope="col">{t('assembly.steel.csv.generatorRevision')}</th>
+          </tr></thead>
+          <tbody>{stock.rows.map((row) => <tr key={row.key}>
+            <td>{row.product.materialGrade}</td><td>{row.product.size + catalogMiterNote(row)}</td>
+            <td>{row.lengthMm}</td><td>{row.finishedLengthMm ?? t('assembly.steel.finishedUnknown')}</td><td>{row.quantity}</td><td>{row.totalLengthMm}</td>
+            <td>{row.catalogRevision}</td><td>{row.generatorRevision}</td>
+          </tr>)}</tbody>
+          <tfoot><tr>
+            <th scope="row" colSpan={4}>{t('assembly.steel.stockTotal')}</th>
+            <td>{stock.totalQuantity}</td><td colSpan={3}>{stock.totalLengthMm}</td>
+          </tr></tfoot>
+        </table></div>
+      )}
+      {stock.issues.length === 0 ? null : <ul>
+        {stock.issues.map((issue, index) => <li key={index}>
+          {issue.occurrenceNames.join(' › ')}: {steelStockIssueText(issue)}
+        </li>)}
+      </ul>}
+      {stock.rows.length === 0 ? null : <StockCuttingFields rows={steelStockCuttingRows(stock.rows)} />}
+      <button type="button" className="pcad-button" disabled={csvBusy}
+        title={t('assembly.steel.csv.exportGuide')} onClick={exportCsv}>{t('assembly.steel.csv.export')}</button>
+      {csvBusy ? <p role="status">{t('assembly.steel.csv.busy')}
+        <button type="button" className="pcad-button" title={t('assembly.steel.csv.cancelGuide')}
+          onClick={cancelCsv}>{t('assembly.steel.csv.cancel')}</button>
+      </p> : null}
+      {csvError === '' ? null : <p role="alert">{csvError}</p>}
+      {csvStatus === '' ? null : <p role="status">{csvStatus}</p>}
+      </>}
+    </details>
+  ) : null;
+}
+
 /** Non-modal picker that keeps the last choice so Enter can place repeated parts. */
 export function StandardPartPicker(): React.JSX.Element | null {
   const open = useAppStore((state) => state.standardPartPickerOpen);
@@ -260,189 +496,25 @@ export function StandardPartPicker(): React.JSX.Element | null {
       {selectedBend === null ? null : <button type="button" className="pcad-button"
         title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { setBendEdit(selectedBend); }}>
         {t('assembly.steel.bend.reedit.entry')}</button>}
-      <div className="pcad-popover__fields">
-        <label className="pcad-field">
-          <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>
-          <select title={t('assembly.guide.standardCategory')} ref={first} className="pcad-field__input" value={category}
-            onChange={(event) => { changeCategory(event.currentTarget.value); }}>
-            {categoryOptions()}
-          </select>
-        </label>
-        {isSteel ? <>
-          <label className="pcad-field">
-            <span className="pcad-field__label">{t('assembly.steel.material')}</span>
-            <select className="pcad-field__input" title={t('assembly.steel.materialGuide')} value={steelMaterial}
-              onChange={(event) => {
-                const next = STRUCTURAL_MATERIAL_CHOICES.find((item) => item === event.currentTarget.value);
-                if (next === undefined) return;
-                const shape = next === 'unspecified' ? undefined : steelSectionCatalogs(next)[0];
-                setSteelMaterial(next);
-                if (shape !== undefined) setSteelShape(shape);
-                setChoiceKey(structuralPartChoices(next, shape)[0].key);
-                setError(null);
-              }}>
-              {STRUCTURAL_MATERIAL_CHOICES.map((item) => <option key={item} value={item}>
-                {item === 'unspecified' ? t('assembly.steel.unspecified') : item}
-              </option>)}
-            </select>
-          </label>
-          {steelMaterial === 'unspecified' ? null : <label className="pcad-field">
-            <span className="pcad-field__label">{t('assembly.steel.shape')}</span>
-            <select className="pcad-field__input" title={t('assembly.steel.shapeGuide')} value={activeShape}
-              onChange={(event) => {
-                const next = shapes.find((item) => item === event.currentTarget.value);
-                if (next === undefined) return;
-                setSteelShape(next);
-                setChoiceKey(structuralPartChoices(steelMaterial, next)[0].key);
-                setError(null);
-              }}>
-              {shapes.map((item) => <option key={item} value={item}>{t(steelShapeLabelKey(item, steelMaterial))}</option>)}
-            </select>
-          </label>}
-        </> : null}
-        {standardPartUsesDimensionSeries(category) ? (
-          <label className="pcad-field">
-            <span className="pcad-field__label">{t('assembly.standardPart.dimensionSeries')}</span>
-            <select title={t('assembly.guide.standardDimensions')} className="pcad-field__input" value={dimensionSeries}
-              onChange={(event) => {
-                const next: FastenerDimensionSeries = event.currentTarget.value === 'main'
-                  ? 'main' : 'annexJA';
-                setDimensionSeries(next);
-                setChoiceKey(defaultStandardPartChoice(category, next).key);
-                setError(null);
-              }}>
-              <option value="annexJA">{t('assembly.standardPart.dimensionSeries.annexJA')}</option>
-              <option value="main">{t('assembly.standardPart.dimensionSeries.main')}</option>
-            </select>
-          </label>
-        ) : null}
-        {standardPartUsesThreadSeries(category) ? (
-          <label className="pcad-field">
-            <span className="pcad-field__label">{t('assembly.standardPart.threadSeries')}</span>
-            <select title={t('assembly.guide.standardThread')} className="pcad-field__input" value={threadSeries}
-              onChange={(event) => {
-                setThreadSeries(event.currentTarget.value === 'fine' ? 'fine' : 'coarse');
-                setError(null);
-              }}>
-              <option value="coarse">{t('assembly.standardPart.threadSeries.coarse')}</option>
-              <option value="fine">{t('assembly.standardPart.threadSeries.fine')}</option>
-            </select>
-          </label>
-        ) : null}
-        {dimensionGroups === null || dimensionGroup === undefined ? sizeField : <>
-          <label className="pcad-field">
-            <span className="pcad-field__label">{t(dimensionGroups.dimension === 'thickness'
-              ? 'assembly.steel.selectThickness' : 'assembly.steel.selectDiameter')}</span>
-            <select className="pcad-field__input" value={String(dimensionGroup.value)}
-              title={t(dimensionGroups.dimension === 'thickness'
-                ? 'assembly.steel.selectThicknessGuide' : 'assembly.steel.selectDiameterGuide')}
-              onChange={(event) => {
-                const next = steelPartChoiceAtDimension(choices, choice.key, event.currentTarget.value);
-                if (next === undefined) return;
-                setChoiceKey(next.key); setError(null);
-              }}>
-              {dimensionGroups.groups.map((group) => <option key={group.value} value={String(group.value)}>
-                {group.value} mm
-              </option>)}
-            </select>
-          </label>
-          <label className="pcad-field">
-            <span className="pcad-field__label">{t(dimensionGroups.dimension === 'thickness'
-              ? 'assembly.steel.selectWidth' : 'assembly.standardPart.size')}</span>
-            <select className="pcad-field__input" value={choice.key} title={t('assembly.steel.selectWidthGuide')}
-              onChange={(event) => {
-                if (!dimensionGroup.choices.some((item) => item.key === event.currentTarget.value)) return;
-                setChoiceKey(event.currentTarget.value); setError(null);
-              }}>
-              {dimensionGroup.choices.map((item) => <option key={item.key} value={item.key}>
-                {dimensionGroups.dimension === 'thickness' ? `${item.steelProduct?.dimensions?.width} mm` : item.size}
-                {item.steelProduct !== undefined && dimensionGroup.choices.some((other) => other.key !== item.key
-                  && other.size === item.size) ? ` / ${t(STEEL_CONDITION_LABELS[item.steelProduct.condition])}` : ''}
-              </option>)}
-            </select>
-          </label>
-          <details className="pcad-popover__hint">
-            <summary>{t('assembly.steel.allSizes')}</summary>
-            {sizeField}
-          </details>
-        </>}
-        {steel === undefined ? null : <label className="pcad-field">
-          <span className="pcad-field__label">{t('assembly.steel.bend.enable')}</span>
-          <input type="checkbox" checked={bendEnabled} title={t('assembly.steel.bend.enableGuide')}
-            onChange={(event) => { setBendEnabled(event.currentTarget.checked); setBendPlacementError(false); }} />
-        </label>}
-        {steel === undefined ? null : <label className="pcad-field">
-          <span className="pcad-field__label">{t('assembly.steel.editable.enable')}</span>
-          <input type="checkbox" checked={editable} title={t('assembly.steel.editable.enableGuide')}
-            onChange={(event) => { setEditable(event.currentTarget.checked); setEditableMessage(null); }} />
-        </label>}
-        {bending ? <SteelBendFields sources={bendSources} result={bend}
-          onChange={(next) => { setBendSources(next); setBendPlacementError(false); }} /> : null}
-        {choice.requiresLength && !bending ? (
-          <label className={'pcad-field' + (error === 'invalidLength' ? ' pcad-field--error' : '')}>
-            <span className="pcad-field__label">{t('assembly.standardPart.length')}</span>
-            <input title={t('assembly.guide.standardLength')} className="pcad-field__input" value={lengthSource}
-              aria-invalid={error === 'invalidLength' ? true : undefined}
-              onChange={(event) => { setLengthSource(event.currentTarget.value); setError(null); }} />
-            <span className="pcad-field__unit">mm</span>
-          </label>
-        ) : null}
-      </div>
+      {renderStandardPartFields({
+        category, first, changeCategory, isSteel, steelMaterial, setSteelMaterial, activeShape, shapes, setSteelShape,
+        choices, choice, setChoiceKey, setError, dimensionSeries, setDimensionSeries, threadSeries, setThreadSeries,
+        dimensionGroups, dimensionGroup, sizeField, steel, bendEnabled, setBendEnabled, setBendPlacementError,
+        editable, setEditable, setEditableMessage, bending, bendSources, setBendSources, bend, lengthSource, setLengthSource, error,
+      })}
       <DimensionFigure part={standardFigurePart(category, choice, dimensionSeries, threadSeries)} />
       <StandardAccessoryFields choice={{ category, key: choice.key, lengthSource, dimensionSeries, threadSeries }} />
       {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">{t('assembly.steel.unspecifiedHint')}</p> : null}
       {steel === undefined ? null : steelChoiceNotes(steel)}
       {steel === undefined || bending || editing ? null : <FrameMemberTools member={{ kind: 'steel', choiceKey: choice.key }} />}
-      {!isSteel || assembly === null ? null : (
-        <details className="pcad-popover__hint" open={stockOpen}
-          onToggle={(event) => { setStockOpen(event.currentTarget.open); }}>
-          <summary>{t('assembly.steel.stockList')}</summary>
-          {stock === null ? null : <>
-          <p>{t('assembly.steel.stockScope')}</p>
-          {stock.issues.length === 0 ? null : <p role="status">{t('assembly.steel.stockPartial')}</p>}
-          {stock.rows.length === 0 ? <p>{t('assembly.steel.stockEmpty')}</p> : (
-            <div className="pcad-bom__scroll"><table className="pcad-bom__table">
-              <thead><tr>
-                <th scope="col">{t('assembly.steel.material')}</th>
-                <th scope="col">{t('assembly.standardPart.size')}</th>
-                <th scope="col">{t('assembly.steel.stockLength')} (mm)</th>
-                <th scope="col">{t('assembly.steel.finishedLength')} (mm)</th>
-                <th scope="col">{t('assembly.steel.quantity')}</th>
-                <th scope="col">{t('assembly.steel.totalLength')} (mm)</th>
-                <th scope="col">{t('assembly.steel.csv.catalogRevision')}</th>
-                <th scope="col">{t('assembly.steel.csv.generatorRevision')}</th>
-              </tr></thead>
-              <tbody>{stock.rows.map((row) => <tr key={row.key}>
-                <td>{row.product.materialGrade}</td><td>{row.product.size + catalogMiterNote(row)}</td>
-                <td>{row.lengthMm}</td><td>{row.finishedLengthMm ?? t('assembly.steel.finishedUnknown')}</td><td>{row.quantity}</td><td>{row.totalLengthMm}</td>
-                <td>{row.catalogRevision}</td><td>{row.generatorRevision}</td>
-              </tr>)}</tbody>
-              <tfoot><tr>
-                <th scope="row" colSpan={4}>{t('assembly.steel.stockTotal')}</th>
-                <td>{stock.totalQuantity}</td><td colSpan={3}>{stock.totalLengthMm}</td>
-              </tr></tfoot>
-            </table></div>
-          )}
-          {stock.issues.length === 0 ? null : <ul>
-            {stock.issues.map((issue, index) => <li key={index}>
-              {issue.occurrenceNames.join(' › ')}: {steelStockIssueText(issue)}
-            </li>)}
-          </ul>}
-          {stock.rows.length === 0 ? null : <StockCuttingFields rows={steelStockCuttingRows(stock.rows)} />}
-          <button type="button" className="pcad-button" disabled={csvBusy}
-            title={t('assembly.steel.csv.exportGuide')} onClick={() => {
-              if (assembly !== null) void exportSteelStockCsv({ pending: pendingCsv, assembly, library,
-                busy: setCsvBusy, error: setCsvError, status: setCsvStatus });
-            }}>{t('assembly.steel.csv.export')}</button>
-          {csvBusy ? <p role="status">{t('assembly.steel.csv.busy')}
-            <button type="button" className="pcad-button" title={t('assembly.steel.csv.cancelGuide')}
-              onClick={() => pendingCsv.current?.abort()}>{t('assembly.steel.csv.cancel')}</button>
-          </p> : null}
-          {csvError === '' ? null : <p role="alert">{csvError}</p>}
-          {csvStatus === '' ? null : <p role="status">{csvStatus}</p>}
-          </>}
-        </details>
-      )}
+      {renderSteelStockList(isSteel && assembly !== null, stock, stockOpen, setStockOpen, {
+        csvBusy, csvError, csvStatus,
+        exportCsv: () => {
+          if (assembly !== null) void exportSteelStockCsv({ pending: pendingCsv, assembly, library,
+            busy: setCsvBusy, error: setCsvError, status: setCsvStatus });
+        },
+        cancelCsv: () => { pendingCsv.current?.abort(); },
+      })}
       {choice.verified ? null : <p className="pcad-popover__hint" role="status">
         {t('assembly.standardPart.unverified').replace('{reason}', choice.note)}</p>}
       {error === null ? null : (

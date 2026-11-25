@@ -1,3 +1,5 @@
+import { ARCHIVE_READ_CHUNK_BYTES, readArchiveRange, type ArchiveReadSource } from './archiveReadSource.js';
+
 /** 展開せずZIPの領域・宣言値・対応関係を検査する。
  * PKWARE APPNOTE 6.3.10 §4.3/4.5.3:
  * https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT */
@@ -7,11 +9,16 @@ export class ZipDirectoryError extends Error {
   }
 }
 
-export interface ZipEntryRegion {
+export interface ZipEntryLocation {
   readonly name: string;
   readonly method: 0 | 8;
   readonly crc32: number;
   readonly expandedSize: number;
+  readonly dataOffset: number;
+  readonly compressedSize: number;
+}
+
+export interface ZipEntryRegion extends Omit<ZipEntryLocation, 'dataOffset' | 'compressedSize'> {
   readonly compressed: Uint8Array;
 }
 
@@ -19,9 +26,7 @@ class ZipBytes {
   readonly view: DataView;
   constructor(readonly bytes: Uint8Array) { this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
   range(offset: number, length: number, limit = this.bytes.length): void {
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset > limit - length) {
-      throw new ZipDirectoryError('invalidZip');
-    }
+    requireRange(offset, length, limit);
   }
   u16(offset: number): number { this.range(offset, 2); return this.view.getUint16(offset, true); }
   u32(offset: number): number { this.range(offset, 4); return this.view.getUint32(offset, true); }
@@ -33,8 +38,19 @@ class ZipBytes {
   sub(offset: number, length: number): Uint8Array { this.range(offset, length); return this.bytes.subarray(offset, offset + length); }
 }
 
+type ZipRead = Generator<readonly [offset: number, length: number], DirectoryLocation, Uint8Array>;
+
+function requireRange(offset: number, length: number, limit: number): void {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset > limit - length) {
+    throw new ZipDirectoryError('invalidZip');
+  }
+}
+
 interface DirectoryLocation { readonly start: number; readonly size: number; readonly count: number }
-function directoryLocation(reader: ZipBytes): DirectoryLocation {
+function* directoryLocation(length: number): ZipRead {
+  if (length < 22) throw new ZipDirectoryError('invalidZip');
+  const tailOffset = Math.max(0, length - (65535 + 22 + 20));
+  const reader = new ZipBytes(yield [tailOffset, length - tailOffset]);
   const bytes = reader.bytes;
   let end = bytes.length - 22;
   const first = Math.max(0, end - 65535);
@@ -44,23 +60,25 @@ function directoryLocation(reader: ZipBytes): DirectoryLocation {
   if (end < first || reader.u16(end + 4) !== 0 || reader.u16(end + 6) !== 0) throw new ZipDirectoryError('invalidZip');
   let count = reader.u16(end + 10), size = reader.u32(end + 12), start = reader.u32(end + 16);
   if (reader.u16(end + 8) !== count) throw new ZipDirectoryError('invalidZip');
-  let directoryEnd = end;
+  let directoryEnd = tailOffset + end;
   const hasLocator = end >= 20 && reader.u32(end - 20) === 0x07064b50;
   if (hasLocator) {
     const locator = end - 20, zip64 = reader.u64(locator + 8);
     if (reader.u32(locator + 4) !== 0 || reader.u32(locator + 16) !== 1) throw new ZipDirectoryError('invalidZip');
-    reader.range(zip64, 56, locator);
-    const recordSize = reader.u64(zip64 + 4);
-    if (reader.u32(zip64) !== 0x06064b50 || recordSize < 44 || zip64 + 12 + recordSize !== locator
-      || reader.u32(zip64 + 16) !== 0 || reader.u32(zip64 + 20) !== 0) throw new ZipDirectoryError('invalidZip');
-    const count64 = reader.u64(zip64 + 32), size64 = reader.u64(zip64 + 40), start64 = reader.u64(zip64 + 48);
-    if (reader.u64(zip64 + 24) !== count64 || (count !== 65535 && count !== count64)
+    const locatorOffset = tailOffset + locator;
+    requireRange(zip64, 56, locatorOffset);
+    const wide = new ZipBytes(yield [zip64, 56]);
+    const recordSize = wide.u64(4);
+    if (wide.u32(0) !== 0x06064b50 || recordSize < 44 || recordSize !== locatorOffset - zip64 - 12
+      || wide.u32(16) !== 0 || wide.u32(20) !== 0) throw new ZipDirectoryError('invalidZip');
+    const count64 = wide.u64(32), size64 = wide.u64(40), start64 = wide.u64(48);
+    if (wide.u64(24) !== count64 || (count !== 65535 && count !== count64)
       || (size !== 0xffffffff && size !== size64) || (start !== 0xffffffff && start !== start64)) throw new ZipDirectoryError('invalidZip');
     count = count64; size = size64; start = start64; directoryEnd = zip64;
   } else if (count === 65535 || size === 0xffffffff || start === 0xffffffff) {
     throw new ZipDirectoryError('invalidZip');
   }
-  reader.range(start, size, directoryEnd);
+  requireRange(start, size, directoryEnd);
   if (start + size !== directoryEnd) throw new ZipDirectoryError('invalidZip');
   return { start, size, count };
 }
@@ -132,50 +150,87 @@ function descriptorEnd(reader: ZipBytes, start: number, limit: number, crc: numb
   throw new ZipDirectoryError('invalidZip');
 }
 
-interface ParsedEntry { readonly entry: ZipEntryRegion; readonly localStart: number; readonly localEnd: number; readonly next: number }
-function parseEntry(reader: ZipBytes, cursor: number, centralEnd: number, dataEnd: number): ParsedEntry {
-  reader.range(cursor, 46, centralEnd);
-  if (reader.u32(cursor) !== 0x02014b50) throw new ZipDirectoryError('invalidZip');
-  const flags = reader.u16(cursor + 8), method = reader.u16(cursor + 10), crc = reader.u32(cursor + 16);
-  // 圧縮オプション、descriptor、UTF-8だけを許容。暗号化/特殊ヘッダは対応しない。
-  if ((flags & ~0x080e) !== 0 || (method !== 0 && method !== 8)) throw new ZipDirectoryError('invalidZip');
-  const nameLength = reader.u16(cursor + 28), extraLength = reader.u16(cursor + 30), commentLength = reader.u16(cursor + 32);
-  const next = cursor + 46 + nameLength + extraLength + commentLength;
-  reader.range(cursor, next - cursor, centralEnd);
-  const rawName = reader.sub(cursor + 46, nameLength), name = entryName(rawName, (flags & 0x0800) !== 0);
-  const sizes = resolveSizes(reader, zip64Extra(reader, cursor + 46 + nameLength, extraLength),
-    reader.u32(cursor + 24), reader.u32(cursor + 20), reader.u32(cursor + 42), reader.u16(cursor + 34));
-  if (sizes.disk !== 0) throw new ZipDirectoryError('invalidZip', name);
-  const local = sizes.local; reader.range(local, 30, dataEnd);
-  if (reader.u32(local) !== 0x04034b50 || reader.u16(local + 6) !== flags || reader.u16(local + 8) !== method
-    || reader.u16(local + 26) !== nameLength) throw new ZipDirectoryError('invalidZip', name);
-  const localExtraLength = reader.u16(local + 28), data = local + 30 + nameLength + localExtraLength;
-  reader.range(local, data - local, dataEnd);
-  if (!rawName.every((value, index) => value === reader.bytes[local + 30 + index])) throw new ZipDirectoryError('invalidZip', name);
-  const localSizes = resolveSizes(reader, zip64Extra(reader, local + 30 + nameLength, localExtraLength), reader.u32(local + 22), reader.u32(local + 18), 0, 0);
-  const streaming = (flags & 8) !== 0;
-  if ((reader.u32(local + 14) !== crc && !(streaming && reader.u32(local + 14) === 0))
-    || (localSizes.expanded !== sizes.expanded && !(streaming && localSizes.expanded === 0))
-    || (localSizes.compressed !== sizes.compressed && !(streaming && localSizes.compressed === 0))) throw new ZipDirectoryError('invalidZip', name);
-  reader.range(data, sizes.compressed, dataEnd);
-  const localEnd = streaming ? descriptorEnd(reader, data + sizes.compressed, dataEnd, crc, { ...sizes, zip64: sizes.zip64 || localSizes.zip64 })
-    : data + sizes.compressed;
-  return { entry: { name, method, crc32: crc, expandedSize: sizes.expanded, compressed: reader.sub(data, sizes.compressed) }, localStart: local, localEnd, next };
+interface CentralEntry {
+  readonly name: string;
+  readonly rawName: Uint8Array;
+  readonly method: 0 | 8;
+  readonly crc: number;
+  readonly flags: number;
+  readonly sizes: Sizes;
+  readonly next: number;
 }
 
-export function zipDirectory(bytes: Uint8Array, maximumEntries: number): readonly ZipEntryRegion[] {
+function* centralEntry(cursor: number, centralEnd: number):
+  Generator<readonly [number, number], CentralEntry, Uint8Array> {
+  requireRange(cursor, 46, centralEnd);
+  const reader = new ZipBytes(yield [cursor, 46]);
+  if (reader.u32(0) !== 0x02014b50) throw new ZipDirectoryError('invalidZip');
+  const flags = reader.u16(8), method = reader.u16(10), crc = reader.u32(16);
+  // 圧縮オプション、descriptor、UTF-8だけを許容。
+  if ((flags & ~0x080e) !== 0 || (method !== 0 && method !== 8)) throw new ZipDirectoryError('invalidZip');
+  const nameLength = reader.u16(28), extraLength = reader.u16(30);
+  const next = cursor + 46 + nameLength + extraLength + reader.u16(32);
+  requireRange(cursor, next - cursor, centralEnd);
+  if (nameLength === 0) throw new ZipDirectoryError('invalidName', '');
+  const fields = new ZipBytes(yield [cursor + 46, nameLength + extraLength]);
+  const rawName = fields.sub(0, nameLength), name = entryName(rawName, (flags & 0x0800) !== 0);
+  const sizes = resolveSizes(fields, zip64Extra(fields, nameLength, extraLength),
+    reader.u32(24), reader.u32(20), reader.u32(42), reader.u16(34));
+  if (sizes.disk !== 0) throw new ZipDirectoryError('invalidZip', name);
+  return { name, rawName, method, crc, flags, sizes, next };
+}
+
+interface ParsedEntry {
+  readonly entry: ZipEntryLocation;
+  readonly localStart: number;
+  readonly localEnd: number;
+}
+
+function* localEntry(central: CentralEntry, dataEnd: number):
+  Generator<readonly [number, number], ParsedEntry, Uint8Array> {
+  const { name, rawName, method, crc, flags, sizes } = central;
+  const local = sizes.local, nameLength = rawName.length;
+  requireRange(local, 30, dataEnd);
+  const reader = new ZipBytes(yield [local, 30]);
+  if (reader.u32(0) !== 0x04034b50 || reader.u16(6) !== flags || reader.u16(8) !== method
+    || reader.u16(26) !== nameLength) throw new ZipDirectoryError('invalidZip', name);
+  const extraLength = reader.u16(28), data = local + 30 + nameLength + extraLength;
+  requireRange(local, data - local, dataEnd);
+  const fields = new ZipBytes(yield [local + 30, nameLength + extraLength]);
+  if (!rawName.every((value, index) => value === fields.bytes[index])) throw new ZipDirectoryError('invalidZip', name);
+  const localSizes = resolveSizes(fields, zip64Extra(fields, nameLength, extraLength), reader.u32(22), reader.u32(18), 0, 0);
+  const streaming = (flags & 8) !== 0;
+  if ((reader.u32(14) !== crc && !(streaming && reader.u32(14) === 0))
+    || (localSizes.expanded !== sizes.expanded && !(streaming && localSizes.expanded === 0))
+    || (localSizes.compressed !== sizes.compressed && !(streaming && localSizes.compressed === 0))) throw new ZipDirectoryError('invalidZip', name);
+  requireRange(data, sizes.compressed, dataEnd);
+  const dataLimit = data + sizes.compressed;
+  let localEnd = dataLimit;
+  if (streaming) {
+    const length = Math.min(24, dataEnd - dataLimit);
+    if (length < 12) throw new ZipDirectoryError('invalidZip', name);
+    const descriptor = new ZipBytes(yield [dataLimit, length]);
+    localEnd += descriptorEnd(descriptor, 0, length, crc, { ...sizes, zip64: sizes.zip64 || localSizes.zip64 });
+  }
+  return { entry: { name, method, crc32: crc, expandedSize: sizes.expanded, dataOffset: data, compressedSize: sizes.compressed },
+    localStart: local, localEnd };
+}
+
+function* directoryEntries(size: number, maximumEntries: number):
+  Generator<readonly [number, number], readonly ZipEntryLocation[], Uint8Array> {
   if (!Number.isSafeInteger(maximumEntries) || maximumEntries < 0) throw new ZipDirectoryError('entryCount');
-  const reader = new ZipBytes(bytes), directory = directoryLocation(reader);
+  if (!Number.isSafeInteger(size) || size < 22) throw new ZipDirectoryError('invalidZip');
+  const directory = yield* directoryLocation(size);
   if (directory.count > maximumEntries) throw new ZipDirectoryError('entryCount');
   const entries: ParsedEntry[] = [], names = new Set<string>();
   let cursor = directory.start;
   for (let index = 0; index < directory.count; index++) {
-    const parsed = parseEntry(reader, cursor, directory.start + directory.size, directory.start);
+    const central = yield* centralEntry(cursor, directory.start + directory.size);
+    const parsed = yield* localEntry(central, directory.start);
     if (names.has(parsed.entry.name)) throw new ZipDirectoryError('duplicateName', parsed.entry.name);
-    names.add(parsed.entry.name); entries.push(parsed); cursor = parsed.next;
+    names.add(parsed.entry.name); entries.push(parsed); cursor = central.next;
   }
   if (cursor !== directory.start + directory.size) throw new ZipDirectoryError('invalidZip');
-  // 同じデータを別entryと偽る重複・内包・隠されたlocal headerを受理しない。
   let end = 0;
   for (const entry of [...entries].sort((left, right) => left.localStart - right.localStart)) {
     if (entry.localStart !== end) throw new ZipDirectoryError('invalidZip', entry.entry.name);
@@ -183,4 +238,38 @@ export function zipDirectory(bytes: Uint8Array, maximumEntries: number): readonl
   }
   if (end !== directory.start) throw new ZipDirectoryError('invalidZip');
   return entries.map((entry) => entry.entry);
+}
+
+export function zipDirectory(bytes: Uint8Array, maximumEntries: number): readonly ZipEntryRegion[] {
+  const reader = new ZipBytes(bytes), scan = directoryEntries(bytes.length, maximumEntries);
+  let step = scan.next();
+  while (!step.done) step = scan.next(reader.sub(...step.value));
+  return step.value.map(({ dataOffset, compressedSize, ...entry }) => ({
+    ...entry, compressed: reader.sub(dataOffset, compressedSize),
+  }));
+}
+
+interface ZipReadWindow {
+  readonly offset: number;
+  readonly bytes: Uint8Array;
+}
+
+/** Keep a bounded lookup window for each of the central and local metadata streams. */
+export async function zipDirectoryFromSource(source: ArchiveReadSource, maximumEntries: number): Promise<readonly ZipEntryLocation[]> {
+  const scan = directoryEntries(source.size, maximumEntries);
+  let first: ZipReadWindow | undefined;
+  let second: ZipReadWindow | undefined;
+  let step = scan.next();
+  while (!step.done) {
+    const [offset, length] = step.value;
+    const covers = (window: ZipReadWindow | undefined) => window !== undefined
+      && offset >= window.offset && offset - window.offset <= window.bytes.length - length;
+    const hit = [first, second].find(covers);
+    const window = hit ?? { offset, bytes: await readArchiveRange(source, offset,
+      Math.min(Math.max(length, 65536), ARCHIVE_READ_CHUNK_BYTES, source.size - offset)) };
+    if (window !== first) { second = first; first = window; }
+    const start = offset - window.offset;
+    step = scan.next(window.bytes.subarray(start, start + length));
+  }
+  return step.value;
 }

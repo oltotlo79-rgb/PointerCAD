@@ -104,8 +104,11 @@ async function capturePcadSavePoint(bytes: Uint8Array, kind: SavePointKind, sign
     blobs.set(hash, payload);
     items.push({ name, sha256: hash, byteLength: payload.byteLength, level: levelOf(kind, name) });
   }
-  const rebuilt = archiveOf(items, blobs);
-  if (!await sameBytes(owned, rebuilt, signal)) refuse('invalid', '通常保存のcanonical ZIPと一致しません。');
+  const rebuilt = archiveOf(items, blobs, kind === 'assembly');
+  if (!await sameBytes(owned, rebuilt, signal)) {
+    if (kind !== 'assembly' || !await sameBytes(owned, archiveOf(items, blobs), signal))
+      refuse('invalid', '通常保存のcanonical ZIPと一致しません。');
+  }
   return { kind, sourceSha256: await sha256(owned), sourceByteLength: owned.byteLength, entries: items, blobs };
 }
 

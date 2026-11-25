@@ -3,10 +3,12 @@ import { drawingSourceInputHash, drawingSourceInputOf } from '@pointercad/model'
 import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
-  readCheckpointAfterRead, readForOpen } from './documentOpenGuard.js';
+  readPickedCheckpoint, readPickedForOpen } from './documentOpenGuard.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { concatZipParts } from '@pointercad/io';
+import { encodeSaveParts } from './pcadSaveWorker.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
-import { withPcaddExtension, type PickedFile } from './fileGateway.js';
+import { savePcadThrough, withPcaddExtension, type PickedNativeFile } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
 import { openErrorMessage } from './documentReadError.js';
 import { recordRecentFile } from './recentFiles.js';
@@ -21,16 +23,17 @@ import { continuingParameterSession, parameterCheckpointIdentity, parameterCheck
  * 増えないため)。扱いは `mayOpenAfterRead`。
  */
 export async function applyPickedDrawing(
-  picked: PickedFile,
+  picked: PickedNativeFile,
   deps: PartFileDeps,
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
   try {
   // 学習の控えの鍵が無ければ、読込の後に picked.bytes を読む所は無い(学習の控えは鍵がある時だけ保存バイトを読む。
   // 移すと決めた後に鍵が現れた時は readCheckpointAfterRead が読み直す)。
-  const transferred = mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
-  const result = await readForOpen(request, 'drawing', picked.bytes, transferred);
-  if (result === null) return;
+  const transferred = 'bytes' in picked && mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
+  const read = await readPickedForOpen(request, 'drawing', picked, transferred);
+  if (read === null) return;
+  const { result, saveTargetToken } = read;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
       useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
@@ -39,7 +42,7 @@ export async function applyPickedDrawing(
   }
   const source = result.source;
   const checkpoint = source.sourceKind === 'part'
-    ? await readCheckpointAfterRead(picked, transferred, useAppStore.getState().tutorialCheckpointStorage,
+    ? await readPickedCheckpoint(picked, transferred, read.savedSha256, useAppStore.getState().tutorialCheckpointStorage,
       savedBytes => ({ part: { document: source.document }, drawing: { document: result.document, source, savedBytes } }))
     : null;
   if (!(await mayOpenAfterRead(request, deps))) return;
@@ -63,8 +66,8 @@ export async function applyPickedDrawing(
   }
   const openedId = useAppStore.getState().activeDocumentId;
   try {
-    if (picked.saveTargetToken === null) before.fileGateway.clearSaveTarget?.();
-    else await before.fileGateway.confirmSaveTarget?.(picked.saveTargetToken);
+    if (saveTargetToken === null) before.fileGateway.clearSaveTarget?.();
+    else await before.fileGateway.confirmSaveTarget?.(saveTargetToken);
   } catch {
     if (useAppStore.getState().activeDocumentId === openedId) before.fileGateway.clearSaveTarget?.();
   }
@@ -94,10 +97,10 @@ export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<
   const guideVersion = before.documentVersion;
   return queueDocumentSave(before, async (isCurrent, control) => {
     try {
-      const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(snapshot, control);
+      const parts = await encodeSaveParts(deps.encodeSave ?? before.saveDocumentEncoder, snapshot, control);
       if (!control.beginWriting()) return;
-      const saved = await before.fileGateway.savePcad(withPcaddExtension(before.drawingFileName ?? drawing.name),
-        bytes, saveAs || !before.fileGateway.hasSaveTarget(), 'drawing');
+      const saved = await savePcadThrough(before.fileGateway, withPcaddExtension(before.drawingFileName ?? drawing.name),
+        parts, saveAs || !before.fileGateway.hasSaveTarget(), 'drawing');
       if (saved === null || !isCurrent()) return;
       const name = withPcaddExtension(saved);
       before.setDrawingFileState(name, drawing, before.drawingSources);
@@ -114,7 +117,7 @@ export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<
             if (input !== null) {
               const guard = parameterCheckpointWriteGuard(activeGuide, before.tutorialCheckpointStorage, currentGuide);
               const checkpoint = guard.ok ? await saveTutorialCheckpoint(input, { part: { document: source.document },
-                drawing: { document: drawing, source, savedBytes: bytes } },
+                drawing: { document: drawing, source, savedBytes: concatZipParts(parts) } },
                 before.tutorialCheckpointStorage, guard.isCurrent) : guard;
               if (currentGuide()) useAppStore.getState().setTutorialCheckpointFailure(checkpoint.ok ? null : checkpoint.reason);
               let sourceValid = false;

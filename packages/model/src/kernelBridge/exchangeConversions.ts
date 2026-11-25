@@ -57,6 +57,8 @@ export function toShapeExportRequest(
   switch (options.format) {
     case 'step':
       return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors };
+    case 'iges':
+      return { format: 'iges', partId: options.partId, bodies: items, withColors: options.withColors, unit: options.igesUnit };
     case 'stl':
       return {
         format: 'stl',
@@ -93,10 +95,11 @@ export function toShapeExportOutcome(
 ): ShapeExportOutcome {
   switch (result.format) {
     case 'step':
+    case 'iges':
       return {
         kind: 'files',
         files: [
-          { fileName: `${options.baseName}${STEP_FILE_EXTENSION}`, bytes: result.bytes },
+          { fileName: `${options.baseName}${result.format === 'iges' ? '.iges' : STEP_FILE_EXTENSION}`, bytes: result.bytes },
         ],
         // STEP は三角形を通らないので、落とした三角形は 1 枚も無い。
         droppedTriangleCount: 0,
@@ -145,6 +148,8 @@ export function toShapeImportRequest(options: ShapeImportOptions): ShapeImportRe
         fileName: options.fileName,
         withColors: options.withColors,
       };
+    case 'iges':
+      return { format: 'iges', bytes: options.bytes, withColors: options.withColors };
     case 'stl':
       return { format: 'stl', bytes: options.bytes, fileName: options.fileName };
     case 'obj':

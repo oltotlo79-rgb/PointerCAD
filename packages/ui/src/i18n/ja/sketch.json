@@ -110,7 +110,6 @@
   "functionPlot.surfaceApply": "この曲面で確定",
   "functionPlot.emptySurface": "指定したXYZの範囲に曲面がありません。式と範囲を確認してください。",
   "functionPlot.missingSurface": "編集する関数曲面が見つかりません。",
-  "functionPlot.changedKind": "既存の関数の形は変更できません。新しい関数として作図してください。",
   "functionPlot.previewFailed": "形を表示できません。画面を開き直してから、もう一度「形を確認」を押してください。",
   "functionPlot.openSurface": "開いた曲面（体積を持ちません）",
   "functionPlot.closedSurface": "閉じたソリッド",

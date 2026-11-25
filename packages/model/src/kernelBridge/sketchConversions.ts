@@ -134,6 +134,7 @@ export function toProjectionItem(request: SketchProjectionRequestItem): SketchPr
     id: request.featureId,
     shapeKey: request.bodyKey,
     subShape: request.source === null ? null : toSubShapeQuery(request.source),
+    ...(request.faceBoundaries === true ? { faceBoundaries: true } : {}),
     plane: toPlaneFrame(request.plane),
   };
 }
@@ -177,6 +178,9 @@ export function toProjectionResult(
     }
     results.push({
       featureId: result.id,
+      ...(result.holes === undefined ? {} : {
+        holes: result.holes.map(loop => loop.map(curve => fromPlaneCurve(curve, plane, result.id))),
+      }),
       curves: result.curves.flatMap((curve) => {
         if (curve.kind !== 'polyline' || !preciseFeatures.has(result.id)) return [fromPlaneCurve(curve, plane, result.id)];
         // 精密出力の折線を補間スプラインへ読み替えない。受け取った弦をそのまま保持する。

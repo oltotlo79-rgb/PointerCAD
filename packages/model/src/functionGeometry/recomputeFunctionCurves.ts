@@ -18,6 +18,7 @@ import type { PartDocument } from '../part/types.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import type { FunctionKernelBridge } from './functionCurveGeometry.js';
 import { sampleFunctionCurveGeometry } from './sampleFunctionCurveGeometry.js';
+import { internalFunctionPlotFailure } from './functionPlotFailure.js';
 import { resolveFunctionInputs } from './resolveFunctionInputs.js';
 import type { FunctionSurfacePlanCache } from './functionSurfacePlanCache.js';
 
@@ -70,12 +71,12 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       const geometry = await bridge.functionSketchCurves(sampled);
       if (!current() || geometry.status === 'cancelled') return result(true);
       if (geometry.status === 'failed' && geometry.code === 'workerBroken') workerBrokenInputs.add(feature.id);
-      if (geometry.status === 'failed') throw new Error(geometry.message);
+      if (geometry.status === 'failed') throw new FailureTextError(plainText(geometry.message));
       curves.set(feature.id, geometry.curves);
     } catch (error) {
       if (!current()) return result(true);
       invalidInputs.set(feature.id, error instanceof FailureTextError ? error.text
-        : plainText(error instanceof Error ? error.message : '関数の再計算を完了できませんでした。'));
+        : internalFunctionPlotFailure('curve recompute', error));
     }
   }
   return result(false);

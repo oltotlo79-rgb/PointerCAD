@@ -1,4 +1,4 @@
-import { magnitudeAtLeast } from './tolerances.js';
+import { exceedsMagnitude, magnitudeAtLeast } from './tolerances.js';
 import { dotVec as dot3, crossVec as cross3 } from './sketchCorner.js';
 /**
  * 立体の面・辺を作図面へ投影する(FR-325)。
@@ -43,7 +43,9 @@ import type {
   BRepAdaptor_Curve,
   OpenCascadeInstance,
   TopoDS_Edge,
+  TopoDS_Face,
   TopoDS_Shape,
+  TopoDS_Wire,
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { TessellationOptions, Vec3Tuple } from '../types.js';
@@ -102,6 +104,10 @@ export type PlaneCurve = PlaneSegment | PlaneArc | PlanePolyline;
 /** 投影・交差の結果。曲線はつながる順に並ぶ(orderPlaneCurves)。 */
 export interface PlaneCurves {
   readonly curves: readonly PlaneCurve[];
+}
+
+export interface FaceBoundaryProjection extends PlaneCurves {
+  readonly holes: readonly (readonly PlaneCurve[])[];
 }
 
 /** 投影の依頼。 */
@@ -503,5 +509,88 @@ export function makeProjection(oc: OpenCascadeInstance, spec: ProjectionSpec): P
     return { curves: orderPlaneCurves(curves) };
   } finally {
     allocations.release();
+  }
+}
+
+// Bound native handles and the subsequent sketch loop comparisons for a single explicit pick.
+const MAX_CONTEXT_BOUNDARY_EDGES = 256;
+const UNSUPPORTED_CONTEXT_BOUNDARY = '閉じた直線・円弧として面の輪郭を投影できません。';
+
+function exactWireProjection(
+  oc: OpenCascadeInstance, wire: TopoDS_Wire, face: TopoDS_Face, basis: PlaneBasis,
+  allocation: Allocations, budget: { remaining: number; readonly circular: boolean },
+): readonly PlaneCurve[] {
+  const { keep } = allocation;
+  const members = keep(new oc.TopoDS_Iterator_2(wire, true, true));
+  let count = 0;
+  while (members.More()) {
+    if (++count > budget.remaining || keep(members.Value()).ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) {
+      throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    }
+    members.Next();
+  }
+  if (count === 0 || !oc.BRep_Tool.IsClosed_1(wire)) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+  budget.remaining -= count;
+  const curves: PlaneCurve[] = [];
+  const walk = keep(new oc.BRepTools_WireExplorer_3(wire, face));
+  const orientation = oc.TopAbs_Orientation;
+  while (walk.More()) {
+    if (curves.length >= count) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    const edge = keep(walk.Current()), sense = edge.Orientation_1();
+    const adaptor = keep(new oc.BRepAdaptor_Curve_2(edge));
+    const kind = adaptor.GetType(), kinds = oc.GeomAbs_CurveType;
+    if ((kind !== kinds.GeomAbs_Line && (kind !== kinds.GeomAbs_Circle || !budget.circular))
+      || (sense !== orientation.TopAbs_FORWARD && sense !== orientation.TopAbs_REVERSED)) {
+      throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    }
+    const curve = projectEdgeToPlane(oc, edge, basis, undefined, allocation, false, adaptor);
+    if (curve === null || curve.kind === 'polyline') throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    curves.push(sense === orientation.TopAbs_REVERSED ? reverseCurve(curve) : curve);
+    walk.Next();
+  }
+  const ends = curves.map(curveEnds);
+  if (curves.length !== count || ends.some((item, index) => (count > 1 && item.closed)
+    || !(distance2(item.end, ends[(index + 1) % count].start) <= JOIN_TOLERANCE_MM))) {
+    throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+  }
+  return curves;
+}
+
+/** Exact native wires for an assembly pick. A nondegenerate projection preserves disjoint planar loops. */
+export function makeExactFaceProjection(oc: OpenCascadeInstance, spec: ProjectionSpec): FaceBoundaryProjection {
+  if (spec.source.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+  const allocation = createAllocations(), { keep } = allocation;
+  try {
+    const basis = planeBasisOf(spec.plane);
+    const native = keep(oc.TopoDS.Face_1(spec.source)), orientation = oc.TopAbs_Orientation;
+    const sense = native.Orientation_1(), reversed = sense === orientation.TopAbs_REVERSED;
+    if (!reversed && sense !== orientation.TopAbs_FORWARD) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    const face = reversed ? keep(oc.TopoDS.Face_1(keep(native.Reversed()))) : native;
+    const surface = keep(new oc.BRepAdaptor_Surface_2(face, true));
+    if (surface.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_Plane) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    const plane = keep(surface.Plane()), axis = keep(plane.Axis()), direction = keep(axis.Direction());
+    const alignment = dot3([direction.X(), direction.Y(), direction.Z()], basis.normal);
+    if (!exceedsMagnitude(alignment, PARALLEL_EPSILON)) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    const outerWire = keep(oc.BRepTools.OuterWire(face));
+    const wires = keep(new oc.TopoDS_Iterator_2(face, true, true));
+    const budget = { remaining: MAX_CONTEXT_BOUNDARY_EDGES, circular: magnitudeAtLeast(alignment, 1 - PARALLEL_EPSILON) };
+    let outer: readonly PlaneCurve[] | undefined;
+    const holes: (readonly PlaneCurve[])[] = [];
+    while (wires.More()) {
+      const member = keep(wires.Value());
+      if (member.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_WIRE) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+      const wire = keep(oc.TopoDS.Wire_1(member));
+      const projected = exactWireProjection(oc, wire, face, basis, allocation, budget);
+      const loop = reversed ? [...projected].reverse().map(reverseCurve) : projected;
+      if (wire.IsSame(outerWire)) {
+        if (outer !== undefined) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+        outer = loop;
+      } else holes.push(loop);
+      wires.Next();
+    }
+    if (outer === undefined) throw new Error(UNSUPPORTED_CONTEXT_BOUNDARY);
+    return { curves: outer, holes };
+  } finally {
+    allocation.release();
   }
 }

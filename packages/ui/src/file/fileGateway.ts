@@ -31,7 +31,7 @@ import { isObject } from '../valueGuards.js';
  * 検査から偽の相手を渡せる(本物の `globalThis` に欄を差し込むと他の検査へ漏れる)。
  */
 
-import { concatZipParts } from '@pointercad/io';
+import { concatZipParts, IO_LIMITS, readArchiveRange, type ArchiveReadSource } from '@pointercad/io';
 import type { FileKind } from '@pointercad/model';
 import type { CamFormat, CamTool, ExportReceipt } from './openWith.js';
 import {
@@ -90,9 +90,23 @@ function mayContinueExport(control?: ExportSaveControl): boolean {
   return control === undefined || (!control.signal.aborted && control.isCurrent());
 }
 
+export type NativeOpenKind = 'part' | 'assembly' | 'drawing' | 'all';
+
+/** A selected native file whose compressed bytes stay with its provider. */
+export interface PickedNativeSource {
+  readonly name: string;
+  readonly source: ArchiveReadSource;
+  complete(): Promise<string | null>;
+  close(): Promise<void>;
+}
+
+export type PickedNativeFile = PickedFile | PickedNativeSource;
+
 export interface FileGateway {
+  /** The normal document Open command can also receive a bounded source for a large file. */
+  openPcadSource?(kind: NativeOpenKind, signal: AbortSignal): Promise<PickedNativeFile | null>;
   /** 開く。取り消されたら null。読めなかったときは例外を投げる。 */
-  openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<PickedFile | null>;
+  openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all', signal?: AbortSignal): Promise<PickedFile | null>;
   /**
    * 保存する。`saveAs` が false のときは、前に保存した先へ黙って上書きしてよい。
    * 保存できたらファイル名を返す。取り消されたら null。
@@ -197,20 +211,14 @@ function filePickerTypesFor(kinds: readonly FileKind[]): readonly FilePickerType
   return kinds.map(fileTypeOf);
 }
 
-/**
- * `<input type="file">` の `accept` に書く文字列(`.step,.stp,.stl` のような並び)。
- * 同じ拡張子を 2 度書かない(頼まれた種類が拡張子を分け合うことは今は無いが、増えても壊れない)。
- */
+/** 種類の指定順に、選択欄の表示と本文取得前の確認で使う拡張子を返す。 */
+function acceptedExtensionsFor(kinds: readonly FileKind[]): readonly string[] {
+  return [...new Set(kinds.flatMap(extensionsOf))];
+}
+
+/** `<input type="file">` の `accept` に渡す拡張子の並び。 */
 export function acceptAttributeFor(kinds: readonly FileKind[]): string {
-  const seen: string[] = [];
-  for (const kind of kinds) {
-    for (const extension of extensionsOf(kind)) {
-      if (!seen.includes(extension)) {
-        seen.push(extension);
-      }
-    }
-  }
-  return seen.join(',');
+  return acceptedExtensionsFor(kinds).join(',');
 }
 
 /**
@@ -558,9 +566,10 @@ function downloadBytes(scope: object, name: string, mimeType: string, parts: rea
  * ファイル選択の窓で開く。取り消しは `cancel` の知らせで拾う。
  * 拾えない古いブラウザでは、選ぶまで待ち続ける(その間も画面の操作は止まらない)。
  */
-function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
-  expectedExtension?: string): Promise<PickedFile | null> {
-  return new Promise<PickedFile | null>((resolve, reject) => {
+function pickInput<T>(accept: string, scope: object, select: (file: NamedReadableFile) => Promise<T>,
+  expectedExtensions?: readonly string[], signal?: AbortSignal): Promise<T | null> {
+  return new Promise<T | null>((resolve, reject) => {
+    if (signal?.aborted) { resolve(null); return; }
     if (!hasDocument(scope)) {
       reject(new Error(t('file.openFailed')));
       return;
@@ -575,53 +584,88 @@ function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
     input.accept = accept;
     input.hidden = true;
 
-    const finish = (picked: PickedFile | null): void => {
+    let finished = false;
+    let reading = false;
+    const cleanup = (): boolean => {
+      if (finished) return false;
+      finished = true;
+      signal?.removeEventListener('abort', cancel);
       input.remove();
-      resolve(picked);
+      return true;
     };
-
-    input.addEventListener('cancel', () => {
-      finish(null);
-    });
+    const finish = (picked: T | null): void => { if (cleanup()) resolve(picked); };
+    const fail = (error: unknown): void => {
+      if (cleanup()) reject(error instanceof Error ? error : new Error(t('file.openFailed')));
+    };
+    const cancel = (): void => { finish(null); };
+    signal?.addEventListener('abort', cancel, { once: true });
+    input.addEventListener('cancel', cancel);
     input.addEventListener('change', () => {
+      if (finished || reading) return;
+      reading = true;
       const file: unknown = input.files?.[0];
       if (file === undefined || file === null) {
         finish(null);
         return;
       }
-      if (!isNamedReadableFile(file)) {
-        input.remove();
-        reject(new Error(t('file.openFailed')));
-        return;
-      }
-      if (file.name.toLowerCase().endsWith('.dwg')) {
-        input.remove(); reject(new Error(t('exchange.dwgGuide'))); return;
-      }
-      if (expectedExtension !== undefined && !file.name.toLowerCase().endsWith(expectedExtension)) {
-        input.remove(); reject(new Error(t('file.openFailed'))); return;
-      }
-      const limit = byteLimit ?? typedReadLimitOf(file.name);
-      readBrowserFile(file, limit).then(
-        (bytes) => {
-          // readBrowserFile は File の本文の新しい全域の並びを返すので、自分だけの並びとして渡す。読み直しは同じ File から
-          // (File は選んだ時の写しで、ファイルが変わっていれば読み取りは失敗する)。
-          finish({ name: file.name, bytes, saveTargetToken: null, owned: true, reread: () => readBrowserFile(file, limit) });
-        },
-        (error: unknown) => {
-          input.remove();
-          reject(error instanceof Error ? error : new Error(t('file.openFailed')));
-        },
-      );
+      if (!isNamedReadableFile(file)) { fail(new Error(t('file.openFailed'))); return; }
+      try { assertPickedExtension(file.name, expectedExtensions); }
+      catch (error) { fail(error); return; }
+      void select(file).then(finish, fail);
     });
 
-    scope.document.body.append(input);
-    input.click();
+    if (signal?.aborted) { cancel(); return; }
+    try {
+      scope.document.body.append(input);
+      input.click();
+    } catch (error) { fail(error); }
   });
+}
+
+async function selectedBytes(name: string, file: ReadableFile, limit: number,
+  signal?: AbortSignal): Promise<PickedFile> {
+  const bytes = await readBrowserFile(file, limit, signal);
+  return { name, bytes, saveTargetToken: null, owned: true, reread: () => readBrowserFile(file, limit, signal) };
+}
+
+function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
+  expectedExtensions?: readonly string[]): Promise<PickedFile | null> {
+  return pickInput(accept, scope, file => selectedBytes(file.name, file, byteLimit ?? typedReadLimitOf(file.name)),
+    expectedExtensions);
+}
+
+function browserNativeSource(file: ReadableFile, signal: AbortSignal): ArchiveReadSource {
+  if (!Number.isSafeInteger(file.size) || typeof file.slice !== 'function') {
+    throw new Error(t('file.error.invalidSize'));
+  }
+  const slice = file.slice.bind(file);
+  // Capture the selected File. Each slice's body is at most the requested range.
+  const source: ArchiveReadSource = {
+    size: file.size,
+    async read(offset, length) {
+      signal.throwIfAborted();
+      const piece = slice(offset, offset + length);
+      if (!isReadableFile(piece) || piece.size !== length) throw new Error(t('file.error.corrupted'));
+      const bytes = await readBrowserFile(piece, length, signal);
+      signal.throwIfAborted();
+      return bytes;
+    },
+  };
+  // Validate at the provider boundary too, before calling File.slice.
+  return { size: source.size, read: (offset, length) => readArchiveRange(source, offset, length) };
+}
+
+function assertPickedExtension(name: string, expected?: readonly string[]): void {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.dwg')) throw new Error(t('exchange.dwgGuide'));
+  if (expected !== undefined && !expected.some(extension => lower.endsWith(extension))) {
+    throw new Error(t('file.openFailed'));
+  }
 }
 
 export async function openParameterCsvInBrowser(scope: object = globalThis): Promise<PickedParameterCsvFile | null> {
   if (!hasOpenPicker(scope)) {
-    const picked = await pickFileWithInput('.csv', scope, PARAMETER_CSV_BYTE_LIMIT, '.csv');
+    const picked = await pickFileWithInput('.csv', scope, PARAMETER_CSV_BYTE_LIMIT, ['.csv']);
     if (picked === null) return null;
     if (!picked.name.toLowerCase().endsWith('.csv')) throw new Error(t('file.openFailed'));
     return { fileName: picked.name, bytes: picked.bytes };
@@ -662,7 +706,8 @@ export async function openFileInBrowser(
 ): Promise<PickedTypedFile | null> {
   if (kinds.length === 1 && kinds[0] === 'dwg') throw new Error(t('exchange.dwgGuide'));
   if (!hasOpenPicker(scope)) {
-    const picked = await pickFileWithInput(acceptAttributeFor(kinds), scope);
+    const extensions = acceptedExtensionsFor(kinds);
+    const picked = await pickFileWithInput(extensions.join(','), scope, undefined, extensions);
     if (picked === null) {
       return null;
     }
@@ -820,6 +865,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     null;
   let nextSaveTargetToken = 1;
   let targetRevision = 0;
+  let openRevision = 0;
 
   /** `savePcad` と `savePcadParts` の共通の保存。中身は順につなぐとファイルの全体になる部分の並び。 */
   async function saveContent(suggestedName: string, parts: readonly Uint8Array[], saveAs: boolean,
@@ -858,44 +904,62 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     return target.name;
   }
 
-  return {
-    async openPcad(kind = 'part'): Promise<PickedFile | null> {
-      // 前回の未確定候補は使えない。確定済みの保存先は、今回が失敗・取消なら保つ。
-      pendingSaveTarget = null;
-      if (!hasOpenPicker(scope)) {
-        return pickFileWithInput(kind === 'all' ? '.pcad,.pcada,.pcadd' : kind === 'drawing' ? PCADD_EXTENSION
-          : kind === 'assembly' ? PCADA_EXTENSION : PCAD_EXTENSION, scope);
-      }
-      let picked: unknown;
-      try {
-        picked = await scope.showOpenFilePicker({ multiple: false, types: documentFileTypes(kind) });
-      } catch (error) {
-        if (isAbortError(error)) {
-          return null;
-        }
-        throw error;
-      }
-      if (!isUnknownArray(picked) || picked.length === 0) {
-        // 何も選ばれなかった。取り消しと同じ扱いにする。
-        return null;
-      }
+  async function pickNative<T>(kind: NativeOpenKind, signal: AbortSignal,
+    select: (file: ReadableFile, name: string, remember: () => string | null) => Promise<T>): Promise<T | null> {
+    if (signal.aborted) return null;
+    const revision = ++openRevision;
+    pendingSaveTarget = null;
+    const types = documentFileTypes(kind);
+    const extensions = types.flatMap(type => Object.values(type.accept).flat());
+    if (!hasOpenPicker(scope)) {
+      return pickInput(extensions.join(','), scope, file => select(file, file.name, () => null), extensions, signal);
+    }
+    try {
+      const picked: unknown = await scope.showOpenFilePicker({ multiple: false, types });
+      if (signal.aborted || !isUnknownArray(picked) || picked.length === 0) return null;
       const handle = picked[0];
-      if (!isReadableFileHandle(handle)) {
-        throw new Error(t('file.openFailed'));
-      }
-      if (handle.name.toLowerCase().endsWith('.dwg')) throw new Error(t('exchange.dwgGuide'));
+      if (!isReadableFileHandle(handle)) throw new Error(t('file.openFailed'));
+      assertPickedExtension(handle.name, extensions);
       const file = await handle.getFile();
-      if (!isReadableFile(file)) {
-        throw new Error(t('file.openFailed'));
-      }
-      const bytes = await readBrowserFile(file);
-      let saveTargetToken: string | null = null;
-      if (isWritableFileHandle(handle)) {
-        saveTargetToken = `save-target-${String(nextSaveTargetToken)}`;
-        nextSaveTargetToken += 1;
-        pendingSaveTarget = { token: saveTargetToken, handle };
-      }
-      return { name: handle.name, bytes, saveTargetToken, owned: true, reread: () => readBrowserFile(file) };
+      if (signal.aborted) return null;
+      if (!isReadableFile(file)) throw new Error(t('file.openFailed'));
+      const remember = (): string | null => {
+        signal.throwIfAborted();
+        if (revision !== openRevision) throw new DOMException('Open was superseded', 'AbortError');
+        if (!isWritableFileHandle(handle)) return null;
+        const token = `save-target-${String(nextSaveTargetToken++)}`;
+        pendingSaveTarget = { token, handle };
+        return token;
+      };
+      return await select(file, handle.name, remember);
+    } catch (error) {
+      if (signal.aborted || isAbortError(error)) return null;
+      throw error;
+    }
+  }
+
+  async function pickNativeBytes(file: ReadableFile, name: string, remember: () => string | null,
+    signal: AbortSignal): Promise<PickedFile> {
+    const picked = await selectedBytes(name, file, IO_LIMITS.archiveCompressedBytes, signal);
+    return { ...picked, saveTargetToken: remember() };
+  }
+
+  return {
+    openPcad(kind = 'part', signal = new AbortController().signal): Promise<PickedFile | null> {
+      return pickNative(kind, signal, (file, name, remember) => pickNativeBytes(file, name, remember, signal));
+    },
+
+    openPcadSource(kind, signal): Promise<PickedNativeFile | null> {
+      return pickNative<PickedNativeFile>(kind, signal, async (file, name, remember) => {
+        if (file.size <= IO_LIMITS.archiveCompressedBytes) return pickNativeBytes(file, name, remember, signal);
+        return {
+          name,
+          source: browserNativeSource(file, signal),
+          // Remember the target immediately and surface failures through the returned promise.
+          complete: () => new Promise<string | null>((resolve) => { resolve(remember()); }),
+          close: () => Promise.resolve(),
+        };
+      });
     },
 
     savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {

@@ -1,0 +1,17 @@
+
+EMSCRIPTEN_BINDINGS(IGESCAFControl_Writer) {
+  class_<IGESCAFControl_Writer, base<IGESControl_Writer>>("IGESCAFControl_Writer")
+    .function("Perform_1", select_overload<Standard_Boolean(const opencascade::handle<TDocStd_Document> & doc, const TCollection_AsciiString & filename, const Message_ProgressRange & theProgress), IGESCAFControl_Writer>(&IGESCAFControl_Writer::Perform), allow_raw_pointers())
+    .function("SetColorMode", &IGESCAFControl_Writer::SetColorMode, allow_raw_pointers())
+    .function("SetNameMode", &IGESCAFControl_Writer::SetNameMode, allow_raw_pointers())
+    .function("SetLayerMode", &IGESCAFControl_Writer::SetLayerMode, allow_raw_pointers())
+  ;
+    struct IGESCAFControl_Writer_1 : public IGESCAFControl_Writer {
+      IGESCAFControl_Writer_1() : IGESCAFControl_Writer() {}
+    };
+    class_<IGESCAFControl_Writer_1, base<IGESCAFControl_Writer>>("IGESCAFControl_Writer_1")
+      .constructor<>()
+    ;
+}
+
+namespace emscripten { namespace internal { template<> void raw_destructor<IGESCAFControl_Writer>(IGESCAFControl_Writer* ptr) { /* do nothing */ } } }

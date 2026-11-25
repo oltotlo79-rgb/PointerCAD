@@ -80,6 +80,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
     if (!isCurrent() || busy || sketch === undefined) return;
     if (featureId !== undefined && feature === undefined) { setIssues(new Map([['form', t('functionPlot.missingCurve')]])); return; }
     const abort = new AbortController(), client = createBrowserMathClient(); running.current = abort;
+    const showIssue = (message: string) => { setIssues(new Map([['form', message]])); };
     const current = () => isCurrent() && !abort.signal.aborted && running.current === abort;
     setBusy(true); setPreview(null); setDisplayed(false); setIssues(new Map());
     try {
@@ -102,21 +103,25 @@ export function FunctionPlotDialog({ featureId, onClose }: {
       const candidate = prepareFunctionPlot(result.prepared, draft.geometry, result.definition, sketch.id, feature);
       if (candidate.feature.kind === 'functionSurface') {
         const computer = useAppStore.getState().functionSurfacePlotComputer;
-        if (computer === null) throw new Error(t('functionPlot.unavailable'));
+        if (computer === null) { showIssue(t('functionPlot.unavailable')); return; }
         const geometry = await computer(candidate.document, candidate.feature.id, () => !current());
         if (!current() || geometry.status === 'cancelled') return;
-        if (geometry.status === 'failed') throw new Error(geometry.message);
+        if (geometry.status === 'failed') { showIssue(geometry.message); return; }
         setPreview({ ...candidate, feature: candidate.feature, draft, kind: 'surface', body: geometry.body });
       } else {
         const computer = useAppStore.getState().functionPlotComputer;
-        if (computer === null) throw new Error(t('functionPlot.unavailable'));
+        if (computer === null) { showIssue(t('functionPlot.unavailable')); return; }
         const geometry = await computer(candidate.document, candidate.feature.id, () => !current());
         if (!current() || geometry.status === 'cancelled') return;
-        if (geometry.status === 'failed') throw new Error(geometry.message);
+        if (geometry.status === 'failed') { showIssue(geometry.message); return; }
         setPreview({ ...candidate, feature: candidate.feature, draft, kind: 'curve', curves: geometry.curves }); setDisplayed(true);
       }
-    } catch (error) { if (current()) setIssues(new Map([['form', error instanceof Error ? error.message : t('math.workerFailed')]])); }
-    finally { client.dispose(); if (running.current === abort) { running.current = null; if (mounted.current) setBusy(false); } }
+    } catch (error) {
+      if (current()) {
+        if (import.meta.env.DEV) console.error('PointerCAD function plot preview', error);
+        showIssue(t('assembly.error.internal'));
+      }
+    } finally { client.dispose(); if (running.current === abort) { running.current = null; if (mounted.current) setBusy(false); } }
   };
   const scalarField = (key: FunctionScalarField, label: string) => <div className="pcad-function-field" key={key}>
     <input title={t(`functionPlot.control.scalar.${key}`)} aria-label={label} aria-invalid={issues.has(key) || issues.has(`${key.split('.')[0]}.range`)} required value={draft.scalars[key].source}

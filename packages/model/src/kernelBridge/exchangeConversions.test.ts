@@ -54,7 +54,7 @@ function exportOptions(
   };
 }
 
-it.each(['step', 'stl', 'obj', 'gltf', 'mesh'] as const)(
+it.each(['step', 'iges', 'stl', 'obj', 'gltf', 'mesh'] as const)(
   '%s の Worker request に caller の AbortSignal を含めない', (format) => {
     const controller = new AbortController();
     const request = toShapeExportRequest([], { ...exportOptions([], format), signal: controller.signal });
@@ -105,26 +105,21 @@ describe("toShapeExportOutcome('mesh') の面色・面範囲(R04)", () => {
 /*
  * 形式ごとに「面の色が出力まで届く」ことを確かめる共通の検査(指示書「すること」3)。
  *
- * **kernel(`worker/kernelApi.ts`)は STEP・OBJ・glTF を、面ごとの色を焼き込んだ
- * 完成ファイル(`kind: 'files'`)で返す**(`writeStep.test.ts`・`writeCafMesh.test.ts`が
- * 焼き込み自体を検査済み)。model の役目は、その `result.files` を 1 バイトも変えずに
- * `outcome.files` へそのまま渡すことだけであり、ここを詰め替えると R04 と同じ欠落が
- * また起こり得る。**3MF(`'mesh'`)だけは kernel が三角形までしか返さないので、
- * 面の色・面の範囲を model が依頼側から引き継ぐ必要がある**(上のテスト)。
+ * STEP・OBJ・glTF は面色を、IGES は本体色を kernel が書き込み、STL は形だけを返す。
+ * model は完成バイトをそのまま保存用の `outcome.files` へ渡す。
+ * 3MF (`'mesh'`) では model が依頼の面色と kernel の面範囲を合わせて引き継ぐ。
  *
- * この `switch` は網羅的(`default` を作らない)なので、`ShapeExportResult` に新しい
- * 形式が増えたら、ここへ判定を足すまで型検査が落ちる——新しい形式で同じ欠落を
- * 見逃さない仕組み(rules/06 の「同じ種類の誤りを機械で防ぐ」)。
+ * `ShapeExportFormat` に形式を足したときも、網羅チェックで各形式の判定を求める。
  */
 describe('形式ごとに面の色の運び手が出力まで届く(共通検査、R04)', () => {
   function assertCarriesFaceColor(format: ShapeExportFormat, outcome: ShapeExportOutcome): void {
     switch (format) {
       case 'step':
+      case 'iges':
       case 'stl':
       case 'obj':
       case 'gltf':
-        // 面の色は kernel がファイルへ焼き込み済み。model は `files` を詰め替えない
-        // ことだけを保証する(焼き込み自体は writeStep.test.ts・writeCafMesh.test.ts)。
+        // kernel が書いた完成ファイルを扱う。各形式で対応する色はファイルのバイトに含まれる。
         if (outcome.kind !== 'files') throw new Error(`${format} は 'files' で返るはず`);
         break;
       case 'mesh':
@@ -157,6 +152,7 @@ describe('形式ごとに面の色の運び手が出力まで届く(共通検査
 
   it.each<{ format: ShapeExportFormat; result: ShapeExportResult }>([
     { format: 'step', result: { format: 'step', bytes: new Uint8Array([1, 2, 3]), colorWritten: true } },
+    { format: 'iges', result: { format: 'iges', bytes: new Uint8Array([4, 5, 6]), colorWritten: true } },
     {
       format: 'stl',
       result: { format: 'stl', files: filesResult('stl'), triangleCount: 2, droppedTriangleCount: 0 },
@@ -174,8 +170,15 @@ describe('形式ごとに面の色の運び手が出力まで届く(共通検査
     const outcome = toShapeExportOutcome(result, exportOptions(bodies, format));
     assertCarriesFaceColor(format, outcome);
     if (outcome.kind === 'files') {
-      if (format === 'step') expect(outcome).not.toHaveProperty('triangleCount');
-      else expect(outcome.triangleCount).toBe(2);
+      if (result.format === 'step' || result.format === 'iges') {
+        expect(outcome.files).toEqual([{ fileName: `model.${result.format}`, bytes: result.bytes }]);
+        expect(outcome.files[0]?.bytes).toBe(result.bytes);
+        expect(outcome).not.toHaveProperty('triangleCount');
+        expect(outcome.droppedTriangleCount).toBe(0);
+      } else {
+        if ('files' in result) expect(outcome.files).toBe(result.files);
+        expect(outcome.triangleCount).toBe(2);
+      }
     }
   });
 

@@ -9,7 +9,7 @@ import {
   createStandardPartSource,
   embedPart, emptyEmbeddedPartAttachments, EMPTY_PART_LIBRARY, KERNEL_BROKEN_MESSAGE,
   applyPlacementToDirection, moveComponent, quaternionFromAxisAngle, removeComponent, resolvePart,
-  partKeyOf,
+  partKeyOf, WORK_PLANES, type SubShapeRef,
   type AssemblyDocument, type AssemblyKernelBridge, type Mate, type PartDocument, type SolidBody, type Vec3,
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -292,6 +292,40 @@ describe('アセンブリの実経路', () => {
       expect(replacement?.localMesh).toEqual({ maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 512 * 1024 * 1024 });
       expect(fake.releasePart).toHaveBeenCalledWith('replacement:local-request');
       expect(replacement?.shouldCancel?.()).toBe(false);
+    } finally { detach(); }
+  });
+
+  it('新しい組立の世代が投影結果を採り、古い世代の応答を捨てる', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    type Projection = Awaited<ReturnType<AssemblyKernelBridge['projectSketchCurves']>>;
+    const replies: ((value: Projection) => void)[] = [];
+    vi.spyOn(fake.bridge, 'projectSketchCurves').mockImplementation(() =>
+      new Promise(resolve => { replies.push(resolve); }));
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    function request() {
+      const view = useAppStore.getState().assemblyView;
+      const body = view?.bodies.get(f.b)?.[0], face = body?.faces[0], project = view?.projectContextFace;
+      if (body === undefined || face === undefined || project === undefined) throw new Error('Missing owned source face');
+      const reference: SubShapeRef = { bodyFeatureId: body.featureId, index: face.index,
+        fingerprint: { kind: 'face', surfaceKind: face.surfaceKind, area: face.area,
+          position: face.centroid, axis: face.axis, radius: face.radius },
+        origin: { version: 1, shapeKind: 'face', identity: { kind: 'box-face', role: 'top', featureId: body.featureId } } };
+      return project(f.b, body, reference, WORK_PLANES.xy, () => true);
+    }
+    try {
+      await settle();
+      const previous = request();
+      expect(replies).toHaveLength(1);
+      useAppStore.getState().applyAssembly({ ...f.document });
+      await settle();
+      const current = request();
+      expect(replies).toHaveLength(2);
+      const result = { featureId: 'assembly-context-face', curves: [], holes: [] };
+      replies[1]({ results: [result], failures: [] });
+      await expect(current).resolves.toBe(result);
+      replies[0]({ results: [result], failures: [] });
+      await expect(previous).resolves.toBeNull();
     } finally { detach(); }
   });
 

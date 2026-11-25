@@ -75,7 +75,11 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     if (diagnose) trace('reply-ready', { ...diagnosticEnvelope, kind });
     const packed = packFunctionSurfaceWorkReply(result);
     self.postMessage(packed.message, { transfer: packed.transfer });
-  } catch {
+  } catch (error) {
+    if (import.meta.env.DEV && (kind === 'sample-function-curve' || kind === 'sample-function-surface'
+      || kind === 'sample-function-implicit-curve' || kind === 'sample-function-implicit-surface')) {
+      console.error('PointerCAD function plot Worker', kind, error);
+    }
     if (diagnose) trace('reply-ready', { ...diagnosticEnvelope, kind, failed: true });
     self.postMessage({ kind: 'math-failed' });
   } finally {

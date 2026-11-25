@@ -1,4 +1,4 @@
-import { sha256Hex } from '../sha256.js';
+import { sha256Hex, sha256HexChunksSync } from '../sha256.js';
 import { isRecord } from '../valueGuards.js';
 /**
  * アセンブリが抱き込んだ部品文書の出し入れと内容ハッシュ
@@ -61,6 +61,15 @@ export interface EmbeddedPartAttachments {
   readonly shapes: ReadonlyMap<string, Uint8Array>;
   readonly meshes: ReadonlyMap<string, EmbeddedPartMesh>;
   readonly canvases: ReadonlyMap<string, Uint8Array>;
+}
+
+/** 添付の参照順は素性の履歴順、次いで下絵の順。抑制・非表示でも原本を使う。 */
+export function* partAttachmentReferences(document: PartDocument): IterableIterator<readonly [keyof EmbeddedPartAttachments, string]> {
+  for (const feature of document.solids) {
+    if (feature.kind === 'importedSolid') yield ['shapes', feature.shapeRef];
+    else if (feature.kind === 'importedMesh') yield ['meshes', feature.meshRef];
+  }
+  for (const canvas of document.canvases) yield ['canvases', canvas.imageId];
 }
 
 /** 添付を持たない部品へ使う新しい空の表。 */
@@ -150,10 +159,8 @@ function appendDigestEntry(
   chunks.push(uint32Bytes(bytes.length), bytes);
 }
 
-/** 添付を名前順・固定 endian の 1 本のバイト列へする。Map の挿入順には依存しない。 */
-function canonicalAttachmentsBytes(
-  attachments: EmbeddedPartAttachments,
-): Uint8Array<ArrayBuffer> {
+/** 名前順・固定 endian の範囲を返す。範囲の順に読むと旧添付ハッシュと同じバイト列になる。 */
+function canonicalAttachmentChunks(attachments: EmbeddedPartAttachments): Uint8Array[] {
   const chunks: Uint8Array[] = [new TextEncoder().encode(ATTACHMENTS_DIGEST_DOMAIN)];
   for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
     appendDigestEntry(chunks, 'shape', ref, bytes);
@@ -164,10 +171,10 @@ function canonicalAttachmentsBytes(
   for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
     appendDigestEntry(chunks, 'canvas', ref, bytes);
   }
-  let byteLength = 0;
-  for (const chunk of chunks) {
-    byteLength += chunk.byteLength;
-  }
+  return chunks;
+}
+
+function joinAttachmentChunks(chunks: readonly Uint8Array[], byteLength: number): Uint8Array<ArrayBuffer> {
   const joined = new Uint8Array(byteLength);
   let offset = 0;
   for (const chunk of chunks) {
@@ -271,7 +278,20 @@ export async function contentHashOf(document: PartDocument): Promise<string> {
 export async function attachmentsDigestOf(
   attachments: EmbeddedPartAttachments,
 ): Promise<string> {
-  return sha256Hex(canonicalAttachmentsBytes(attachments));
+  const chunks = canonicalAttachmentChunks(attachments);
+  return sha256Hex(joinAttachmentChunks(chunks, attachmentChunkLength(chunks)));
+}
+
+function attachmentChunkLength(chunks: readonly Uint8Array[]): number {
+  return chunks.reduce((length, chunk) => length + chunk.byteLength, 0);
+}
+
+/** Save Worker input is already snapshotted. Hash large canonical ranges without joining them. */
+export function ownedAttachmentsDigestOf(attachments: EmbeddedPartAttachments): Promise<string> {
+  const chunks = canonicalAttachmentChunks(attachments);
+  const length = attachmentChunkLength(chunks);
+  if (length < 1024 * 1024) return sha256Hex(joinAttachmentChunks(chunks, length));
+  return Promise.resolve(sha256HexChunksSync(chunks));
 }
 
 /** 次に抱き込む部品の `ref`。既存の最大連番 + 1 で、**消しても番号を再利用しない**。 */

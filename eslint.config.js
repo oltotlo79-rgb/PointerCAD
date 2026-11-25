@@ -451,16 +451,8 @@ const magnitudeComparisonRule = {
   },
 };
 
-/**
- * 許容差の lint の決まり(magnitudeComparisonRule)を効かせるパッケージ。toleranceBaseline.test.ts がこの行を読み、ここに無いパッケージと、
- * 下の TOLERANCE_BASELINE_FILES を、許容差の検査の基準(toleranceBaseline.json・toleranceOriginalExtraBaseline.json)の数で見張る。
- */
+/** Packages where the magnitude comparison rule applies to product TypeScript. */
 const TOLERANCE_RULE_PACKAGES = ['kernel', 'model', 'ui', 'io', 'fem', 'drawing', 'expression', 'test-utils'];
-/**
- * 決まりの対象のパッケージの中で、決まりを外し、基準の数で見張るファイル(toleranceBaseline.test.ts がこの行を読む)。
- * splineInterpolation.ts は読み込み 0 の決まり(splineArithmeticBoundary.test.ts:42-44)で正本の関数を読めない(18 回目と同じ見張り方)。
- */
-const TOLERANCE_BASELINE_FILES = ['packages/kernel/src/math/splineInterpolation.ts'];
 
 export default tseslint.config(
   {
@@ -631,6 +623,19 @@ export default tseslint.config(
         }],
       },
     },
+  {
+    // These three published arithmetic modules are dependency-free, including types (rules/04).
+    files: ['packages/kernel/src/math/{splineInterpolation,vectorArithmetic,magnitude}.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'ImportDeclaration, TSImportEqualsDeclaration, TSImportType, ImportExpression, ExportNamedDeclaration[source.type="Literal"], ExportAllDeclaration, CallExpression[callee.name="require"]',
+        message: '純数値の共有入口は、型・動的読込み・再公開を含め、他のモジュールに依存できません（rules/04）。',
+      }, {
+        selector: 'Identifier[name=/^(Worker|SharedWorker|WebAssembly|fetch|importScripts|XMLHttpRequest)$/]',
+        message: '純数値の共有入口ではWorker・WASM・通信を使わないでください（rules/04）。',
+      }],
+    },
+  },
   {
     files: ['packages/kernel/src/occt/**/*.ts'],
     ignores: ['**/*.test.ts'],
@@ -963,7 +968,7 @@ export default tseslint.config(
   },
   {
     files: [`packages/{${TOLERANCE_RULE_PACKAGES.join(',')}}/src/**/*.{ts,tsx,mts,cts}`],
-    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', ...TOLERANCE_BASELINE_FILES],
+    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}'],
     plugins: { tolerance: { rules: { comparison: magnitudeComparisonRule } } },
     rules: { 'tolerance/comparison': 'error' },
   },

@@ -2,6 +2,7 @@
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { readPcadFile } from '../../../packages/io/src/index.js';
 import { chooseToolMenuItem, openToolMenu, toolMenuPanel } from '../assemblyTestSupport.js';
+import { homeViewPagePoint } from '../boltedJointTestSupport.js';
 import { drawRectangle, extrudeFace, fillFields, makeFace, popover, popoverInputs,
   popoverTitle, propertyPanel, treeRow } from '../solidCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../recompute.js';
@@ -250,9 +251,11 @@ export async function extrudeStaleTargetFlow(page: Page, info: TestInfo, app?: E
 }
 
 /** Open Extrude with no face selected; the window asks for a closed region (M-01). */
-async function openRegionExtrusion(page: Page): Promise<void> {
-  await openToolMenu(page, '作る');
-  await toolMenuPanel(page, '作る').getByRole('button', { name: '押し出し', exact: true }).click();
+async function openRegionExtrusion(page: Page, viaPushPull = false): Promise<void> {
+  const menu = viaPushPull ? uiMessage('toolbar', 'toolbar.machining.title') : '作る';
+  const tool = viaPushPull ? uiMessage('toolbar', 'toolbar.machining.pushPull') : '押し出し';
+  await openToolMenu(page, menu);
+  await toolMenuPanel(page, menu).getByRole('button', { name: tool, exact: true }).click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await expect(popover(page).getByRole('status')).toHaveText(uiMessage('numericInput', 'numericInput.extrudeRegionPick'));
   // Move the real window by its title to the viewport's top-left so it never covers the region pixel near the centre.
@@ -274,6 +277,29 @@ async function pickRegion(page: Page, world: WorldPoint): Promise<void> {
   await expect(popover(page).getByRole('status'), 'The chosen region replaces the pick hint').toHaveCount(0);
 }
 
+/** Move the region handle in the viewport, then cancel only the drag. */
+async function cancelRegionDrag(page: Page): Promise<void> {
+  const distance = popoverInputs(page).first();
+  await expect(distance).toHaveValue('10');
+  const start = await homeViewPagePoint(page, [10, 10, 10]);
+  const stop = await homeViewPagePoint(page, [10, 10, 20]);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.matches('canvas.pcad-viewport__canvas') ?? false,
+    start)).toBe(true);
+  await page.mouse.move(...start);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(...stop, { steps: 8 });
+    await expect.poll(async () => Number(await distance.inputValue())).toBeGreaterThan(19.5);
+    await expect.poll(async () => Number(await distance.inputValue())).toBeLessThan(20.5);
+    await expect(solidRows(page)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(distance).toHaveValue('10');
+    await expect(treeRow(page, '面1')).toHaveCount(0);
+  } finally {
+    await page.mouse.up();
+  }
+}
+
 /**
  * M-01: extrude a closed region without the Face tool (same saved face as the Face tool, one Undo), extrude a rectangle on
  * another work plane of the same sketch (regions are found per plane, the nearest one along the view ray), then on a solid's
@@ -285,8 +311,9 @@ export async function extrudeRegionFlow(page: Page, info: TestInfo, app?: Electr
   await drawRectangle(page, ['0', '0'], ['20', '20']);
   await waitForRecompute(page);
   const drawn = await stored(page, info, 'region-drawn', app);
-  await openRegionExtrusion(page);
+  await openRegionExtrusion(page, true);
   await pickRegion(page, [10, 10, 0]);
+  await cancelRegionDrag(page);
   await fillFields(page, ['20']);
   await popoverInputs(page).first().press('Enter');
   await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
@@ -307,6 +334,10 @@ export async function extrudeRegionFlow(page: Page, info: TestInfo, app?: Electr
   await page.keyboard.press('Control+y');
   await waitForRecompute(page, redo);
   await geometry(page, '押し出し1', 8000);
+  expect(await stored(page, info, 'region-redo', app)).toEqual(based);
+  await openSaveFlowFile(page, info.outputPath('region-extruded.pcad'), app);
+  await geometry(page, '押し出し1', 8000);
+  expect(await stored(page, info, 'region-reopened', app)).toEqual(based);
 
   // A rectangle on another work plane (z=30) of the same sketch is its own region: click it and extrude it alone.
   await drawRectangle(page, ['30', '0'], ['10', '10'], '30');

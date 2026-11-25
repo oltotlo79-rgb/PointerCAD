@@ -48,6 +48,14 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
     expect(failureMessage({ key: 'partError.numberedHole', parameters: { index: '3' } })).toBe('穴3: {text}');
   });
 
+  it.each([
+    ['partError.functionPoint.recomputeDeadline', '関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。'],
+    ['partError.functionPoint.recomputeIncomplete', '関数上の点を計算しきれませんでした。範囲と指定座標を確認してください。'],
+    ['partError.functionPoint.recomputeUnconfirmed', '選択した関数上の点の追従を確認できません。候補を選び直してください。'],
+  ])('関数上の点の再計算は既存の案内を表示する（%s）', (key, message) => {
+    expect(failureMessage({ key, parameters: {} })).toBe(message);
+  });
+
   it('数式の失敗の入れ子の鍵 3 つは、鍵へ移す前の文と 1 文字も違わない(0b-3h2)', () => {
     // 付録C の文(model の単体が文字で留めていた物。0b-3h2 で model は鍵と値を返すので、文はここで文字のまま留める)。
     expect(failureMessage(mathGeometryUnresolvedMessage('箱1体積', '幅B', plainText('参照先の形を正しく計算できませんでした。'))))

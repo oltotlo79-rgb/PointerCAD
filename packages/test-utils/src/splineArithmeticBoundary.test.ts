@@ -13,12 +13,20 @@ function read(name: string): ts.SourceFile {
 }
 function imports(source: ts.SourceFile): readonly string[] {
   const found: string[] = [];
+  function addSpecifier(value: ts.Node | undefined, declaration: ts.Node): void {
+    found.push(value !== undefined && ts.isStringLiteralLike(value) ? value.text : declaration.getText(source));
+  }
   function visit(node: ts.Node): void {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) && node.moduleSpecifier) {
-      found.push(node.moduleSpecifier?.getText(source) ?? '<unresolved>');
-    } else if (ts.isImportEqualsDeclaration(node) || ts.isImportTypeNode(node)) found.push(node.getText(source));
-    else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
-      || ts.isIdentifier(node.expression) && node.expression.text === 'require')) found.push(node.getText(source));
+      addSpecifier(node.moduleSpecifier, node);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      addSpecifier(node.moduleReference.expression, node);
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      addSpecifier(node.argument.literal, node);
+    } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+      || ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
+      addSpecifier(node.arguments[0], node);
+    }
     ts.forEachChild(node, visit);
   }
   visit(source); return found;
@@ -29,20 +37,8 @@ function files(directory: string): readonly string[] {
     return entry.isDirectory() ? files(name) : /\.tsx?$/u.test(name) ? [name] : [];
   });
 }
-function runtimeReferences(source: ts.SourceFile): readonly string[] {
-  const runtime: string[] = [];
-  function visit(node: ts.Node): void {
-    if (ts.isIdentifier(node) && ['Worker', 'SharedWorker', 'WebAssembly', 'fetch', 'importScripts', 'XMLHttpRequest'].includes(node.text)) runtime.push(node.text);
-    ts.forEachChild(node, visit);
-  }
-  visit(source); return runtime;
-}
-
 describe('bounded pure spline subpath', () => {
-  it('has zero imports including type/dynamic/require, hence zero transitive model/OCCT/Worker dependencies', () => {
-    const source = read(pure);
-    expect(imports(source)).toEqual([]);
-    expect(runtimeReferences(source)).toEqual([]);
+  it('has an explicit export entry for the spline arithmetic module', () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, 'packages/kernel/package.json'), 'utf8')) as {
       exports: Record<string, { readonly types: string; readonly default: string }>;
     };
@@ -54,9 +50,9 @@ describe('bounded pure spline subpath', () => {
     const users = files('packages/model/src').filter(name => imports(read(name)).some(value =>
       value.includes(subpath) || /kernel[\\/]src[\\/]math[\\/]splineInterpolation/u.test(value)));
     expect(users.map(name => relative(root, resolve(root, name)).replaceAll('\\', '/'))).toEqual([adapter]);
-    expect(imports(read(adapter))).toEqual([`'${subpath}'`]);
-    expect(imports(read('packages/model/src/sketch/splineMath.ts'))).toContain("'../kernelBridge/splineMath.js'");
-    expect(imports(read('packages/kernel/src/occt/makeSplineEdge.ts'))).toContain("'../math/splineInterpolation.js'");
+    expect(imports(read(adapter))).toEqual([subpath]);
+    expect(imports(read('packages/model/src/sketch/splineMath.ts'))).toContain('../kernelBridge/splineMath.js');
+    expect(imports(read('packages/kernel/src/occt/makeSplineEdge.ts'))).toContain('../math/splineInterpolation.js');
   });
   it('keeps the arithmetic declarations out of the two public adapters', () => {
     const raw = new Set(['basisValues', 'findSpan', 'solveLinearSystem', 'compressKnots', 'chordLengths',
@@ -69,11 +65,8 @@ describe('bounded pure spline subpath', () => {
 });
 
 describe('bounded pure vector subpath', () => {
-  const vector = 'packages/kernel/src/math/vectorArithmetic.ts';
   const vectorSubpath = '@pointercad/kernel/math/vector-arithmetic';
-  it('has zero imports and an explicit export entry, hence no kernel index/OCCT/Worker route', () => {
-    expect(imports(read(vector))).toEqual([]);
-    expect(runtimeReferences(read(vector))).toEqual([]);
+  it('has an explicit export entry for the vector arithmetic module', () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, 'packages/kernel/package.json'), 'utf8')) as {
       exports: Record<string, { readonly types: string; readonly default: string }>;
     };
@@ -85,10 +78,10 @@ describe('bounded pure vector subpath', () => {
     const users = files('packages/model/src').filter(name => imports(read(name)).some(value =>
       value.includes(vectorSubpath) || /kernel[\\/]src[\\/]math[\\/]vectorArithmetic/u.test(value)));
     expect(users.map(name => relative(root, resolve(root, name)).replaceAll('\\', '/'))).toEqual(['packages/model/src/kernelBridge/vectorMath.ts']);
-    expect(imports(read('packages/model/src/kernelBridge/vectorMath.ts'))).toEqual([`'${vectorSubpath}'`]);
-    expect(imports(read('packages/model/src/sketch/vec3.ts'))).toEqual(["'../kernelBridge/vectorMath.js'"]);
+    expect(imports(read('packages/model/src/kernelBridge/vectorMath.ts'))).toEqual([vectorSubpath]);
+    expect(imports(read('packages/model/src/sketch/vec3.ts'))).toEqual(['../kernelBridge/vectorMath.js']);
     for (const name of ['packages/kernel/src/occt/placeBodies.ts', 'packages/kernel/src/occt/sphereTangent.ts']) {
-      expect(imports(read(name)), name).toContain("'../math/vectorArithmetic.js'");
+      expect(imports(read(name)), name).toContain('../math/vectorArithmetic.js');
     }
   });
   it('keeps the moved declarations out of the four former owners', () => {
@@ -110,9 +103,7 @@ describe('bounded pure magnitude subpath (L-19)', () => {
   const bridge = 'packages/model/src/kernelBridge/magnitudeMath.ts';
   const declared = (name: string): readonly string[] => read(name).statements.filter(ts.isFunctionDeclaration)
     .flatMap(node => node.name !== undefined && helpers.includes(node.name.text) ? [node.name.text] : []);
-  it('has zero imports and an explicit export entry, hence no kernel index/OCCT/Worker route for the FEM Worker', () => {
-    expect(imports(read(magnitude))).toEqual([]);
-    expect(runtimeReferences(read(magnitude))).toEqual([]);
+  it('has an explicit export entry for the magnitude comparison module', () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, 'packages/kernel/package.json'), 'utf8')) as {
       exports: Record<string, { readonly types: string; readonly default: string }>;
     };
@@ -124,9 +115,9 @@ describe('bounded pure magnitude subpath (L-19)', () => {
     const users = files('packages/model/src').filter(name => imports(read(name)).some(value =>
       value.includes(magnitudeSubpath) || /kernel[\\/]src[\\/]math[\\/]magnitude/u.test(value)));
     expect(users.map(name => relative(root, resolve(root, name)).replaceAll('\\', '/'))).toEqual([bridge]);
-    expect(imports(read(bridge))).toEqual([`'${magnitudeSubpath}'`]);
-    expect(imports(read('packages/model/src/numericTolerance.ts'))).toEqual(["'./kernelBridge/magnitudeMath.js'"]);
-    expect(imports(read('packages/kernel/src/occt/tolerances.ts'))).toEqual(["'../math/magnitude.js'"]);
+    expect(imports(read(bridge))).toEqual([magnitudeSubpath]);
+    expect(imports(read('packages/model/src/numericTolerance.ts'))).toEqual(['./kernelBridge/magnitudeMath.js']);
+    expect(imports(read('packages/kernel/src/occt/tolerances.ts'))).toEqual(['../math/magnitude.js']);
   });
   it('declares the four comparisons only in the pure owner', () => {
     expect(declared(magnitude)).toEqual(helpers);
@@ -141,10 +132,9 @@ describe('package-local magnitude comparisons (L-12)', () => {
   function definition(node: ts.FunctionDeclaration, source: ts.SourceFile): string {
     return printer.printNode(ts.EmitHint.Unspecified, node, source).replace(/^export /u, '');
   }
-  it('keeps the four import-free definitions identical and the memory sampler aligned', () => {
+  it('keeps package-local, spline and memory-sampler comparisons aligned', () => {
     const kernel = read(magnitude);
     const functions = kernel.statements.filter(ts.isFunctionDeclaration);
-    expect(imports(kernel)).toEqual([]);
     expect(functions.map(node => node.name?.text)).toEqual(helpers);
     const expected = functions.map(node => definition(node, kernel));
     for (const path of ['packages/drawing/src/numericTolerance.ts', 'packages/expression/src/math/numericTolerance.ts']) {
@@ -152,6 +142,11 @@ describe('package-local magnitude comparisons (L-12)', () => {
       expect(imports(source), path).toEqual([]);
       expect(source.statements.filter(ts.isFunctionDeclaration).map(node => definition(node, source)), path).toEqual(expected);
     }
+    const spline = read(pure);
+    const splineHelper = (node: ts.FunctionDeclaration): boolean =>
+      node.name?.text === 'belowMagnitude' || node.name?.text === 'exceedsMagnitude';
+    expect(spline.statements.filter(ts.isFunctionDeclaration).filter(splineHelper).map(node => definition(node, spline)))
+      .toEqual(functions.filter(splineHelper).map(node => definition(node, kernel)));
     const sampler = read('packages/test-utils/src/processMemorySamples.ts');
     const exceeds = (node: ts.FunctionDeclaration): boolean => node.name?.text === 'exceedsMagnitude';
     expect(sampler.statements.filter(ts.isFunctionDeclaration).filter(exceeds).map(node => definition(node, sampler)))

@@ -6,6 +6,8 @@ import type {
   PrintabilityProgressCallback,
 } from '../occt/inspectPrintability.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
+import { makePlanarFace } from '../occt/makePlanarFace.js';
+import { writeBrepBytes } from '../occt/brepBytes.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
 import type { FaceColorMap } from '../occt/xcafFaceColors.js';
 import { OCCT_LOAD_ERROR_NAME } from '../occtLoadError.js';
@@ -226,6 +228,14 @@ describe('KernelApiの使用中保護', () => {
       };
       const top = faceQuery('top'), bottom = faceQuery('bottom'), front = faceQuery('front');
       const misleading = { ...front, origin: top.origin };
+      const frame = { origin: [0, 0, 0], axisU: [1, 0, 0], normal: [0, 0, 1] } as const;
+      const exact = await target.projectSketchCurves({ items: [
+        { id: 'exact', shapeKey: box('semantic-box-a', 'semantic-box-key-a').key,
+          subShape: misleading, plane: frame, faceBoundaries: true },
+        { id: 'whole', shapeKey: 'semantic-box-key-a', subShape: null, plane: frame, faceBoundaries: true },
+      ] });
+      expect(exact.failures.map(item => [item.id, item.code])).toEqual([['whole', 'missingSubShape']]);
+      expect(exact.results.map(item => [item.id, item.curves.length, item.holes])).toEqual([['exact', 4, []]]);
       const measured = await target.measure({ kind: 'distance', targets: [
         { bodyKey: 'semantic-box-key-a', subShape: misleading },
         { bodyKey: 'semantic-box-key-a', subShape: bottom },
@@ -1919,6 +1929,23 @@ describe('KernelApi', () => {
     // 内部は mm 固定(NFR-RE-3)。mm で書いた STEP は `millimetre` として読める。
     expect(read.unit).toBe('mm');
     expect(read.unitNames).toEqual(['millimetre']);
+    const body = read.bodies[0];
+    if (body.bodyKind === 'mesh') throw new Error('STEP body must have saved B-rep bytes');
+    const saved = body.brepBytes.slice();
+    await expect(api.inspectImportedBrep(body.brepBytes)).resolves.toEqual({
+      kind: 'checked', bodyKind: 'solid', valid: true,
+    });
+    expect(body.brepBytes).toEqual(saved);
+
+    const oc = await loadOcctForNode();
+    const face = makePlanarFace(oc, SQUARE_CURVES);
+    try {
+      await expect(api.inspectImportedBrep(writeBrepBytes(oc, face.face))).resolves.toEqual({
+        kind: 'checked', bodyKind: 'shell', valid: true,
+      });
+    } finally {
+      face.delete();
+    }
   });
 
   it('STEP の名前と色は往復して戻り、B-rep のバイト列も一緒に返る(FR-802)', async () => {
@@ -1979,6 +2006,8 @@ describe('KernelApi', () => {
     await expect(api.importShape({ format: 'step', bytes: broken })).rejects.toThrow(
       'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。',
     );
+    await expect(api.inspectImportedBrep(broken)).resolves.toEqual({ kind: 'unreadable' });
+    await expect(api.inspectImportedBrep(new Uint8Array())).resolves.toEqual({ kind: 'empty' });
     await expect(api.importShape({ format: 'brep', bytes: broken })).rejects.toThrow(
       '保存されていた形を読めませんでした。データが壊れているおそれがあります。',
     );

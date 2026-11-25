@@ -13,9 +13,9 @@
 import type { MessageKey } from '../i18n/t.js';
 import { beginDocumentRequest, type DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { readPcadInWorker } from './pcadReadWorker.js';
+import { PcadReadWorkerError, readPcadInWorker, readPcadRangesInWorker } from './pcadReadWorker.js';
 import type { PcadReadKind, PcadReadResults } from './pcadReadProtocol.js';
-import type { PickedFile } from './fileGateway.js';
+import type { NativeOpenKind, PickedFile, PickedNativeFile } from './fileGateway.js';
 import { readTutorialCheckpoint, TUTORIAL_CHECKPOINT_KEY, type TutorialCheckpointResult,
   type TutorialCheckpointStorage, type TutorialSavedEvidence } from '../tutorial/tutorialCheckpoint.js';
 
@@ -43,6 +43,10 @@ function ownOpenRequest(request: DocumentRequest) {
   const owner = { controller, unsubscribe };
   openOwners.set(request, owner);
   return owner;
+}
+
+export function signalForOpenRequest(request: DocumentRequest): AbortSignal {
+  return ownOpenRequest(request).controller.signal;
 }
 
 /** The caller that finishes the open owns subscription release; nested dispatch is idempotent. */
@@ -121,6 +125,75 @@ export async function readForOpen<K extends PcadReadKind>(
     }
     return null;
   }
+}
+
+/** Associate the selected source with the same operation that owns the picker. */
+export async function pickForOpen(request: DocumentRequest, kind: NativeOpenKind): Promise<PickedNativeFile | null> {
+  const gateway = useAppStore.getState().fileGateway;
+  const signal = signalForOpenRequest(request);
+  if (gateway.openPcadSource === undefined) return gateway.openPcad(kind, signal);
+  const picked = await gateway.openPcadSource(kind, signal);
+  if (!signal.aborted) return picked;
+  if (picked !== null && 'source' in picked) await picked.close();
+  return null;
+}
+
+interface PickedRead<K extends PcadReadKind> {
+  readonly result: PcadReadResults[K];
+  readonly saveTargetToken: string | null;
+  readonly savedSha256?: string;
+}
+
+export async function readPickedForOpen<K extends PcadReadKind>(request: DocumentRequest, kind: K,
+  picked: PickedNativeFile, transferInput: boolean): Promise<PickedRead<K> | null> {
+  if ('bytes' in picked) {
+    const result = await readForOpen(request, kind, picked.bytes, transferInput);
+    return result === null ? null : { result, saveTargetToken: picked.saveTargetToken };
+  }
+  const signal = signalForOpenRequest(request);
+  const isCurrent = () => mayReportOpenFailure(request);
+  const cancel = (): void => { if (useAppStore.getState().cancelDocumentOpen === cancel) cancelOpenReads(); };
+  const clear = (): void => {
+    if (useAppStore.getState().cancelDocumentOpen === cancel) useAppStore.setState({ cancelDocumentOpen: null });
+  };
+  signal.addEventListener('abort', clear, { once: true });
+  try {
+    signal.throwIfAborted();
+    if (!isCurrent()) {
+      if (request.status() === 'switched') reportStopped();
+      return null;
+    }
+    useAppStore.setState({ cancelDocumentOpen: cancel });
+    const digest = kind !== 'assembly' && useAppStore.getState().tutorialCheckpointStorage !== null;
+    const read = await readPcadRangesInWorker(kind, picked.source, digest, { signal, isCurrent });
+    if (signal.aborted || !isCurrent()) {
+      if (request.status() === 'switched') reportStopped();
+      return null;
+    }
+    if (!read.result.ok) return { ...read, saveTargetToken: null };
+    const saveTargetToken = await picked.complete();
+    if (signal.aborted || !isCurrent()) return null;
+    return { ...read, saveTargetToken };
+  } catch (error) {
+    if (request.status() === 'switched') reportStopped();
+    else if (!signal.aborted && isCurrent()) {
+      const corrupt = error instanceof PcadReadWorkerError && error.reason === 'range';
+      useAppStore.getState().setFileMessage({ key: corrupt ? 'file.error.corrupted' : 'file.openFailed', failed: true });
+    }
+    return null;
+  } finally {
+    signal.removeEventListener('abort', clear);
+    clear();
+    await picked.close();
+  }
+}
+
+export function readPickedCheckpoint(picked: PickedNativeFile, transferInput: boolean, savedSha256: string | undefined,
+  storage: TutorialCheckpointStorage | null, evidenceOf: (savedBytes?: Uint8Array) => TutorialSavedEvidence,
+): Promise<TutorialCheckpointResult> {
+  if ('bytes' in picked) return readCheckpointAfterRead(picked, transferInput, storage, evidenceOf);
+  const evidence = evidenceOf();
+  return readTutorialCheckpoint(savedSha256 === undefined ? evidence : { ...evidence, savedDigest: savedSha256 }, storage);
 }
 
 /** 開く操作の札を始める。破棄の確認に答えた直後(失ってよいと認めた状態)で呼ぶ。 */

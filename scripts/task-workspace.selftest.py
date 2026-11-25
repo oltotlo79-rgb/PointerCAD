@@ -1,4 +1,5 @@
 """Reject outside task output before any creation; all test artifacts stay in this project."""
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
@@ -7,6 +8,7 @@ import stat
 import tempfile
 import unittest
 from unittest.mock import patch
+from lib import task_workspace
 from lib.task_workspace import create_workspace, project_temp_directory
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +65,27 @@ class TaskWorkspaceTests(unittest.TestCase):
         with patch.dict(os.environ, {'GIT_DIR': str(ROOT.parent / 'foreign.git'), 'GIT_WORK_TREE': str(ROOT.parent)}):
             self.assertEqual(project_temp_directory(ROOT), PROJECT / 'scratchpad/temp')
 
+    def test_wrong_repository_is_refused_before_any_target_probe_or_creation(self):
+        foreign = PROJECT / 'scratchpad/tasks' / 'separate-installation'
+        # Represent an invocation from this tool with an unrelated repository supplied.
+        owner = PROJECT / 'scratchpad/tasks' / 'isolated-installation'
+        probes = []
+
+        def inspect(path, **_kwargs):
+            probes.append(path)
+            self.assertEqual(path, owner)
+            return path
+
+        with patch.object(task_workspace, '__file__', str(owner / 'scripts/lib/task_workspace.py')):
+            with patch.object(task_workspace, 'direct_path', side_effect=inspect):
+                with patch.object(task_workspace, '_owned_git_directory', return_value=owner / '.git') as git:
+                    with patch.object(Path, 'mkdir', side_effect=AssertionError('Creation was attempted')):
+                        with patch.object(tempfile, 'mkdtemp', side_effect=AssertionError('Creation was attempted')):
+                            with self.assertRaisesRegex(ValueError, 'tool project'):
+                                create_workspace(foreign, 'workspace-selftest')
+        self.assertEqual(probes, [owner])
+        git.assert_called_once_with(owner)
+
     def test_real_linked_worktree_keeps_output_in_the_common_project(self):
         fixture = create_workspace(ROOT, 'workspace-linked-selftest').resolve(strict=True)
         linked = fixture / 'scratchpad/check-copy'
@@ -76,15 +99,24 @@ class TaskWorkspaceTests(unittest.TestCase):
             git('-c', 'user.name=workspace selftest', '-c', 'user.email=selftest@example.invalid',
                 '-c', 'core.hooksPath=', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'workspace fixture')
             git('worktree', 'add', '--quiet', '--detach', str(linked), 'HEAD')
-            output = create_workspace(linked, 'workspace-selftest')
+            installed = fixture / 'scripts/lib/task_workspace.py'
+            installed.parent.mkdir(parents=True)
+            shutil.copyfile(task_workspace.__file__, installed)
+            spec = importlib.util.spec_from_file_location('installed_task_workspace', installed)
+            tool = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(tool)
+            self.assertEqual(tool.project_temp_directory(fixture), fixture / 'scratchpad/temp')
+            self.assertEqual(tool.project_temp_directory(linked), fixture / 'scratchpad/temp')
+            output = tool.create_workspace(linked, 'workspace-selftest')
             self.assertTrue(output.is_relative_to(fixture / 'scratchpad/tasks'))
             self.assertFalse(output.is_relative_to(linked))
+            self.assertEqual(project_temp_directory(fixture), fixture / 'scratchpad/temp')
             self.assertEqual(project_temp_directory(linked), fixture / 'scratchpad/temp')
             for base in (linked / '.git', linked / '.git/new-task', linked / '.GIT/new-task',
                          linked / '.git/../new-task', fixture / '.git/new-task'):
                 with self.subTest(base=str(base)), patch.object(Path, 'mkdir', side_effect=AssertionError('Creation was attempted')) as mkdir:
                     with self.assertRaises(ValueError):
-                        create_workspace(linked, 'workspace-selftest', base)
+                        tool.create_workspace(linked, 'workspace-selftest', base)
                     mkdir.assert_not_called()
         finally:
             if linked.exists():

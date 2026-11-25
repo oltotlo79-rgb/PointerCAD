@@ -1,0 +1,79 @@
+{
+  "raw": {
+    "opencascade.closed.js": {
+      "bytes": 283490,
+      "sha256": "5da52aa4d6d5d6f540f27d70d2775a1983d4b29104b5bb416c2628c922276dc5"
+    },
+    "opencascade.closed.wasm": {
+      "bytes": 20573524,
+      "sha256": "d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47"
+    },
+    "opencascade.closed.d.ts": {
+      "bytes": 389725,
+      "sha256": "3fe40f4fc6b7b90671d5b2f439ec888618a3913b7756d24e8b887339165a58f8"
+    }
+  },
+  "vendor": {
+    "opencascade.full.js": {
+      "bytes": 283262,
+      "sha256": "08213baa983df239f2149c23e4d3c5a915daef5dae3b6121c167cca55078efcf"
+    },
+    "opencascade.full.wasm": {
+      "bytes": 20573524,
+      "sha256": "d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47"
+    },
+    "opencascade.full.d.ts": {
+      "bytes": 390036,
+      "sha256": "b5eb63f15f79ecc98340958ee7e6fa6c9669bc58aac08809f6b5ef4c75c97902"
+    }
+  },
+  "wasmTransport": {
+    "web": {
+      "gzip": {
+        "bytes": 6213104,
+        "sha256": "66b805faf651108dca22a8df45618c594085c9e95b17d2ee0bbac6751f655274"
+      },
+      "decoded": {
+        "bytes": 20573524,
+        "sha256": "d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47"
+      }
+    },
+    "desktop": {
+      "gzip": {
+        "bytes": 6264502,
+        "sha256": "9ad53b13e0d396e9b9f526f559cfeb72b3946c688267f542feb035fba156564e"
+      },
+      "decoded": {
+        "bytes": 20573524,
+        "sha256": "d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47"
+      }
+    },
+    "node": "v25.9.0",
+    "zlib": "1.3.1-e00f703"
+  },
+  "csp": {
+    "replacements": [
+      {
+        "name": "createNamedFunction",
+        "oldSha256": "a95503dfa8465a8517c1b5d99e003f0b381cc7055e723205c0c7bd250cb99a6c",
+        "newSha256": "630b951641dc891c0be14e397ea5ec22fcf16a11c549123f70575626d4c60576"
+      },
+      {
+        "name": "craftInvokerFunction",
+        "oldSha256": "c3b5cdb7cca16a1c5e64153b4c4a1fe191754afcb67e3821dbeb82992761732f",
+        "newSha256": "41e73c08df1202dab95755fea515e02267e28df66e3dfc82b7a6c6424810fbaf"
+      }
+    ],
+    "dynamicSites": {
+      "__emval_get_method_caller:new_(Function": 1
+    }
+  },
+  "expectedNewExports": [
+    "IGESControl_Reader",
+    "IGESControl_Writer",
+    "IGESCAFControl_Reader",
+    "IGESCAFControl_Reader_1",
+    "IGESCAFControl_Writer",
+    "IGESCAFControl_Writer_1"
+  ]
+}

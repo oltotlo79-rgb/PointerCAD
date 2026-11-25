@@ -62,7 +62,7 @@ function viewRequestTransition(next: AppState, previous: AppState, getOrbit: () 
   const request = next.viewOrientationRequest;
   if (request === null || request === previous.viewOrientationRequest) return null;
   const current = getOrbit();
-  return { from: current, to: orbitStateForRegion(FACE_REGIONS[request.face], current), startedAt: globalThis.performance.now() };
+  return { from: current, to: orbitStateForRegion(FACE_REGIONS[request.face], current), startedAt: performance.now() };
 }
 
 /** ホームの札の説明。ツールバーのホームと同じく、命令「ホーム視点」の今のキー(割当どおり)を名前に添える。 */
@@ -78,6 +78,160 @@ export interface ViewCubeProps {
   readonly setOrbit: (next: OrbitState) => void;
   /** ビューポートが描き直したときに知らせてもらう。戻り値を呼ぶと購読をやめる。 */
   readonly subscribeDraw: (listener: () => void) => () => void;
+}
+
+interface ViewCubePointerAppearance {
+  pressed: boolean;
+  highlighted: ViewCubeRegion | null;
+}
+
+interface ViewCubePointerControls {
+  readonly appearance: ViewCubePointerAppearance;
+  readonly getOrbit: ViewCubeProps['getOrbit'];
+  readonly setOrbit: ViewCubeProps['setOrbit'];
+  readonly drawOnce: () => void;
+  readonly startTransition: (next: ViewTransition) => void;
+  readonly stopTransition: () => void;
+  readonly setHighlighted: (next: ViewCubeRegion | null) => void;
+}
+
+/** Own the cube pointer gesture and its DOM listeners. */
+function attachViewCubePointer(canvas: HTMLCanvasElement, scene: ReturnType<typeof createViewCubeScene>,
+  controls: ViewCubePointerControls): () => void {
+  const { appearance, getOrbit, setOrbit, drawOnce, startTransition, stopTransition, setHighlighted } = controls;
+  let dragging = false;
+  let movedDistance = 0;
+  let lastX = 0;
+  let lastY = 0;
+  /** canvas 上の位置から、指している領域を求める。 */
+  const pickAt = (event: PointerEvent): ViewCubeRegion | null => {
+    const bounds = canvas.getBoundingClientRect();
+    if (bounds.width === 0 || bounds.height === 0) {
+      return null;
+    }
+    const normalizedX = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+    const normalizedY = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
+    return scene.pick(normalizedX, normalizedY);
+  };
+
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.button !== PRIMARY_BUTTON) {
+      return;
+    }
+    dragging = true;
+    appearance.pressed = true;
+    stopTransition();
+    movedDistance = 0;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+    canvas.dataset.interaction = 'pressed';
+    appearance.highlighted = pickAt(event);
+    drawOnce();
+    event.preventDefault();
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    if (!dragging) {
+      setHighlighted(pickAt(event));
+      return;
+    }
+
+    const deltaX = event.clientX - lastX;
+    const deltaY = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    movedDistance += Math.abs(deltaX) + Math.abs(deltaY);
+
+    if (movedDistance > DRAG_THRESHOLD_PIXELS) {
+      // ドラッグが始まったら遷移を打ち切り、ビューポートと同じ感度で視点を回す。
+      // 予約済みのこまは stepTransition が transition === null を見て自分で止める。
+      stopTransition();
+      appearance.highlighted = null;
+      appearance.pressed = false;
+      canvas.dataset.interaction = 'dragging';
+      // setOrbit がビューポートの描画を予約し、その通知でビューキューブも描き直る。
+      setOrbit(orbit(getOrbit(), ...viewCubeOrbitDelta(deltaX, deltaY)));
+    }
+  };
+
+  const releaseCapture = (event: PointerEvent): void => {
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const onPointerUp = (event: PointerEvent): void => {
+    if (!dragging) {
+      return;
+    }
+    dragging = false;
+    appearance.pressed = false;
+    delete canvas.dataset.interaction;
+    releaseCapture(event);
+
+    const region = pickAt(event);
+    if (movedDistance > DRAG_THRESHOLD_PIXELS || region === null) {
+      // 回し終わり、または立方体の外。指のある場所のホバーを出し直すだけ。
+      setHighlighted(region);
+      drawOnce();
+      return;
+    }
+
+    // ここから視点が移る。指が止まったままでも面と輪郭の強調は残さない。
+    // pointerleave を待つと、押した場所から動かさない限り強調が残り続けるため。
+    setHighlighted(null);
+    drawOnce();
+
+    // 遷移中に押し直されたら、前の遷移は今の視点から引き継いで打ち切る。
+    const current = getOrbit();
+    startTransition({
+      from: current,
+      to: orbitStateForRegion(region, current),
+      startedAt: performance.now(),
+    });
+  };
+
+  const onPointerCancel = (event: PointerEvent): void => {
+    dragging = false;
+    appearance.pressed = false;
+    delete canvas.dataset.interaction;
+    releaseCapture(event);
+    setHighlighted(null);
+    drawOnce();
+  };
+
+  /** 捕捉が外部要因で外れたときも掴んだままにしない。 */
+  const onLostPointerCapture = (): void => {
+    if (!dragging) return;
+    dragging = false;
+    appearance.pressed = false;
+    delete canvas.dataset.interaction;
+    setHighlighted(null);
+    drawOnce();
+  };
+
+  const onPointerLeave = (): void => {
+    if (!dragging) {
+      setHighlighted(null);
+    }
+  };
+
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
+  canvas.addEventListener('lostpointercapture', onLostPointerCapture);
+  canvas.addEventListener('pointerleave', onPointerLeave);
+
+  return () => {
+    canvas.removeEventListener('pointerdown', onPointerDown);
+    canvas.removeEventListener('pointermove', onPointerMove);
+    canvas.removeEventListener('pointerup', onPointerUp);
+    canvas.removeEventListener('pointercancel', onPointerCancel);
+    canvas.removeEventListener('lostpointercapture', onLostPointerCapture);
+    canvas.removeEventListener('pointerleave', onPointerLeave);
+  };
 }
 
 /**
@@ -131,13 +285,8 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     let frameId = 0;
     let transition: ViewTransition | null = null;
-    let highlighted: ViewCubeRegion | null = null;
-    let dragging = false;
-    let pressed = false;
+    const appearance: ViewCubePointerAppearance = { highlighted: null, pressed: false };
     let disposed = false;
-    let movedDistance = 0;
-    let lastX = 0;
-    let lastY = 0;
     // 起動直後も 1 回読む(保存されていたテーマで始まるため)。ViewportCanvas.tsx と同じ理由。
     let themeDirty = true;
 
@@ -148,7 +297,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         alignControl();
         scene.setThemeColors(readThemeColors(control ?? canvas));
       }
-      scene.render(getOrbit(), highlighted, pressed);
+      scene.render(getOrbit(), appearance.highlighted, appearance.pressed);
     };
 
     /** 遷移の 1 こまを進める。遷移が終わったら次のこまを予約せず、ループを止める。 */
@@ -157,7 +306,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       if (transition === null) {
         return;
       }
-      const elapsed = globalThis.performance.now() - transition.startedAt;
+      const elapsed = performance.now() - transition.startedAt;
       const progress = elapsed / VIEW_TRANSITION_DURATION_MS;
       const stepped = interpolateOrbit(transition.from, transition.to, progress);
       // 遷移の途中で拡大縮小や平行移動をされても打ち消さないよう、向きだけを差し替える。
@@ -181,10 +330,10 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     /** ホバー中の領域を差し替える。ビューポートは描き直らないので、変わったらここで描く。 */
     const setHighlighted = (next: ViewCubeRegion | null): void => {
-      if (isSameRegion(highlighted, next)) {
+      if (isSameRegion(appearance.highlighted, next)) {
         return;
       }
-      highlighted = next;
+      appearance.highlighted = next;
       drawOnce();
     };
 
@@ -201,131 +350,15 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       // Home must win even if it is requested during a cube transition. A view command moves like a face click.
       const request = viewRequestTransition(next, previous, getOrbit);
       if (request === null) return;
-      highlighted = null;
-      pressed = false;
+      appearance.highlighted = null;
+      appearance.pressed = false;
       if (request === 'home') transition = null; else startTransition(request);
     });
 
-    /** canvas 上の位置から、指している領域を求める。 */
-    const pickAt = (event: PointerEvent): ViewCubeRegion | null => {
-      const bounds = canvas.getBoundingClientRect();
-      if (bounds.width === 0 || bounds.height === 0) {
-        return null;
-      }
-      const normalizedX = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
-      const normalizedY = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
-      return scene.pick(normalizedX, normalizedY);
-    };
-
-    const onPointerDown = (event: PointerEvent): void => {
-      if (event.button !== PRIMARY_BUTTON) {
-        return;
-      }
-      dragging = true;
-      pressed = true;
-      transition = null;
-      movedDistance = 0;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      canvas.setPointerCapture(event.pointerId);
-      canvas.dataset.interaction = 'pressed';
-      highlighted = pickAt(event);
-      drawOnce();
-      event.preventDefault();
-    };
-
-    const onPointerMove = (event: PointerEvent): void => {
-      if (!dragging) {
-        setHighlighted(pickAt(event));
-        return;
-      }
-
-      const deltaX = event.clientX - lastX;
-      const deltaY = event.clientY - lastY;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      movedDistance += Math.abs(deltaX) + Math.abs(deltaY);
-
-      if (movedDistance > DRAG_THRESHOLD_PIXELS) {
-        // ドラッグが始まったら遷移を打ち切り、ビューポートと同じ感度で視点を回す。
-        // 予約済みのこまは stepTransition が transition === null を見て自分で止める。
-        transition = null;
-        highlighted = null;
-        pressed = false;
-        canvas.dataset.interaction = 'dragging';
-        // setOrbit がビューポートの描画を予約し、その通知でビューキューブも描き直る。
-        setOrbit(orbit(getOrbit(), ...viewCubeOrbitDelta(deltaX, deltaY)));
-      }
-    };
-
-    const releaseCapture = (event: PointerEvent): void => {
-      if (canvas.hasPointerCapture(event.pointerId)) {
-        canvas.releasePointerCapture(event.pointerId);
-      }
-    };
-
-    const onPointerUp = (event: PointerEvent): void => {
-      if (!dragging) {
-        return;
-      }
-      dragging = false;
-      pressed = false;
-      delete canvas.dataset.interaction;
-      releaseCapture(event);
-
-      const region = pickAt(event);
-      if (movedDistance > DRAG_THRESHOLD_PIXELS || region === null) {
-        // 回し終わり、または立方体の外。指のある場所のホバーを出し直すだけ。
-        setHighlighted(region);
-        drawOnce();
-        return;
-      }
-
-      // ここから視点が移る。指が止まったままでも面と輪郭の強調は残さない。
-      // pointerleave を待つと、押した場所から動かさない限り強調が残り続けるため。
-      setHighlighted(null);
-      drawOnce();
-
-      // 遷移中に押し直されたら、前の遷移は今の視点から引き継いで打ち切る。
-      const current = getOrbit();
-      startTransition({
-        from: current,
-        to: orbitStateForRegion(region, current),
-        startedAt: globalThis.performance.now(),
-      });
-    };
-
-    const onPointerCancel = (event: PointerEvent): void => {
-      dragging = false;
-      pressed = false;
-      delete canvas.dataset.interaction;
-      releaseCapture(event);
-      setHighlighted(null);
-      drawOnce();
-    };
-
-    /** 捕捉が外部要因で外れたときも掴んだままにしない。 */
-    const onLostPointerCapture = (): void => {
-      if (!dragging) return;
-      dragging = false;
-      pressed = false;
-      delete canvas.dataset.interaction;
-      setHighlighted(null);
-      drawOnce();
-    };
-
-    const onPointerLeave = (): void => {
-      if (!dragging) {
-        setHighlighted(null);
-      }
-    };
-
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('pointercancel', onPointerCancel);
-    canvas.addEventListener('lostpointercapture', onLostPointerCapture);
-    canvas.addEventListener('pointerleave', onPointerLeave);
+    const detachPointer = attachViewCubePointer(canvas, scene, {
+      appearance, getOrbit, setOrbit, drawOnce, startTransition, setHighlighted,
+      stopTransition: () => { transition = null; },
+    });
 
     // 大きさを変えると描画バッファが空になるので、合わせ直したその場で描く。
     const resize = (): void => {
@@ -355,12 +388,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       }
       unsubscribeDraw();
       unsubscribeTheme();
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('pointercancel', onPointerCancel);
-      canvas.removeEventListener('lostpointercapture', onLostPointerCapture);
-      canvas.removeEventListener('pointerleave', onPointerLeave);
+      detachPointer();
       observer.disconnect();
       globalThis.removeEventListener('resize', resize);
       scene.dispose();

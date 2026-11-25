@@ -25,41 +25,8 @@ interface RepairPreviewServices {
   readonly viewportOwnerId?: string;
 }
 
-/**
- * Owns only the repair overlay and its reservations, never the borrowed Source.
- * Requests, asynchronous provider observations and retryable native returns have
- * one lifetime here. The scene supplies an attachment and the current style;
- * ordinary bodies, picking, camera state and saved documents never enter it.
- */
-export function createViewportRepairPreview(
-  scene: Pick<THREE.Scene, 'add' | 'remove'>,
-  uiBackings: AssemblyUiBackingLedger,
-  options: RepairPreviewServices,
-  readDisplayStyle: () => DisplayStyle | undefined,
-) {
-  let disposed = false;
-  let displayRevision = 0;
-  let repairPreviewRequest = 0;
-  let requestedRepairPreview: ReferenceRepairPreview | null = null;
-  let repairPreviewPending: Promise<void> | null = null;
-  let completedRepairPreviewRequest = -1;
+function createRepairPreviewInstrumentation(options: RepairPreviewServices) {
   let nextResourceCycle = 0;
-  const returnedRepairPreviews = new WeakSet<ViewportMeshOwner>();
-  interface RepairPreviewResource {
-    readonly descriptor: ReferenceRepairPreview;
-    readonly observedOwner: ViewportMeshOwner;
-    readonly gpuOwner: symbol;
-    readonly gpuBytes: number;
-    readonly cpuBytes: number;
-    readonly layer: ReturnType<typeof createSolidLayer> | null;
-    readonly cleanup: ViewportLifetime | null;
-    readonly proof: () => boolean;
-    retiring: boolean;
-    published: boolean;
-    cleanupError: string | null;
-  }
-  let repairPreviewResource: RepairPreviewResource | null = null;
-
   // One hover descriptor may be republished after its proof expires. Each build
   // owns different copies/native resources and therefore needs its own terminal.
   function repairPreviewOwner(descriptor: ReferenceRepairPreview): ViewportMeshOwner {
@@ -80,6 +47,12 @@ export function createViewportRepairPreview(
     } catch { /* Diagnostic callbacks cannot interrupt ownership transfer or an actual return. */ }
   }
 
+  return { repairPreviewOwner, observeRepairPreview };
+}
+
+/** Verify the latest source and all admitted backings before CPU construction and GPU publication. */
+function createRepairPreviewBudget(options: RepairPreviewServices, uiBackings: AssemblyUiBackingLedger,
+  staleReason: (descriptor: ReferenceRepairPreview) => 'scene-budget:2:disposed' | 'scene-budget:2:descriptor-changed' | null) {
   function repairPreviewProof(scope: WeakRef<ReferenceRepairPreviewBorrow['scope']>, receipt: RepairPreviewReceipt,
     inspection: RepairPreviewInspection, input: WeakSet<ArrayBufferLike>, capturedGeneration: number): () => boolean {
     return () => {
@@ -98,6 +71,87 @@ export function createViewportRepairPreview(
       return Number.isSafeInteger(total) && total <= receipt.limitBytes;
     };
   }
+
+  async function observeRepairPreviewBudget(descriptor: ReferenceRepairPreview) {
+    const state = options.readSolidMeshState?.();
+    const borrowed = state === undefined ? null : borrowReferenceRepairPreview(descriptor, state);
+    if (borrowed === null || staleReason(descriptor) !== null || !uiBackings.known()) return recordReferenceRepairRejection('scene-budget:1');
+    // This is a fresh asynchronous provider observation, not a reused display receipt.
+    const receipt = await borrowed.scope.capture(`repair-preview:${descriptor.operationId}`, borrowed.displayBodies, borrowed.additionalOwners);
+    const after = options.readSolidMeshState?.();
+    if (after === undefined) return recordReferenceRepairRejection('scene-budget:2:after-unavailable');
+    if (borrowReferenceRepairPreview(descriptor, after)?.scope !== borrowed.scope) return recordReferenceRepairRejection('scene-budget:2:scope-changed');
+    const reason = staleReason(descriptor);
+    if (reason !== null) return recordReferenceRepairRejection(reason);
+    if (receipt.status !== 'known') return recordReferenceRepairRejection(`scene-budget:2:receipt-unknown:${receipt.reason}`.slice(0, 120));
+    const numbers = [receipt.limitBytes, receipt.admittedBoundBytes, receipt.workerRetainedBackingBytes,
+      receipt.hostRetainedBackingBytes, receipt.pendingCloneReservedBytes];
+    if (!numbers.every(value => Number.isSafeInteger(value) && value >= 0)
+      || receipt.limitBytes <= 0 || receipt.limitBytes > 512 * 1024 * 1024
+      || receipt.admittedBoundBytes !== receipt.workerRetainedBackingBytes + receipt.hostRetainedBackingBytes + receipt.pendingCloneReservedBytes
+      || receipt.coverage !== 'registered-solid-mesh-backings-only' || !borrowed.scope.currentReceipt(receipt)) return recordReferenceRepairRejection('scene-budget:3');
+    const buffers = uiBackings.buffers(), capturedGeneration = uiBackings.epoch();
+    const inspection = await borrowed.scope.inspectBackings(receipt, buffers);
+    const latest = options.readSolidMeshState?.();
+    if (latest === undefined || borrowReferenceRepairPreview(descriptor, latest)?.scope !== borrowed.scope
+      || staleReason(descriptor) !== null || inspection.status !== 'known'
+      || inspection.coverage !== 'registered-main-solid-backings-only' || uiBackings.epoch() !== capturedGeneration
+      || !uiBackings.known() || !borrowed.scope.currentInspection(inspection, receipt)) return recordReferenceRepairRejection('scene-budget:4');
+    const input = new WeakSet<ArrayBufferLike>(buffers);
+    const sourceBackings = new Set<ArrayBufferLike>();
+    for (const reference of inspection.sameSourceBackings) {
+      const buffer = reference.deref();
+      if (buffer !== undefined) {
+        if (!input.has(buffer)) return recordReferenceRepairRejection('scene-budget:5');
+        sourceBackings.add(buffer);
+      }
+    }
+    const current = repairPreviewProof(new WeakRef(borrowed.scope), receipt, inspection, input, capturedGeneration);
+    const baseline = receipt.admittedBoundBytes;
+    const union = baseline + buffers.filter(buffer => !sourceBackings.has(buffer)).reduce((sum, buffer) => sum + buffer.byteLength, 0)
+      + uiBackings.pending();
+    if (!Number.isSafeInteger(union) || union > receipt.limitBytes || !current()) return recordReferenceRepairRejection('scene-budget:6');
+    return { borrowed, receipt, sourceBackings, baseline, union, current };
+  }
+
+  return observeRepairPreviewBudget;
+}
+
+/**
+ * Owns only the repair overlay and its reservations, never the borrowed Source.
+ * Requests, asynchronous provider observations and retryable native returns have
+ * one lifetime here. The scene supplies an attachment and the current style;
+ * ordinary bodies, picking, camera state and saved documents never enter it.
+ */
+export function createViewportRepairPreview(
+  scene: Pick<THREE.Scene, 'add' | 'remove'>,
+  uiBackings: AssemblyUiBackingLedger,
+  options: RepairPreviewServices,
+  readDisplayStyle: () => DisplayStyle | undefined,
+) {
+  let disposed = false;
+  let displayRevision = 0;
+  let repairPreviewRequest = 0;
+  let requestedRepairPreview: ReferenceRepairPreview | null = null;
+  let repairPreviewPending: Promise<void> | null = null;
+  let completedRepairPreviewRequest = -1;
+  const returnedRepairPreviews = new WeakSet<ViewportMeshOwner>();
+  interface RepairPreviewResource {
+    readonly descriptor: ReferenceRepairPreview;
+    readonly observedOwner: ViewportMeshOwner;
+    readonly gpuOwner: symbol;
+    readonly gpuBytes: number;
+    readonly cpuBytes: number;
+    readonly layer: ReturnType<typeof createSolidLayer> | null;
+    readonly cleanup: ViewportLifetime | null;
+    readonly proof: () => boolean;
+    retiring: boolean;
+    published: boolean;
+    cleanupError: string | null;
+  }
+  let repairPreviewResource: RepairPreviewResource | null = null;
+
+  const { repairPreviewOwner, observeRepairPreview } = createRepairPreviewInstrumentation(options);
 
   function returnRepairPreview(): boolean {
     const resource = repairPreviewResource;
@@ -138,47 +192,8 @@ export function createViewportRepairPreview(
     return false;
   }
 
-  async function observeRepairPreviewBudget(descriptor: ReferenceRepairPreview) {
-    const state = options.readSolidMeshState?.();
-    const borrowed = state === undefined ? null : borrowReferenceRepairPreview(descriptor, state);
-    if (borrowed === null || disposed || requestedRepairPreview !== descriptor || !uiBackings.known()) return recordReferenceRepairRejection('scene-budget:1');
-    // This is a fresh asynchronous provider observation, not a reused display receipt.
-    const receipt = await borrowed.scope.capture(`repair-preview:${descriptor.operationId}`, borrowed.displayBodies, borrowed.additionalOwners);
-    const after = options.readSolidMeshState?.();
-    if (after === undefined) return recordReferenceRepairRejection('scene-budget:2:after-unavailable');
-    if (borrowReferenceRepairPreview(descriptor, after)?.scope !== borrowed.scope) return recordReferenceRepairRejection('scene-budget:2:scope-changed');
-    if (disposed) return recordReferenceRepairRejection('scene-budget:2:disposed');
-    if (requestedRepairPreview !== descriptor) return recordReferenceRepairRejection('scene-budget:2:descriptor-changed');
-    if (receipt.status !== 'known') return recordReferenceRepairRejection(`scene-budget:2:receipt-unknown:${receipt.reason}`.slice(0, 120));
-    const numbers = [receipt.limitBytes, receipt.admittedBoundBytes, receipt.workerRetainedBackingBytes,
-      receipt.hostRetainedBackingBytes, receipt.pendingCloneReservedBytes];
-    if (!numbers.every(value => Number.isSafeInteger(value) && value >= 0)
-      || receipt.limitBytes <= 0 || receipt.limitBytes > 512 * 1024 * 1024
-      || receipt.admittedBoundBytes !== receipt.workerRetainedBackingBytes + receipt.hostRetainedBackingBytes + receipt.pendingCloneReservedBytes
-      || receipt.coverage !== 'registered-solid-mesh-backings-only' || !borrowed.scope.currentReceipt(receipt)) return recordReferenceRepairRejection('scene-budget:3');
-    const buffers = uiBackings.buffers(), capturedGeneration = uiBackings.epoch();
-    const inspection = await borrowed.scope.inspectBackings(receipt, buffers);
-    const latest = options.readSolidMeshState?.();
-    if (latest === undefined || borrowReferenceRepairPreview(descriptor, latest)?.scope !== borrowed.scope
-      || disposed || requestedRepairPreview !== descriptor || inspection.status !== 'known'
-      || inspection.coverage !== 'registered-main-solid-backings-only' || uiBackings.epoch() !== capturedGeneration
-      || !uiBackings.known() || !borrowed.scope.currentInspection(inspection, receipt)) return recordReferenceRepairRejection('scene-budget:4');
-    const input = new WeakSet<ArrayBufferLike>(buffers);
-    const sourceBackings = new Set<ArrayBufferLike>();
-    for (const reference of inspection.sameSourceBackings) {
-      const buffer = reference.deref();
-      if (buffer !== undefined) {
-        if (!input.has(buffer)) return recordReferenceRepairRejection('scene-budget:5');
-        sourceBackings.add(buffer);
-      }
-    }
-    const current = repairPreviewProof(new WeakRef(borrowed.scope), receipt, inspection, input, capturedGeneration);
-    const baseline = receipt.admittedBoundBytes;
-    const union = baseline + buffers.filter(buffer => !sourceBackings.has(buffer)).reduce((sum, buffer) => sum + buffer.byteLength, 0)
-      + uiBackings.pending();
-    if (!Number.isSafeInteger(union) || union > receipt.limitBytes || !current()) return recordReferenceRepairRejection('scene-budget:6');
-    return { borrowed, receipt, sourceBackings, baseline, union, current };
-  }
+  const observeRepairPreviewBudget = createRepairPreviewBudget(options, uiBackings, (descriptor) =>
+    disposed ? 'scene-budget:2:disposed' : requestedRepairPreview !== descriptor ? 'scene-budget:2:descriptor-changed' : null);
 
   function setReferenceRepairPreview(descriptor: ReferenceRepairPreview | null): Promise<void> {
     const before = displayRevision;

@@ -4,11 +4,14 @@
  * 行の名乗り(規格の欄・出どころ・note・簡略の印)、全部の行で形が作れる事、質量が資料の値(素材は単位質量 × 長さ、ほかは 1 個の値)である事、
  * 体積が形の式と合う事、素材の断面の外形、登録口を通した保存の形と切断の一覧。製品が使う口(族の書き出しと行の表)を通して確かめる。
  */
+import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
 import { withinMagnitude } from '../../../numericTolerance.js';
+import { createEmptyPartDocument } from '../../../part/createPartDocument.js';
 import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../../createAssemblyDocument.js';
+import { appendBoolean, appendCylinder, withName } from '../../standard/partPrimitives.js';
 import { buildSteelStockList } from '../../standard/steelStockList.js';
 import type { AssemblyComponent } from '../../types.js';
 import { buildSlotNutPart, slotNutVolume } from '../profiles/frameParts.js';
@@ -228,9 +231,25 @@ describe('資料 1 の部品の読み直しで足した 4 族(平板の L・T・
       // 六角部の有る行は、六角部をねじの径の円柱で表した印も持つ(対辺の記入が無い)。体積は皿 + 呼びの径の円柱 ×(六角部 + ねじの長さ)。
       const hex = record.hexHeight === undefined ? [] : ['六角部(対辺の記入が無いので、ねじの径の円柱で表した)'];
       expect([ADJUSTER_FAMILY.nominalMassG?.(row, {}), row.simplified], record.key).toEqual([record.massG, ['ねじの山', ...hex]]);
+    }
+  });
+
+  it('既存の両方の表の丸皿は、鍵・呼び・全寸法・体積と、円柱二つを結合した部品文書が従来どおり', () => {
+    for (const record of [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS]) {
+      if (record.padDiameter === undefined) continue;
+      const row = rowOf(ADJUSTER_FAMILY, record.key);
+      const dims = { padDiameter: record.padDiameter, padThickness: record.padThickness, threadLength: record.threadLength,
+        ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }), massG: record.massG };
+      expect([row.key, row.size, Object.entries(row.dims)], record.key).toEqual([record.key, record.size, Object.entries(dims)]);
       const radius = (findMetricThread(record.thread)?.diameter ?? NaN) / 2;
-      expect(adjusterVolume(record), record.key).toBeCloseTo(Math.PI * (record.padDiameter / 2) ** 2 * record.padThickness
-        + Math.PI * radius ** 2 * ((record.hexHeight ?? 0) + record.threadLength), 9);
+      const height = (record.hexHeight ?? 0) + record.threadLength;
+      const volume = Math.PI * (record.padDiameter / 2) ** 2 * record.padThickness + Math.PI * radius ** 2 * height;
+      expect(adjusterVolume(record), record.key).toBe(volume);
+      expect(ADJUSTER_FAMILY.nominalVolume(row, {}), record.key).toBe(volume);
+      const pad = appendCylinder(createEmptyPartDocument(), record.padDiameter / 2, expressionValueFromNumber(record.padThickness));
+      const rod = appendCylinder(pad.document, radius, expressionValueFromNumber(height), record.padThickness);
+      const previous = appendBoolean(rod.document, 'union', pad.feature.id, rod.feature.id).document;
+      expect(ADJUSTER_FAMILY.build(row, {}), record.key).toEqual(withName(previous, record.size));
     }
   });
 

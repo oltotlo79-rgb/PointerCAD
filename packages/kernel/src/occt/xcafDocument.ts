@@ -101,6 +101,8 @@ export interface XcafDocument {
 export interface XcafDocumentOptions {
   /** 色を載せるか(既定 true。「既定は書き出す」)。 */
   readonly withColors?: boolean;
+  /** Assign the body color to its XCAF label for the IGES CAF writer. */
+  readonly bodyLabelColor?: boolean;
   /**
    * 確保の控えを外から渡す。渡さなければ自前で 1 つ作る。
    * 検査で「確保の回数と解放の回数が一致すること」を数えるためと、
@@ -231,6 +233,41 @@ function setLabelName(
   keep(oc.TDataStd_Name.Set_1(label, text));
 }
 
+/** Open an XCAF document. The allocation owner retains handles, never borrowed tools. */
+export function createXcafDocumentTools(oc: OpenCascadeInstance, keep: Allocations['keep']) {
+  const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
+  const document = new oc.TDocStd_Document(format);
+  const handle = (() => {
+    try {
+      return keep(new oc.Handle_TDocStd_Document_2(document));
+    } catch (error) {
+      document.delete();
+      throw error;
+    }
+  })();
+  const main = keep(document.Main());
+  const shapeTool: XCAFDoc_ShapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
+  const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();
+  return { handle, shapeTool, colorTool };
+}
+
+/** Read an explicit body-label color in sRGB, leaving curve and subshape colors alone. */
+export function readXcafBodyColor(oc: OpenCascadeInstance, tool: XCAFDoc_ColorTool,
+  label: TDF_Label, keep: Allocations['keep']): RgbTuple | null {
+  const color = keep(new oc.Quantity_Color_1());
+  const types = oc.XCAFDoc_ColorType;
+  for (const kind of [types.XCAFDoc_ColorSurf, types.XCAFDoc_ColorGen]) {
+    if (isColorType(kind) && tool.GetColor_4(label, kind, color)) {
+      return [
+        oc.Quantity_Color.Convert_LinearRGB_To_sRGB_1(color.Red()),
+        oc.Quantity_Color.Convert_LinearRGB_To_sRGB_1(color.Green()),
+        oc.Quantity_Color.Convert_LinearRGB_To_sRGB_1(color.Blue()),
+      ];
+    }
+  }
+  return null;
+}
+
 /**
  * XCAF 文書を開き、平らな形とアセンブリの両方で使う操作を返す。
  * 形が 0 個かどうかは、最終構造を知る呼び出し側が先に判定する。
@@ -244,26 +281,11 @@ export function createXcafDocumentBuilder(
   const { keep, release } = options.allocations ?? createAllocations();
 
   try {
-    const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
-    // 文書そのものは控えへ積まない。Handle が唯一の持ち主になる(冒頭の注釈 2)。
-    const xcafDocument = new oc.TDocStd_Document(format);
-    const handle = (() => {
-      try {
-        return keep(new oc.Handle_TDocStd_Document_2(xcafDocument));
-      } catch (error) {
-        // Handle の生成前に失敗したときだけ、まだ唯一の持ち主である文書をここで返す。
-        xcafDocument.delete();
-        throw error;
-      }
-    })();
-    const main = keep(xcafDocument.Main());
-    // `.get()` は借り物。builder のメソッドからだけ使い、delete/keep しない。
-    const shapeTool: XCAFDoc_ShapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
-    const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();
+    const { handle, shapeTool, colorTool } = createXcafDocumentTools(oc, keep);
     const labels: TDF_Label[] = [];
     let colorWritten = false;
 
-    const applyAppearance = (entry: XcafShapeEntry): void => {
+    const applyAppearance = (entry: XcafShapeEntry, label?: TDF_Label): void => {
       if (entry.color !== null) {
         checkExportColor(entry.color);
       }
@@ -279,7 +301,10 @@ export function createXcafDocumentBuilder(
             palette.typeOfColor,
           ),
         );
-        if (colorTool.SetColor_5(entry.shape, color, palette.colorType)) {
+        if (label !== undefined) {
+          colorTool.SetColor_2(label, color, palette.colorType);
+          colorWritten = true;
+        } else if (colorTool.SetColor_5(entry.shape, color, palette.colorType)) {
           colorWritten = true;
         }
       }
@@ -307,7 +332,7 @@ export function createXcafDocumentBuilder(
         const label = keep(shapeTool.AddShape(entry.shape, makeAssembly, makePrepare));
         labels.push(label);
         setLabelName(oc, label, entry.name, keep);
-        applyAppearance(entry);
+        applyAppearance(entry, options.bodyLabelColor === true ? label : undefined);
         return label;
       },
       addAssembly(name): TDF_Label {

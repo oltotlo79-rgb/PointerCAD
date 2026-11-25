@@ -1,3 +1,5 @@
+import { ARCHIVE_READ_CHUNK_BYTES, readArchiveRange, type ArchiveReadSource } from './archiveReadSource.js';
+
 /** 出力バイトを生成せずraw DEFLATEの展開長を検査する。
  * 形式の根拠: https://www.rfc-editor.org/rfc/rfc1951.html §3.2。
  * 入力全体と固定上限のHuffman表だけを読む。展開サイズに比例する確保は行わない。 */
@@ -136,4 +138,109 @@ export function deflateExpandedSize(data: Uint8Array, maximum: number): number {
   } while (!final);
   if (Math.ceil(bits.position / 8) !== data.length) throw new DeflateSizeError('invalidDeflate');
   return expanded;
+}
+
+
+/** Output, when supplied, is the single fixed-size allocation already checked by the first pass. */
+interface DeflateOutput {
+  readonly maximum: number;
+  readonly bytes: Uint8Array | undefined;
+  length: number;
+}
+
+function advanceOutput(output: DeflateOutput, length: number): number {
+  const start = output.length;
+  if (length > output.maximum - start) throw new DeflateSizeError('expandedLimit');
+  output.length += length;
+  return start;
+}
+
+function copyMatch(output: DeflateOutput, distance: number, length: number): void {
+  const start = advanceOutput(output, length), bytes = output.bytes;
+  if (distance > start) throw new DeflateSizeError('invalidDeflate');
+  if (bytes === undefined) return;
+  for (let index = start; index < start + length; index++) bytes[index] = bytes[index - distance];
+}
+
+/** A stored block fits within the header lookahead, including its LEN/NLEN fields. */
+function readStoredBlock(bits: Bits, output: DeflateOutput): void {
+  bits.align();
+  const length = bits.read(16), complement = bits.read(16);
+  if ((length ^ complement) !== 65535) throw new DeflateSizeError('invalidDeflate');
+  const offset = bits.position / 8;
+  bits.skipBytes(length);
+  const start = advanceOutput(output, length);
+  output.bytes?.set(bits.bytes.subarray(offset, offset + length), start);
+}
+
+function decodeSymbols(bits: Bits, output: DeflateOutput, tables: readonly [Huffman, Huffman], stop: number): boolean {
+  const [literals, distances] = tables;
+  while (bits.position < stop) {
+    const item = symbol(bits, literals);
+    if (item < 256) {
+      const index = advanceOutput(output, 1);
+      if (output.bytes !== undefined) output.bytes[index] = item;
+      continue;
+    }
+    if (item === 256) return true;
+    if (item > 285) throw new DeflateSizeError('invalidDeflate');
+    const index = item - 257, length = LENGTH_BASE[index] + bits.read(LENGTH_BITS[index]);
+    const distanceCode = symbol(bits, distances);
+    if (distanceCode > 29) throw new DeflateSizeError('invalidDeflate');
+    const distance = DISTANCE_BASE[distanceCode] + bits.read(DISTANCE_BITS[distanceCode]);
+    copyMatch(output, distance, length);
+  }
+  return false;
+}
+
+/** Carry just the bit position and the current Huffman tables across successive input windows. */
+class DeflateWindows {
+  base = 0;
+  bits = new Bits(new Uint8Array(0));
+
+  constructor(readonly source: ArchiveReadSource, readonly offset: number, readonly size: number) {}
+
+  get atEnd(): boolean { return this.base + this.bits.bytes.length === this.size; }
+
+  needs(lookahead: number): boolean {
+    return !this.atEnd && this.bits.position > (this.bits.bytes.length - lookahead) * 8;
+  }
+
+  async refill(): Promise<Bits> {
+    const consumed = Math.floor(this.bits.position / 8);
+    const bitOffset = this.bits.position % 8;
+    this.base += consumed;
+    const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, this.size - this.base);
+    this.bits = new Bits(await readArchiveRange(this.source, this.offset + this.base, length));
+    this.bits.position = bitOffset;
+    return this.bits;
+  }
+}
+
+/** Validate raw DEFLATE without allocating output, then decode into a checked fixed-size buffer. */
+export async function decodeDeflateRange(source: ArchiveReadSource,
+  offset: number, size: number, maximum: number, bytes?: Uint8Array): Promise<number> {
+  const windows = new DeflateWindows(source, offset, size);
+  const output = { maximum, bytes, length: 0 };
+  let final: boolean;
+  do {
+    // Largest stored block (65535 bytes), header/alignment, LEN and NLEN.
+    const header = windows.needs(65541) ? await windows.refill() : windows.bits;
+    final = header.read(1) === 1;
+    const type = header.read(2);
+    if (type === 0) {
+      readStoredBlock(header, output);
+      continue;
+    }
+    if (type === 3) throw new DeflateSizeError('invalidDeflate');
+    const tables = type === 1 ? [FIXED_LITERALS, FIXED_DISTANCES] as const : dynamicTables(header);
+    for (;;) {
+      // A match uses at most 15 + 5 + 15 + 13 bits. Reserve six input bytes before refilling.
+      const bits = windows.needs(7) ? await windows.refill() : windows.bits;
+      const stop = windows.atEnd ? Infinity : (bits.bytes.length - 6) * 8;
+      if (decodeSymbols(bits, output, tables, stop)) break;
+    }
+  } while (!final);
+  if (windows.base + Math.ceil(windows.bits.position / 8) !== size) throw new DeflateSizeError('invalidDeflate');
+  return output.length;
 }

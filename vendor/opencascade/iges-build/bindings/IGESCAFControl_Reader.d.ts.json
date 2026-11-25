@@ -1,0 +1,8 @@
+{
+  ".d.ts": "export declare class IGESCAFControl_Reader extends IGESControl_Reader {\n  Perform_1(theFileName: XCAFDoc_PartId, theDoc: Handle_TDocStd_Document, theProgress: Message_ProgressRange): Standard_Boolean;\n  SetColorMode(theMode: Standard_Boolean): void;\n  SetNameMode(theMode: Standard_Boolean): void;\n  SetLayerMode(theMode: Standard_Boolean): void;\n  delete(): void;\n}\n\n  export declare class IGESCAFControl_Reader_1 extends IGESCAFControl_Reader {\n    constructor();\n  }\n\n",
+  "kind": "class",
+  "exports": [
+    "IGESCAFControl_Reader",
+    "IGESCAFControl_Reader_1"
+  ]
+}

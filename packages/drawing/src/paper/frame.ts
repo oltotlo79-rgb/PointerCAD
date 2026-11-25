@@ -1,5 +1,5 @@
 import type { Point2 } from '../types.js';
-import { paperSizeOf, type PaperSize, type PaperSizeId } from './paperSize.js';
+import { paperSizeOf, UnknownDrawingPaperError, type PaperSize, type PaperSizeId } from './paperSize.js';
 
 export interface FrameSegment {
   readonly from: Point2;
@@ -34,7 +34,7 @@ function resolvePaper(paper: PaperSize | PaperSizeId): PaperSize {
   }
   const found = paperSizeOf(paper);
   if (found === undefined) {
-    throw new Error(`知らない用紙です: ${paper}`);
+    throw new UnknownDrawingPaperError(paper, `知らない用紙です: ${paper}`);
   }
   return found;
 }

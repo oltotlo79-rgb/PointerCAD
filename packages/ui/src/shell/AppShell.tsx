@@ -21,7 +21,7 @@ import { rememberDialogOpener } from './dialogFocus.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
-import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
+import { activeDocumentKind, activeFileName, editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { partSourceRequestIsCurrent, type DiscardChoice, type PartSourceConfirmRequest } from '../store/fileSlice.js';
 import { FeatureTree } from './FeatureTree.js';
@@ -61,13 +61,87 @@ const AssemblyOverlays = deferredShell(async () => ({ default: (await import('./
  * タブを増やさない)。どちらを開いているかの判定は `store/documentKind.ts` の
  * `activeDocumentKind` 1 か所にあり、ここはその答えで分けるだけにする。
  */
+type ShellState = ReturnType<typeof useAppStore.getState>;
+
+function renderRestoreOverlay(restorePrompt: NonNullable<ShellState['restorePrompt']>,
+  autoSaver: NonNullable<ShellState['autoSaver']>, recoveryKind: NonNullable<ShellState['recoveryRecord']>['kind'] | undefined,
+  unsaved: boolean): React.JSX.Element {
+  return (
+    <div className="pcad-viewport__overlay">
+      <div className="pcad-card pcad-restore">
+        <p className="pcad-restore__title">
+          {t(restorePrompt.unrecoverable ? 'restore.unrecoverableTitle' :
+            recoveryKind === 'assembly' ? 'assembly.restoreTitle' : 'restore.title')}
+        </p>
+        {/*
+          カードが出ている間に何か描き始めた(= 未保存の変更がある)ら、
+          復元すると消えてしまう旨へ文言を切り替える。
+        */}
+        <p className="pcad-restore__body">
+          {t(
+            restorePrompt.unrecoverable
+              ? 'restore.unrecoverableBody'
+              : unsaved
+                ? 'restore.bodyDirty'
+                : 'restore.body',
+          )}
+        </p>
+        <dl className="pcad-restore__details">
+          <dt>{t('restore.savedAt')}</dt>
+          <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
+          <dt>{t(recoveryKind === 'drawing' ? 'restore.drawingName' : 'restore.documentName')}</dt>
+          <dd>{restorePrompt.documentName}</dd>
+          {restorePrompt.unrecoverable && restorePrompt.reasonKey !== undefined ? (
+            <>
+              <dt>{t('restore.reason')}</dt>
+              <dd>{messageText({ key: restorePrompt.reasonKey, parameters: restorePrompt.reasonParameters })}</dd>
+            </>
+          ) : null}
+        </dl>
+        <div className="pcad-restore__actions">
+          {restorePrompt.unrecoverable ? (
+            <button title={t('controlGuide.button.backupExport')}
+              type="button"
+              className="pcad-button pcad-button--action pcad-button--primary"
+              onClick={() => {
+                void exportAutoSave(autoSaver);
+              }}
+            >
+              {t('restore.export')}
+            </button>
+          ) : (
+            <button title={t('controlGuide.button.backupRestore')}
+              type="button"
+              className="pcad-button pcad-button--action pcad-button--primary"
+              onClick={() => {
+                void restoreAutoSave(autoSaver);
+              }}
+            >
+              {t('restore.restore')}
+            </button>
+          )}
+          <button title={t('controlGuide.button.backupDiscard')}
+            type="button"
+            className="pcad-button pcad-button--action"
+            onClick={() => {
+              void discardAutoSave(autoSaver);
+            }}
+          >
+            {t('restore.discard')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell(): React.JSX.Element {
   /*
    * いま開いている文書の種類。文字列で取り出すので、
    * 部品を編集しているあいだは何度文書が変わっても値が変わらず、描き直しも起きない
    * (NFR-PF-1)。木・ツールバー・プロパティの中身の入れ替えは以後の段が足す。
    */
-  const documentKind = useAppStore(activeDocumentKind);
+  const documentKind = useAppStore(editingDocumentKind);
   const helpOpen = useAppStore(state => state.helpTopicId !== null);
   const activeDocumentId = useAppStore(state => state.activeDocumentId);
   const helpDocument = useRef(activeDocumentId);
@@ -222,71 +296,7 @@ export function AppShell(): React.JSX.Element {
               失わないため、閉じるのは「復元する」「破棄する」を押したときだけ)。
               計算中の札・空状態の案内とは同時に出さない。
             */
-            <div className="pcad-viewport__overlay">
-              <div className="pcad-card pcad-restore">
-                <p className="pcad-restore__title">
-                  {t(restorePrompt.unrecoverable ? 'restore.unrecoverableTitle' :
-                    recoveryKind === 'assembly' ? 'assembly.restoreTitle' : 'restore.title')}
-                </p>
-                {/*
-                  カードが出ている間に何か描き始めた(= 未保存の変更がある)ら、
-                  復元すると消えてしまう旨へ文言を切り替える。
-                */}
-                <p className="pcad-restore__body">
-                  {t(
-                    restorePrompt.unrecoverable
-                      ? 'restore.unrecoverableBody'
-                      : unsaved
-                        ? 'restore.bodyDirty'
-                        : 'restore.body',
-                  )}
-                </p>
-                <dl className="pcad-restore__details">
-                  <dt>{t('restore.savedAt')}</dt>
-                  <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
-                  <dt>{t(recoveryKind === 'drawing' ? 'restore.drawingName' : 'restore.documentName')}</dt>
-                  <dd>{restorePrompt.documentName}</dd>
-                  {restorePrompt.unrecoverable && restorePrompt.reasonKey !== undefined ? (
-                    <>
-                      <dt>{t('restore.reason')}</dt>
-                      <dd>{messageText({ key: restorePrompt.reasonKey, parameters: restorePrompt.reasonParameters })}</dd>
-                    </>
-                  ) : null}
-                </dl>
-                <div className="pcad-restore__actions">
-                  {restorePrompt.unrecoverable ? (
-                    <button title={t('controlGuide.button.backupExport')}
-                      type="button"
-                      className="pcad-button pcad-button--action pcad-button--primary"
-                      onClick={() => {
-                        void exportAutoSave(autoSaver);
-                      }}
-                    >
-                      {t('restore.export')}
-                    </button>
-                  ) : (
-                    <button title={t('controlGuide.button.backupRestore')}
-                      type="button"
-                      className="pcad-button pcad-button--action pcad-button--primary"
-                      onClick={() => {
-                        void restoreAutoSave(autoSaver);
-                      }}
-                    >
-                      {t('restore.restore')}
-                    </button>
-                  )}
-                  <button title={t('controlGuide.button.backupDiscard')}
-                    type="button"
-                    className="pcad-button pcad-button--action"
-                    onClick={() => {
-                      void discardAutoSave(autoSaver);
-                    }}
-                  >
-                    {t('restore.discard')}
-                  </button>
-                </div>
-              </div>
-            </div>
+            renderRestoreOverlay(restorePrompt, autoSaver, recoveryKind, unsaved)
           ) : documentKind === 'drawing' ? null : isComputing ? (
             /*
               計算中は中央に札を出す。空状態の案内とは同時に出さない。初回だけ

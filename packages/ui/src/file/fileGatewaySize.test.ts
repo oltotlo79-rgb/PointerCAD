@@ -66,7 +66,8 @@ describe('Web読み込み全入口の確保前検査（R07）', () => {
   });
   it.each([300 * 1024 * 1024, Infinity, NaN, -1, 0.5, '3', undefined])('%sのFileを全入口で本文取得前に拒否する', async (size) => {
     for (const kind of ['part', 'assembly', 'drawing'] as const) {
-      const { file, arrayBuffer } = pickedFile(size);
+      const extension = { part: 'pcad', assembly: 'pcada', drawing: 'pcadd' }[kind];
+      const { file, arrayBuffer } = pickedFile(size, `文書.${extension}`);
       const scope = { showOpenFilePicker: () => Promise.resolve([{ name: file.name, getFile: () => Promise.resolve(file) }]) };
       await expect(createBrowserFileGateway(scope).openPcad(kind)).rejects.toThrow();
       expect(arrayBuffer).not.toHaveBeenCalled();
@@ -85,12 +86,16 @@ describe('Web読み込み全入口の確保前検査（R07）', () => {
   });
 
   it('小さな正常Fileはpicker/input/形式付きから同じ本文を返す', async () => {
-    const { file, arrayBuffer } = pickedFile(3, '部品.step');
+    const { file, arrayBuffer } = pickedFile(3, '部品.pcad');
     const scope = { showOpenFilePicker: () => Promise.resolve([{ name: file.name, getFile: () => Promise.resolve(file) }]) };
     expect((await createBrowserFileGateway(scope).openPcad())?.bytes).toEqual(new Uint8Array(3));
     expect((await createBrowserFileGateway(inputScope(file).scope).openPcad())?.bytes).toEqual(new Uint8Array(3));
-    expect((await openFileInBrowser(['step'], scope))?.bytes).toEqual(new Uint8Array(3));
-    expect((await openFileInBrowser(['step'], inputScope(file).scope))?.bytes).toEqual(new Uint8Array(3));
+    const step = { ...file, name: '部品.step' };
+    const stepScope = { showOpenFilePicker: () => Promise.resolve([{ name: step.name, getFile: () => Promise.resolve(step) }]) };
+    expect((await openFileInBrowser(['step'], stepScope))?.bytes).toEqual(new Uint8Array(3));
+    expect((await openFileInBrowser(['step'], inputScope(step).scope))?.bytes).toEqual(new Uint8Array(3));
+    await expect(createBrowserFileGateway(stepScope).openPcad()).rejects.toThrow();
+    await expect(createBrowserFileGateway(inputScope(step).scope).openPcad()).rejects.toThrow();
     expect(arrayBuffer).toHaveBeenCalledTimes(4);
   });
 
@@ -105,6 +110,24 @@ describe('Web読み込み全入口の確保前検査（R07）', () => {
       const again = await picked?.reread?.();
       expect(again).toEqual(new Uint8Array(3));
       expect(again?.buffer).not.toBe(picked?.bytes.buffer);
+    }
+  });
+
+  it('選択後の取消で候補保存先を発行せず、input を1回だけ除去する', async () => {
+    for (const usePicker of [false, true]) {
+      const control = new AbortController();
+      const file = { name: '取消.pcad', size: 3, arrayBuffer: () => {
+        control.abort();
+        return Promise.resolve(new ArrayBuffer(3));
+      } };
+      const input = inputScope(file);
+      const handle = { name: file.name, getFile: () => Promise.resolve(file), createWritable: vi.fn() };
+      const scope = usePicker ? { showOpenFilePicker: () => Promise.resolve([handle]) } : input.scope;
+      const gateway = createBrowserFileGateway(scope);
+      expect(await gateway.openPcad('part', control.signal)).toBeNull();
+      expect(gateway.hasSaveTarget()).toBe(false);
+      expect(handle.createWritable).not.toHaveBeenCalled();
+      if (!usePicker) expect(input.remove).toHaveBeenCalledTimes(1);
     }
   });
 
@@ -149,5 +172,26 @@ describe('Web読み込み全入口の確保前検査（R07）', () => {
     expect(write).toHaveBeenCalledWith(currentBytes);
     expect(close).toHaveBeenCalledTimes(1);
     expect(showSaveFilePicker).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('通常Openの大容量ファイルを選んだ場合', () => {
+  it.each(['picker', 'input'] as const)('%s は実際のsliceを要求し、短い本文を成功にしない', async entry => {
+    const { file, arrayBuffer } = pickedFile(268435457);
+    const part = new Blob([Uint8Array.of(1, 2)]);
+    const slice = vi.fn(() => part);
+    const selected = { ...file, slice };
+    const scope = entry === 'picker'
+      ? { showOpenFilePicker: () => Promise.resolve([{ name: file.name, getFile: () => Promise.resolve(selected) }]) }
+      : inputScope(selected).scope;
+    const controller = new AbortController();
+    const gateway = createBrowserFileGateway(scope);
+    const picked = await gateway.openPcadSource?.('all', controller.signal);
+    if (picked == null || !('source' in picked)) throw new Error('Missing range source');
+    expect(slice).not.toHaveBeenCalled();
+    await expect(picked.source.read(268435453, 4)).rejects.toThrow();
+    expect(slice).toHaveBeenCalledExactlyOnceWith(268435453, 268435457);
+    expect(arrayBuffer).not.toHaveBeenCalled();
   });
 });

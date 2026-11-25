@@ -255,8 +255,17 @@ export const createDocumentSlice: StateCreator<
     // 別の文書を開くのは、丸ごとの差し替えに「履歴と選択を作り直す」を足したもの。
     const opens = options?.opensDocument === true;
     const replaces = opens || options?.replacesDocument === true;
-    // アセンブリ中の部品編集は行わない。開く等の明示的な文書切替だけを受ける。
-    if (activeDocumentKind(get()) === 'assembly' && !replaces) return;
+    // 組立の中では親への確定を通す。スケッチの選択だけは表示用の控えに置く。
+    if (activeDocumentKind(get()) === 'assembly' && !replaces) {
+      const state = get();
+      if (state.partEdit === null || incoming === state.document) return;
+      if (options?.undoable === false) {
+        set({ ...documentPatch(state, incoming, createUndoStack(incoming)), canUndo: state.canUndo, canRedo: state.canRedo });
+      } else {
+        void state.commitAssemblyPartPlacement(prepareDocumentEdit(state, incoming, false));
+      }
+      return;
+    }
     const update: DocumentStateUpdate = (state) => {
       if (incoming === state.document) {
         return {};
@@ -453,6 +462,12 @@ export const createDocumentSlice: StateCreator<
  * 先に入れた添付を `documentPatch` が開いた文書の参照だけへ絞るため、扱いが違う。
  */
 function freshDocumentSession(): Partial<AppState> {
+  return { ...freshPartInteraction(), assembly: null, drawing: null, savedDrawing: null,
+    drawingFileName: null, drawingInitialName: null };
+}
+
+/** 入退場と単独部品の切替で同じ入力を片付ける。保存を所有する文書は呼出し側で切り替える。 */
+export function freshPartInteraction(): Partial<AppState> {
   return {
     activeTool: 'select',
     selectionKind: 'body',
@@ -509,15 +524,5 @@ function freshDocumentSession(): Partial<AppState> {
     errorMessage: null,
     fileMessage: null,
     recomputeCancelled: false,
-    /*
-      新しい部品を作ったら・開いたら、開いていたアセンブリと図面は閉じる。
-      1 つの窓で開く文書は 1 つだけなので、ここを残したままにすると
-      `activeDocumentKind` がアセンブリ・図面のままになり、部品が画面に出ない。
-    */
-    assembly: null,
-    drawing: null,
-    savedDrawing: null,
-    drawingFileName: null,
-    drawingInitialName: null,
   };
 }

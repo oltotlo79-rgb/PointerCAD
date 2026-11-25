@@ -5,6 +5,7 @@ import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/open
 import { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './runtimePhaseJournal.js';
 
 import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
+import { inspectImportedBrep } from '../occt/inspectImportedBrep.js';
 import type { ImportedMeshData } from '../occt/exchangeShared.js';
 import type { ExportMesh } from '../occt/exportMesh.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
@@ -21,7 +22,7 @@ import { distanceBetween, measureMassProperties } from '../occt/measureShape.js'
 import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { hiddenLineViewForBodies, type HiddenLineSource } from '../occt/makeHiddenLineViews.js';
 import { createAllocations } from '../occt/allocations.js';
-import { makeProjection } from '../occt/makeProjection.js';
+import { makeExactFaceProjection, makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
 import { functionCurvePolylines, type FunctionCurveSketchResult } from '../occt/functionCurvePolylines.js';
 import type { FunctionCurveGeometrySpec } from '../occt/makeFunctionCurve.js';
@@ -30,6 +31,8 @@ import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { placeShape } from '../occt/placeBodies.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
 import { readCafMesh } from '../occt/readCafMesh.js';
+import { hasIgesBindings } from '../occt/igesBindings.js';
+import { readIges } from '../occt/readIges.js';
 import { readStepAssembly } from '../occt/readStepAssembly.js';
 import { readStl } from '../occt/readStl.js';
 import { measureVolume } from '../occt/solidMesh.js';
@@ -39,6 +42,7 @@ import * as Comlink from 'comlink';
 import { AnalysisBoundaryError, analysisMeshBuffers, buildAnalysisSurfaceMesh,
   type AnalysisSurfaceMeshRequest, type AnalysisSurfaceMeshResult } from '../occt/analysisSurfaceMesh.js';
 import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
+import { writeIges } from '../occt/writeIges.js';
 import { writeStep } from '../occt/writeStep.js';
 import { writeStl } from '../occt/writeStl.js';
 import { writeStepAssembly } from '../occt/xcafAssembly.js';
@@ -666,6 +670,8 @@ export interface KernelApi {
    * (画面はその文言をそのまま見せる)。
    */
   importShape(request: ShapeImportRequest): Promise<ShapeImportResult>;
+  supportsIges?(): Promise<boolean>;
+  inspectImportedBrep(bytes: Uint8Array): Promise<ReturnType<typeof inspectImportedBrep>>;
   /**
    * 3D プリント向けの点検(FR-815、NFR-PF-4)。
    *
@@ -774,162 +780,67 @@ function analysisBoundaryOptions(request: AnalysisSurfaceMeshRequest, shellQuali
   };
 }
 
-/**
- * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
- * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
- */
-export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>,
-  shapeCache?: AcquiringShapeCache<CachedSolid>,
-  exportTriangleLimit = EXPORT_TRIANGLE_LIMIT): AnalysisBoundaryKernelApi {
-  let loadedOcct: OpenCascadeInstance | undefined;
-  const loadOcct = (): Promise<OpenCascadeInstance> => loadInstance().then(instance => {
-    loadedOcct = instance;
-    return instance;
-  }, markOcctLoadFailure);
-  // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
-  // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
-  // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない。
-  // 数値の callback は従来の診断(meshBytes)のまま残し、保持量の会計は配列の実体
-  // (ArrayBuffer)を明示して渡す。同じ実体を指す複数の view・複数の body は 1 回だけ数える。
-  const cache = shapeCache ?? createShapeCache<CachedSolid>(
-    undefined,
-    ({ mesh }) =>
-      mesh.positions.byteLength +
-      mesh.normals.byteLength +
-      mesh.indices.byteLength +
-      mesh.edgePositions.byteLength,
-    ({ mesh }) => solidMeshBuffers(mesh),
-  );
-  // 形と表示メッシュは同じ部品の次の完了結果まで保持する。配列は複製しない。
-  const phases = createKernelPhaseObserver();
-  const parts = new Map<string, PartShapes>();
-  const hiddenLeases = new Map<string, { readonly owner: CurrentMeshOwner; readonly token: AcquireToken;
-    bodies: readonly SolidBodyMesh[] }>();
-  const pendingHiddenDispatches = new Set<string>();
-  const pendingReplies = new Map<string, { readonly owner: CurrentMeshOwner; readonly bodies: readonly SolidBodyMesh[] }>();
-  let ownerGeneration = 0, activeAccountingRequests = 0;
-  const changedOwner = (): void => { ownerGeneration = Number.isSafeInteger(ownerGeneration + 1) ? ownerGeneration + 1 : Number.NaN; };
-  function* hiddenMeshBuffers(): Generator<ArrayBufferLike> {
-    for (const lease of hiddenLeases.values()) for (const body of lease.bodies) yield* solidMeshBuffers(body);
-  }
-  function* pendingReplyBuffers(): Generator<ArrayBufferLike> {
-    for (const reply of pendingReplies.values()) for (const body of reply.bodies) yield* solidMeshBuffers(body);
-  }
-  function* retainedMeshBuffers(): Generator<ArrayBufferLike> { yield* displayMeshBuffers(); yield* hiddenMeshBuffers(); yield* pendingReplyBuffers(); }
-  async function prepareManagedReply(owner: CurrentMeshOwner | undefined, result: SolidRecomputeResult,
-    admitReply: MeshReplyAdmission | undefined): Promise<SolidRecomputeResult> {
-    if (owner === undefined || admitReply === undefined) return result; // legacy path cannot certify host clone coverage
-    if (pendingReplies.size >= 128 || pendingReplies.has(owner.dispatchId)) throw new RangeError('Pending reply metadata capacity');
-    pendingReplies.set(owner.dispatchId, { owner: capturedCurrentMeshOwner(owner), bodies: result.bodies }); changedOwner();
-    try {
-      const reading = finalMeshJsAccounting(cache.meshBufferSnapshot?.() ?? { status: 'unknown', reason: 'callback-missing' },
-        displayMeshBuffers(), result.bodies.flatMap(body => solidMeshBuffers(body)), 512 * 1024 * 1024,
-        [...hiddenMeshBuffers(), ...pendingReplyBuffers()]);
-      if (reading.status !== 'known' || !await admitReply({ owner: capturedCurrentMeshOwner(owner),
-        replyBackingBytes: reading.replyBackingBytes, workerRetainedBackingBytes: reading.retainedBackingBytes }))
-        { phases.record('reply-admission-rejected', owner); throw new RangeError('Global pre-clone mesh reply admission refused'); }
-      phases.record('reply-preclone', owner);
-      return result;
-    } catch (error) {
-      // The RPC has not returned mesh arrays, so no Comlink result clone has happened.
-      pendingReplies.delete(owner.dispatchId); changedOwner(); throw error;
-    }
-  }
-  function ownerMatchesRequest(owner: CurrentMeshOwner, request: SolidRecomputeRequest): boolean {
-    return owner.kind === 'display' && owner.partId === (request.partId ?? DEFAULT_PART_ID)
-      && owner.generation === (request.generation ?? 0) && owner.dispatchId.length > 0
-      && owner.steps.length === request.steps.length
-      && owner.steps.every((step, index) => step.id === request.steps[index]?.id && step.key === request.steps[index]?.key);
-  }
+type LoadWorkerOcct = () => Promise<OpenCascadeInstance>;
+type BorrowWorkerShapes = <T>(keys: Iterable<string>, run: () => Promise<T>) => Promise<T>;
 
-  /** Every part's adopted display arrays, including a part whose newer job was cancelled. */
-  function* displayMeshBuffers(): Generator<ArrayBufferLike> {
-    for (const part of parts.values()) {
-      for (const entry of part.meshes.values()) yield* solidMeshBuffers(entry.mesh);
-    }
-  }
+interface CachedWorkerGeometry {
+  readonly cache: AcquiringShapeCache<CachedSolid>;
+  readonly loadOcct: LoadWorkerOcct;
+  readonly withAcquiredKeys: BorrowWorkerShapes;
+}
 
-  async function withAcquiredKeys<T>(keys: Iterable<string>, run: () => Promise<T>): Promise<T> {
-    activeAccountingRequests += 1;
-    let token: AcquireToken | undefined;
-    try {
-      token = cache.acquire(keys);
-      return await run();
-    } finally {
-      try { if (token !== undefined) cache.release(token); } finally { activeAccountingRequests -= 1; }
-    }
-  }
+interface WorkerMeshAccounting {
+  readonly cache: AcquiringShapeCache<CachedSolid>;
+  readonly parts: ReadonlyMap<string, PartShapes>;
+  readonly hiddenLeases: ReadonlyMap<string, { readonly owner: CurrentMeshOwner }>;
+  readonly pendingHiddenDispatches: ReadonlySet<string>;
+  readonly pendingReplies: Map<string, { readonly owner: CurrentMeshOwner; readonly bodies: readonly SolidBodyMesh[] }>;
+  readonly ownerGeneration: () => number;
+  readonly activeAccountingRequests: () => number;
+  readonly cleanupFailures: () => number | null;
+  readonly changedOwner: () => void;
+  readonly displayMeshBuffers: () => Iterable<ArrayBufferLike>;
+  readonly hiddenMeshBuffers: () => Iterable<ArrayBufferLike>;
+}
 
-  function cleanupFailures(): number | null {
-    try {
-      const value = cache.cleanupFailureCount?.();
-      return value !== undefined && Number.isSafeInteger(value) && value >= 0 ? value : null;
-    } catch { return null; }
-  }
-  function partOwnership(owner: CurrentMeshOwner): PartOwnershipObservation {
-    if (owner.kind !== 'display' || owner.dispatchId.length === 0) return { status: 'unavailable', reason: 'invalid-display-owner' };
-    if (activeAccountingRequests !== 0) return { status: 'unavailable', reason: 'active-request' };
-    const cacheGeneration = cache.meshOwnershipEpoch?.();
-    if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(ownerGeneration)) return { status: 'unavailable', reason: 'epoch-unavailable' };
-    const part = parts.get(owner.partId);
-    if (part === undefined) {
-      const failures = cleanupFailures();
-      if (failures === null) return { status: 'unavailable', reason: 'cleanup-metadata-unavailable' };
-      return failures === 0 ? { status: 'absent' } : { status: 'unavailable', reason: 'native-cleanup-failed' };
-    }
-    if (part.owner === undefined || !sameCurrentMeshOwner(part.owner, owner)) return { status: 'stale-owner' };
-    return { status: 'current', owner: capturedCurrentMeshOwner(part.owner), epoch: { cache: cacheGeneration, owners: ownerGeneration } };
-  }
-  function releaseActualPart(partId: string): void {
-    const part = parts.get(partId);
-    if (part === undefined) return;
-    try { if (part.token !== undefined) cache.release(part.token); }
-    catch (error) {
-      const failed = part.token === undefined ? undefined : cache.failedReleaseBuffers?.(part.token);
-      if (failed !== undefined) {
-        const held = new Set(failed);
-        part.meshes = new Map([...part.meshes].filter(([, entry]) => solidMeshBuffers(entry.mesh)
-          .some(buffer => buffer instanceof ArrayBuffer && held.has(buffer))));
-        changedOwner();
-      }
-      // An external pre-mutation throw keeps the complete owner; an internal opaque
-      // partial failure keeps its failed token/backings. Neither repeats successful native frees.
-      throw error;
-    }
-    parts.delete(partId); changedOwner();
-  }
-  const hiddenLeaseResources = createHiddenLeaseResources({ cache, loadOcct, hiddenLeases, pendingHiddenDispatches,
-    changedOwner, sameCurrentMeshOwner, capturedCurrentMeshOwner, retainedMeshBuffers, displayMeshBuffers,
-    hiddenMeshBuffers, prepareManagedReply, missingBodyMessage: MISSING_BODY_MESSAGE });
+interface WorkerRecomputeGeometry extends CachedWorkerGeometry {
+  readonly loadedOcct: () => OpenCascadeInstance | undefined;
+  readonly parts: Map<string, PartShapes>;
+  readonly phases: ReturnType<typeof createKernelPhaseObserver>;
+  readonly changedOwner: () => void;
+  readonly displayMeshBuffers: () => Iterable<ArrayBufferLike>;
+  readonly hiddenMeshBuffers: () => Iterable<ArrayBufferLike>;
+  readonly retainedMeshBuffers: () => Iterable<ArrayBufferLike>;
+  readonly prepareManagedReply: (owner: CurrentMeshOwner | undefined, result: SolidRecomputeResult,
+    admitReply: MeshReplyAdmission | undefined) => Promise<SolidRecomputeResult>;
+}
+
+function ownerMatchesRequest(owner: CurrentMeshOwner, request: SolidRecomputeRequest): boolean {
+  return owner.kind === 'display' && owner.partId === (request.partId ?? DEFAULT_PART_ID)
+    && owner.generation === (request.generation ?? 0) && owner.dispatchId.length > 0
+    && owner.steps.length === request.steps.length
+    && owner.steps.every((step, index) => step.id === request.steps[index]?.id && step.key === request.steps[index]?.key);
+}
+
+function createWorkerMeshAccounting(accounting: WorkerMeshAccounting): Pick<AnalysisBoundaryKernelApi,
+  'readCurrentMeshAccounting' | 'acknowledgeMeshReply'> {
+  const { cache, parts, hiddenLeases, pendingHiddenDispatches, pendingReplies, cleanupFailures, changedOwner,
+    displayMeshBuffers, hiddenMeshBuffers } = accounting;
   return {
-    readRuntimePhases: () => Promise.resolve(phases.snapshot()),
-    beginRuntimePhaseCapture: nonce => { phases.beginCapture(nonce); return Promise.resolve(); },
-    readRuntimePhaseCapture: (nonce, acknowledge) => Promise.resolve(phases.readCapture(nonce, acknowledge)),
-    endRuntimePhaseCapture: nonce => { phases.endCapture(nonce); return Promise.resolve(); },
-    readPartOwnership(owner) { return Promise.resolve(partOwnership(owner)); },
-    releaseOwnedPart(owner, expectedGeneration) {
-      const current = partOwnership(owner);
-      if (current.status !== 'current') return Promise.resolve(current);
-      if (current.epoch.cache !== expectedGeneration.cache || current.epoch.owners !== expectedGeneration.owners)
-        return Promise.resolve({ status: 'unavailable', reason: 'epoch-changed' });
-      // No asynchronous boundary between exact owner/epoch validation and the actual cache return.
-      try { releaseActualPart(owner.partId); return Promise.resolve({ status: 'released' }); }
-      catch { return Promise.resolve({ status: 'cleanup-failed', reason: 'actual-cache-release-failed' }); }
-    },
     readCurrentMeshAccounting(query): Promise<CurrentMeshObservation> {
       const refuse = (reason: string): Promise<CurrentMeshObservation> => Promise.resolve({
         status: 'unknown', observationId: query.observationId, reason });
       const cacheGeneration = cache.meshOwnershipEpoch?.();
       if (query.observationId.length === 0 || !Number.isSafeInteger(query.limitBytes)
       || query.limitBytes <= 0 || query.limitBytes > 512 * 1024 * 1024) return refuse('invalid-query');
-      if (activeAccountingRequests !== 0 || pendingHiddenDispatches.size !== 0) return refuse('active-request');
+      if (accounting.activeAccountingRequests() !== 0 || pendingHiddenDispatches.size !== 0) return refuse('active-request');
       const cleanupCount = cleanupFailures();
       if (cleanupCount === null) return refuse('cleanup-metadata-unavailable');
       if (cleanupCount > 0) return refuse('native-cleanup-failed');
       if (pendingReplies.size !== 0) return refuse('unacknowledged-reply');
-      if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(ownerGeneration)) return refuse('epoch-unavailable');
+      if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(accounting.ownerGeneration())) return refuse('epoch-unavailable');
       if (query.expectedEpoch !== undefined && (query.expectedEpoch.cache !== cacheGeneration
-        || query.expectedEpoch.owners !== ownerGeneration)) return refuse('epoch-changed');
+        || query.expectedEpoch.owners !== accounting.ownerGeneration())) return refuse('epoch-changed');
       const recordLimit = Math.floor(query.limitBytes / MESH_ACCOUNTING_RECORD_BYTES);
       if (parts.size + hiddenLeases.size > recordLimit || query.expectedOwners.length > recordLimit) return refuse('metadata-capacity');
       const owners: CurrentMeshOwner[] = [];
@@ -945,7 +856,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       if (reading.status !== 'known') return refuse(reading.reason);
       if (cache.meshOwnershipEpoch?.() !== cacheGeneration) return refuse('epoch-changed');
       return Promise.resolve({ status: 'known', observationId: query.observationId,
-        epoch: { cache: cacheGeneration, owners: ownerGeneration }, owners, reading,
+        epoch: { cache: cacheGeneration, owners: accounting.ownerGeneration() }, owners, reading,
         hiddenBackingBytes: meshBackingBytes(hiddenMeshBuffers()), coverage: 'current-solid-worker-backings' });
     },
     acknowledgeMeshReply(owner) {
@@ -955,8 +866,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       pendingReplies.delete(owner.dispatchId); changedOwner();
       return Promise.resolve({ acknowledged: true });
     },
-    releaseReferenceMeshLease: hiddenLeaseResources.releaseReferenceMeshLease,
-    readCachedBodies: hiddenLeaseResources.readCachedBodies,
+  };
+}
+
+function createWorkerAssemblyOperations(geometry: CachedWorkerGeometry): Pick<AnalysisBoundaryKernelApi,
+  'compareMaterials' | 'recognizeSheetMetal' | 'checkInterference'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     compareMaterials(request, shouldCancel) { return compareCachedMaterials(request, cache, loadOcct, shouldCancel); },
     recognizeSheetMetal(request) { return withAcquiredKeys(request.items.map(item => item.shapeKey), () => recognizeCachedSheetMetal(request, cache, loadOcct)); },
     async checkInterference(request, onProgress, shouldCancel, callbackDelivery, onCheckpoint): Promise<InterferenceResult> {
@@ -989,21 +905,12 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       }
       return result;
     },
-    releasePart(partId): Promise<void> {
-      releaseActualPart(partId);
-      return Promise.resolve();
-    },
+  };
+}
 
-    getShapeCacheStats(): Promise<ShapeCacheStats> {
-      return Promise.resolve(cache.stats());
-    },
-
-    checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
-      return Promise.resolve({
-        partId,
-        missingKeys: [...new Set(bodyKeys)].filter((key) => !cache.has(key)),
-      });
-    },
+function createWorkerSketchTessellation(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundaryKernelApi,
+  'tessellateSketch'> {
+  return {
     async tessellateSketch(sketch, options = {}): Promise<SketchTessellation> {
       const oc = await loadOcct();
       const curvePolylines: Float32Array[] = [];
@@ -1048,6 +955,14 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       return { curvePolylines, faces, failures };
     },
 
+  };
+}
+
+function createWorkerSolidRecompute(geometry: WorkerRecomputeGeometry): Pick<AnalysisBoundaryKernelApi,
+  'recomputeSolids'> {
+  const { cache, loadOcct, withAcquiredKeys, loadedOcct, parts, phases, changedOwner,
+    displayMeshBuffers, hiddenMeshBuffers, retainedMeshBuffers, prepareManagedReply } = geometry;
+  return {
     async recomputeSolids(
       request,
       options = {},
@@ -1117,7 +1032,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
           }
         }
         // 計算ごとの返信に計算部のメモリの量を添える(NFR-PF-6)。取り消した計算でも添える。
-        const memoryInstance = oc ?? loadedOcct;
+        const memoryInstance = oc ?? loadedOcct();
         return memoryInstance === undefined ? computed : withKernelMemory(computed, memoryInstance);
       });
       // The request token is released only in withAcquiredKeys' finally. Sampling inside it,
@@ -1137,6 +1052,51 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       }, admitReply);
     },
 
+  };
+}
+
+function projectCachedSketchCurves(oc: OpenCascadeInstance, cache: AcquiringShapeCache<CachedSolid>,
+  request: SketchProjectionRequest): SketchProjectionOutcome {
+  const results: SketchProjectionResult[] = [];
+  const failures: SketchProjectionFailure[] = [];
+
+  // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
+  for (const item of request.items) {
+    const cached = cache.get(item.shapeKey);
+    if (cached === undefined) {
+      failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
+      continue;
+    }
+    // 指紋で選び直した面・辺は「新しく作られた形」なので、使い終えたら手放す。
+    // 立体そのもの(subShape が null)はキャッシュの持ち物なので手放さない。
+    const exactFace = item.faceBoundaries === true;
+    const picked = item.subShape !== null && (!exactFace || item.subShape.origin?.shapeKind === 'face')
+      ? pickSubShape(oc, cached.shape, cached.mesh, item.subShape) : null;
+    if ((exactFace || item.subShape !== null) && picked === null) {
+      failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE, code: 'missingSubShape' });
+      continue;
+    }
+    try {
+      const spec = { source: picked ?? cached.shape, plane: item.plane };
+      const projection = exactFace ? makeExactFaceProjection(oc, spec) : makeProjection(oc, spec);
+      results.push({ id: item.id, ...projection });
+    } catch (error) {
+      failures.push({
+        id: item.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      picked?.delete();
+    }
+  }
+
+  return { results, failures };
+}
+
+function createWorkerSketchOperations(geometry: CachedWorkerGeometry): Pick<AnalysisBoundaryKernelApi,
+  'offsetSketchCurves' | 'functionSketchCurves' | 'projectSketchCurves' | 'sectionSketchCurves'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     async offsetSketchCurves(request): Promise<SketchOffsetOutcome> {
       const oc = await loadOcct();
       const results: SketchOffsetResult[] = [], failures: SketchOffsetFailure[] = [];
@@ -1166,46 +1126,8 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     },
 
     async projectSketchCurves(request): Promise<SketchProjectionOutcome> {
-      return withAcquiredKeys(request.items.map((item) => item.shapeKey), async () => {
-        const oc = await loadOcct();
-        const results: SketchProjectionResult[] = [];
-        const failures: SketchProjectionFailure[] = [];
-
-        // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
-        for (const item of request.items) {
-          const cached = cache.get(item.shapeKey);
-          if (cached === undefined) {
-            failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
-            continue;
-          }
-          // 指紋で選び直した面・辺は「新しく作られた形」なので、使い終えたら手放す。
-          // 立体そのもの(subShape が null)はキャッシュの持ち物なので手放さない。
-          const picked =
-            item.subShape === null
-              ? null
-              : pickSubShape(oc, cached.shape, cached.mesh, item.subShape);
-          if (item.subShape !== null && picked === null) {
-            failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE, code: 'missingSubShape' });
-            continue;
-          }
-          try {
-            const curves = makeProjection(oc, {
-              source: picked ?? cached.shape,
-              plane: item.plane,
-            });
-            results.push({ id: item.id, curves: curves.curves });
-          } catch (error) {
-            failures.push({
-              id: item.id,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          } finally {
-            picked?.delete();
-          }
-        }
-
-        return { results, failures };
-      });
+      return withAcquiredKeys(request.items.map((item) => item.shapeKey), async () =>
+        projectCachedSketchCurves(await loadOcct(), cache, request));
     },
 
     async sectionSketchCurves(request): Promise<SketchProjectionOutcome> {
@@ -1235,6 +1157,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       });
     },
 
+  };
+}
+
+function createWorkerDrawingOperations(geometry: CachedWorkerGeometry): Pick<AnalysisBoundaryKernelApi,
+  'hiddenLineViews' | 'sectionViews'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     async hiddenLineViews(request, onProgress, cancelToken): Promise<HiddenLineResult> {
       return withAcquiredKeys(request.bodyIds, async () => {
         const allocations = createAllocations();
@@ -1370,6 +1299,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       });
     },
 
+  };
+}
+
+function createWorkerMeasurement(geometry: CachedWorkerGeometry): Pick<AnalysisBoundaryKernelApi,
+  'measure'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     async measure(request): Promise<MeasureResult> {
       return withAcquiredKeys(request.targets.map((target) => target.bodyKey), async () => {
         const oc = await loadOcct();
@@ -1443,6 +1379,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       });
     },
 
+  };
+}
+
+function createWorkerShapeExport(geometry: CachedWorkerGeometry, exportTriangleLimit: number): Pick<AnalysisBoundaryKernelApi,
+  'exportShapes' | 'supportsIges'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     async exportShapes(request): Promise<ShapeExportResult> {
       const work = new ExportWorkBudget(() => performance.now(), exportTriangleLimit);
       const exportItems = exportItemsOf(request);
@@ -1479,6 +1422,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
                 });
             work.admitNativeOutput(written.bytes.byteLength);
             return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
+          }
+          case 'iges': {
+            const written = writeIges(oc, request.bodies.map((item, index) => ({
+              shape: shapes[index], name: item.name, color: item.color,
+            })), { withColors: request.withColors, unit: request.unit });
+            work.admitNativeOutput(written.bytes.byteLength);
+            return { format: 'iges', ...written };
           }
           case 'stl': {
             // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ。
@@ -1553,6 +1503,13 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       });
     },
 
+    async supportsIges() { return hasIgesBindings(await loadOcct()); },
+  };
+}
+
+function createWorkerShapeImport(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundaryKernelApi,
+  'importShape' | 'inspectImportedBrep'> {
+  return {
     async importShape(request): Promise<ShapeImportResult> {
       const oc = await loadOcct();
 
@@ -1593,6 +1550,18 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
             };
           } finally {
             read.delete();
+          }
+        }
+        case 'iges': {
+          const result = readIges(oc, request.bytes, request.withColors);
+          try {
+            return {
+              bodies: result.bodies.map(body => toImportBody(oc, body.shape, body.name, body.color, body.kind)),
+              unit: result.unit,
+              unitNames: result.unitNames,
+            };
+          } finally {
+            result.delete();
           }
         }
         case 'brep': {
@@ -1638,6 +1607,17 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       }
     },
 
+    async inspectImportedBrep(bytes) {
+      return inspectImportedBrep(await loadOcct(), bytes);
+    },
+  };
+}
+
+function createWorkerAnalysisOperations(geometry: CachedWorkerGeometry, parts: ReadonlyMap<string, PartShapes>, exportTriangleLimit: number,
+  retainedMeshBuffers: () => Iterable<ArrayBufferLike>): Pick<AnalysisBoundaryKernelApi,
+  'inspectPrintability' | 'buildAnalysisSurfaceMesh'> {
+  const { cache, loadOcct, withAcquiredKeys } = geometry;
+  return {
     async inspectPrintability(request, onProgress, shouldCancel): Promise<ShapeInspectResult> {
       return withAcquiredKeys(request.bodies.map((body) => body.bodyKey), async () => {
         // 別品質で作り直さず、直近に画面へ返した typed array そのものを点検する。
@@ -1697,5 +1677,174 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
         }
       });
     },
+  };
+}
+
+/**
+ * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
+ * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
+ */
+export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>,
+  shapeCache?: AcquiringShapeCache<CachedSolid>,
+  exportTriangleLimit = EXPORT_TRIANGLE_LIMIT): AnalysisBoundaryKernelApi {
+  let loadedOcct: OpenCascadeInstance | undefined;
+  const loadOcct = (): Promise<OpenCascadeInstance> => loadInstance().then(instance => {
+    loadedOcct = instance;
+    return instance;
+  }, markOcctLoadFailure);
+  // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
+  // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
+  // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない。
+  // 数値の callback は従来の診断(meshBytes)のまま残し、保持量の会計は配列の実体
+  // (ArrayBuffer)を明示して渡す。同じ実体を指す複数の view・複数の body は 1 回だけ数える。
+  const cache = shapeCache ?? createShapeCache<CachedSolid>(
+    undefined,
+    ({ mesh }) =>
+      mesh.positions.byteLength +
+      mesh.normals.byteLength +
+      mesh.indices.byteLength +
+      mesh.edgePositions.byteLength,
+    ({ mesh }) => solidMeshBuffers(mesh),
+  );
+  // 形と表示メッシュは同じ部品の次の完了結果まで保持する。配列は複製しない。
+  const phases = createKernelPhaseObserver();
+  const parts = new Map<string, PartShapes>();
+  const hiddenLeases = new Map<string, { readonly owner: CurrentMeshOwner; readonly token: AcquireToken;
+    bodies: readonly SolidBodyMesh[] }>();
+  const pendingHiddenDispatches = new Set<string>();
+  const pendingReplies = new Map<string, { readonly owner: CurrentMeshOwner; readonly bodies: readonly SolidBodyMesh[] }>();
+  let ownerGeneration = 0, activeAccountingRequests = 0;
+  const changedOwner = (): void => { ownerGeneration = Number.isSafeInteger(ownerGeneration + 1) ? ownerGeneration + 1 : Number.NaN; };
+  function* hiddenMeshBuffers(): Generator<ArrayBufferLike> {
+    for (const lease of hiddenLeases.values()) for (const body of lease.bodies) yield* solidMeshBuffers(body);
+  }
+  function* pendingReplyBuffers(): Generator<ArrayBufferLike> {
+    for (const reply of pendingReplies.values()) for (const body of reply.bodies) yield* solidMeshBuffers(body);
+  }
+  function* retainedMeshBuffers(): Generator<ArrayBufferLike> { yield* displayMeshBuffers(); yield* hiddenMeshBuffers(); yield* pendingReplyBuffers(); }
+  async function prepareManagedReply(owner: CurrentMeshOwner | undefined, result: SolidRecomputeResult,
+    admitReply: MeshReplyAdmission | undefined): Promise<SolidRecomputeResult> {
+    if (owner === undefined || admitReply === undefined) return result; // legacy path cannot certify host clone coverage
+    if (pendingReplies.size >= 128 || pendingReplies.has(owner.dispatchId)) throw new RangeError('Pending reply metadata capacity');
+    pendingReplies.set(owner.dispatchId, { owner: capturedCurrentMeshOwner(owner), bodies: result.bodies }); changedOwner();
+    try {
+      const reading = finalMeshJsAccounting(cache.meshBufferSnapshot?.() ?? { status: 'unknown', reason: 'callback-missing' },
+        displayMeshBuffers(), result.bodies.flatMap(body => solidMeshBuffers(body)), 512 * 1024 * 1024,
+        [...hiddenMeshBuffers(), ...pendingReplyBuffers()]);
+      if (reading.status !== 'known' || !await admitReply({ owner: capturedCurrentMeshOwner(owner),
+        replyBackingBytes: reading.replyBackingBytes, workerRetainedBackingBytes: reading.retainedBackingBytes }))
+        { phases.record('reply-admission-rejected', owner); throw new RangeError('Global pre-clone mesh reply admission refused'); }
+      phases.record('reply-preclone', owner);
+      return result;
+    } catch (error) {
+      // The RPC has not returned mesh arrays, so no Comlink result clone has happened.
+      pendingReplies.delete(owner.dispatchId); changedOwner(); throw error;
+    }
+  }
+  /** Every part's adopted display arrays, including a part whose newer job was cancelled. */
+  function* displayMeshBuffers(): Generator<ArrayBufferLike> {
+    for (const part of parts.values()) {
+      for (const entry of part.meshes.values()) yield* solidMeshBuffers(entry.mesh);
+    }
+  }
+
+  async function withAcquiredKeys<T>(keys: Iterable<string>, run: () => Promise<T>): Promise<T> {
+    activeAccountingRequests += 1;
+    let token: AcquireToken | undefined;
+    try {
+      token = cache.acquire(keys);
+      return await run();
+    } finally {
+      try { if (token !== undefined) cache.release(token); } finally { activeAccountingRequests -= 1; }
+    }
+  }
+
+  function cleanupFailures(): number | null {
+    try {
+      const value = cache.cleanupFailureCount?.();
+      return value !== undefined && Number.isSafeInteger(value) && value >= 0 ? value : null;
+    } catch { return null; }
+  }
+  function partOwnership(owner: CurrentMeshOwner): PartOwnershipObservation {
+    if (owner.kind !== 'display' || owner.dispatchId.length === 0) return { status: 'unavailable', reason: 'invalid-display-owner' };
+    if (activeAccountingRequests !== 0) return { status: 'unavailable', reason: 'active-request' };
+    const cacheGeneration = cache.meshOwnershipEpoch?.();
+    if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(ownerGeneration)) return { status: 'unavailable', reason: 'epoch-unavailable' };
+    const part = parts.get(owner.partId);
+    if (part === undefined) {
+      const failures = cleanupFailures();
+      if (failures === null) return { status: 'unavailable', reason: 'cleanup-metadata-unavailable' };
+      return failures === 0 ? { status: 'absent' } : { status: 'unavailable', reason: 'native-cleanup-failed' };
+    }
+    if (part.owner === undefined || !sameCurrentMeshOwner(part.owner, owner)) return { status: 'stale-owner' };
+    return { status: 'current', owner: capturedCurrentMeshOwner(part.owner), epoch: { cache: cacheGeneration, owners: ownerGeneration } };
+  }
+  function releaseActualPart(partId: string): void {
+    const part = parts.get(partId);
+    if (part === undefined) return;
+    try { if (part.token !== undefined) cache.release(part.token); }
+    catch (error) {
+      const failed = part.token === undefined ? undefined : cache.failedReleaseBuffers?.(part.token);
+      if (failed !== undefined) {
+        const held = new Set(failed);
+        part.meshes = new Map([...part.meshes].filter(([, entry]) => solidMeshBuffers(entry.mesh)
+          .some(buffer => buffer instanceof ArrayBuffer && held.has(buffer))));
+        changedOwner();
+      }
+      // An external pre-mutation throw keeps the complete owner; an internal opaque
+      // partial failure keeps its failed token/backings. Neither repeats successful native frees.
+      throw error;
+    }
+    parts.delete(partId); changedOwner();
+  }
+  const hiddenLeaseResources = createHiddenLeaseResources({ cache, loadOcct, hiddenLeases, pendingHiddenDispatches,
+    changedOwner, sameCurrentMeshOwner, capturedCurrentMeshOwner, retainedMeshBuffers, displayMeshBuffers,
+    hiddenMeshBuffers, prepareManagedReply, missingBodyMessage: MISSING_BODY_MESSAGE });
+  const geometry: CachedWorkerGeometry = { cache, loadOcct, withAcquiredKeys };
+  return {
+    readRuntimePhases: () => Promise.resolve(phases.snapshot()),
+    beginRuntimePhaseCapture: nonce => { phases.beginCapture(nonce); return Promise.resolve(); },
+    readRuntimePhaseCapture: (nonce, acknowledge) => Promise.resolve(phases.readCapture(nonce, acknowledge)),
+    endRuntimePhaseCapture: nonce => { phases.endCapture(nonce); return Promise.resolve(); },
+    readPartOwnership(owner) { return Promise.resolve(partOwnership(owner)); },
+    releaseOwnedPart(owner, expectedGeneration) {
+      const current = partOwnership(owner);
+      if (current.status !== 'current') return Promise.resolve(current);
+      if (current.epoch.cache !== expectedGeneration.cache || current.epoch.owners !== expectedGeneration.owners)
+        return Promise.resolve({ status: 'unavailable', reason: 'epoch-changed' });
+      // No asynchronous boundary between exact owner/epoch validation and the actual cache return.
+      try { releaseActualPart(owner.partId); return Promise.resolve({ status: 'released' }); }
+      catch { return Promise.resolve({ status: 'cleanup-failed', reason: 'actual-cache-release-failed' }); }
+    },
+    ...createWorkerMeshAccounting({ cache, parts, hiddenLeases, pendingHiddenDispatches, pendingReplies, cleanupFailures,
+      changedOwner, displayMeshBuffers, hiddenMeshBuffers, ownerGeneration: () => ownerGeneration,
+      activeAccountingRequests: () => activeAccountingRequests }),
+    releaseReferenceMeshLease: hiddenLeaseResources.releaseReferenceMeshLease,
+    readCachedBodies: hiddenLeaseResources.readCachedBodies,
+    ...createWorkerAssemblyOperations(geometry),
+    releasePart(partId): Promise<void> {
+      releaseActualPart(partId);
+      return Promise.resolve();
+    },
+
+    getShapeCacheStats(): Promise<ShapeCacheStats> {
+      return Promise.resolve(cache.stats());
+    },
+
+    checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
+      return Promise.resolve({
+        partId,
+        missingKeys: [...new Set(bodyKeys)].filter((key) => !cache.has(key)),
+      });
+    },
+    ...createWorkerSketchTessellation(loadOcct),
+    ...createWorkerSolidRecompute({ ...geometry, loadedOcct: () => loadedOcct, parts, phases, changedOwner, displayMeshBuffers,
+      hiddenMeshBuffers, retainedMeshBuffers, prepareManagedReply }),
+    ...createWorkerSketchOperations(geometry),
+    ...createWorkerDrawingOperations(geometry),
+    ...createWorkerMeasurement(geometry),
+    ...createWorkerShapeExport(geometry, exportTriangleLimit),
+    ...createWorkerShapeImport(loadOcct),
+    ...createWorkerAnalysisOperations(geometry, parts, exportTriangleLimit, retainedMeshBuffers),
   };
 }

@@ -172,4 +172,9 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   { id: 't-slot-caster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.caster',
     hint: { key: 'catalog.frame.caster.hint', rowLabel: 'simplified' },
     load: async () => (await import('../families/casterCatalog.js')).CASTER_FAMILY },
+  { id: 'sheet-fixing-plate', group: 'aluminumFrame', kindKey: 'catalog.board.kind.sheetFixingPlate',
+    load: async () => (await import('../families/sheetFixingPlateCatalog.js')).SHEET_FIXING_PLATE_FAMILY },
+  { id: 'welded-wire-mesh', group: 'aluminumFrame', kindKey: 'catalog.board.kind.weldedMesh',
+    hint: { key: 'catalog.board.weldedMesh.hint', rowLabel: 'default' },
+    load: async () => (await import('../families/weldedMeshCatalog.js')).WELDED_MESH_FAMILY },
 ];

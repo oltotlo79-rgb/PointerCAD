@@ -19,6 +19,7 @@ import {
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { useIgesSupport } from './useIgesSupport.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
 import { workPlaneOfSketch } from '../store/documentDerived.js';
@@ -69,6 +70,7 @@ import {
  * `IMPORTED_SOURCE_FORMAT_NAMES` と同じ扱い)。
  */
 const FORMAT_LABELS: Readonly<Record<ExportPanelFormat, string>> = {
+  iges: 'IGES',
   step: 'STEP',
   stl: 'STL',
   '3mf': '3MF',
@@ -325,7 +327,7 @@ function useExportPanelState(onClose: ExchangePanelProps['onClose']) {
 function exportPanelRequest({
   format, scope, quality, customQuality, customDeviationSource, withColors, ascii, selection,
   document, sketch, resolvedSketch, workPlane, bodies, printability, printabilityOwner,
-}: ReturnType<typeof useExportPanelState>) {
+}: ReturnType<typeof useExportPanelState>, igesAvailable: boolean) {
   const shape = exportPanelShape(format);
   const customDeviationMm = customQuality ? parseExportDeviationMm(customDeviationSource) : null;
   const precisionError = shape.showsQuality && customQuality && customDeviationMm === null
@@ -371,7 +373,7 @@ function exportPanelRequest({
    * 押す前の断り(NFR-UX-5)。立体の側は文言のキー、DXF の側は日本語の文で返るので、
    * **画面へ出す直前に文へそろえる**(判定そのものはどちらも `exchangeFile.ts` にある)。
    */
-  const refusal: string | null = precisionError ?? (
+  const refusal: string | null = format === 'iges' && !igesAvailable ? t('exchangeError.igesUnavailable') : precisionError ?? (
     request === null
       ? dxfExportRefusal(dxfInput, t)
       : refusalTextOf(exportRefusalKey(bodies, request)));
@@ -560,7 +562,8 @@ export function ExchangePanel({
   abortAttemptRef,
 }: ExchangePanelProps): React.JSX.Element {
   const state = useExportPanelState(onClose);
-  const exportRequest = exportPanelRequest(state);
+  const igesAvailable = useIgesSupport() === 'supported';
+  const exportRequest = exportPanelRequest(state, igesAvailable);
   const submit = useExportCommands({ deps, onFinished, onFailed, abortAttemptRef }, state, exportRequest);
   const { format, setFormat, scope, setScope, quality, setQuality, customQuality, setCustomQuality,
     customDeviationSource, setCustomDeviationSource, withColors, setWithColors, ascii, setAscii,
@@ -592,7 +595,7 @@ export function ExchangePanel({
       <div className="pcad-exchange__group">
         <span className="pcad-exchange__label">{t('exchange.format')}</span>
         <div className="pcad-exchange__choices" role="radiogroup" aria-label={t('exchange.format')}>
-          {EXPORT_PANEL_FORMAT_ORDER.map((candidate) => (
+          {EXPORT_PANEL_FORMAT_ORDER.filter(candidate => candidate !== 'iges' || igesAvailable).map((candidate) => (
             <button title={t('controlGuide.exchange.format')}
               key={`format-${candidate}`}
               type="button"

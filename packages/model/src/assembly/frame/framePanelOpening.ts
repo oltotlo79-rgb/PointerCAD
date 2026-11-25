@@ -40,7 +40,7 @@ function cornersOf(member: PlacedFrameMember): readonly Vec3[] {
 }
 
 /** 箱を向き d へ写した範囲。 */
-function range(member: PlacedFrameMember, d: Vec3): readonly [number, number] {
+export function frameMemberRange(member: PlacedFrameMember, d: Vec3): readonly [number, number] {
   const values = cornersOf(member).map((corner) => dotVec3(corner, d));
   return [Math.min(...values), Math.max(...values)];
 }
@@ -49,7 +49,7 @@ function range(member: PlacedFrameMember, d: Vec3): readonly [number, number] {
 function inner(pair: readonly PlacedFrameMember[], d: Vec3): readonly [number, number] | null {
   const [a, b] = pair;
   if (a === undefined || b === undefined) return null;
-  const ra = range(a, d), rb = range(b, d);
+  const ra = frameMemberRange(a, d), rb = frameMemberRange(b, d);
   return ra[0] + ra[1] <= rb[0] + rb[1] ? [ra[1], rb[0]] : [rb[1], ra[0]];
 }
 
@@ -66,6 +66,8 @@ export interface FrameOpening {
 /** 選んだ 4 本の枠の開口(E-10 の第 1 段のパネルと第 2 段の扉が使う)。作れない時は理由。 */
 export function openingFrame(members: readonly PlacedFrameMember[]): FrameOpening | Exclude<FramePanelRejection, 'invalidNumber' | 'noRoom'> {
   if (members.length !== 4) return 'notFour';
+  if (!members.every((member) => [...member.start, ...member.end, ...member.xAxis, ...member.yAxis,
+    member.bounds.minX, member.bounds.minY, member.bounds.maxX, member.bounds.maxY].every(Number.isFinite))) return 'notRectangle';
   const directions = members.map(directionOf);
   const u = directions[0];
   if (u === null || u === undefined || directions.some((d) => d === null)) return 'notRectangle';
@@ -81,7 +83,7 @@ export function openingFrame(members: readonly PlacedFrameMember[]): FrameOpenin
   const levels = members.map((member) => dotVec3(scaleVec3(addVec3(member.start, member.end), 0.5), n));
   if (Math.max(...levels) - Math.min(...levels) > PLANE_TOLERANCE_MM) return 'notCoplanar';
   const width = inner(pairV, u), height = inner(pairU, v);
-  if (width === null || height === null) return 'notRectangle';
+  if (width === null || height === null || ![...width, ...height, ...levels].every(Number.isFinite)) return 'notRectangle';
   return { u, v, n, width, height, level: levels.reduce((sum, value) => sum + value, 0) / levels.length };
 }
 
@@ -90,17 +92,32 @@ export function openingPoint(opening: FrameOpening, along: number, up: number, d
   return addVec3(addVec3(scaleVec3(opening.u, along), scaleVec3(opening.v, up)), scaleVec3(opening.n, opening.level + depth));
 }
 
+/** A rail must reach both inside corners of the opening along its own axis. */
+function spansPanelOpening(member: PlacedFrameMember, opening: FrameOpening): boolean {
+  const direction = directionOf(member);
+  if (direction === null) return false;
+  const alongWidth = withinMagnitude(Math.abs(dotVec3(direction, opening.u)) - 1, AXIS_TOLERANCE);
+  const [start, end] = frameMemberRange(member, alongWidth ? opening.u : opening.v);
+  const [firstCorner, lastCorner] = alongWidth ? opening.width : opening.height;
+  return start <= firstCorner + PLANE_TOLERANCE_MM && end >= lastCorner - PLANE_TOLERANCE_MM;
+}
+
 /** 選んだ 4 本の枠の開口と、はめる板(板厚・各辺の隙間)の寸法と置き方。作れない時は理由。 */
-export function framePanelOpening(members: readonly PlacedFrameMember[], panel: { readonly thickness: number; readonly gap: number }):
+export function framePanelOpening(members: readonly PlacedFrameMember[], panel: { readonly thickness: number; readonly gap: number; readonly flip?: boolean }):
 FramePanelOpeningResult {
   if (members.length !== 4) return refused('notFour');
   if (!(Number.isFinite(panel.thickness) && panel.thickness > 0 && Number.isFinite(panel.gap) && panel.gap >= 0)) return refused('invalidNumber');
   const opening = openingFrame(members);
   if (typeof opening === 'string') return refused(opening);
   const w = round(opening.width[1] - opening.width[0] - 2 * panel.gap), h = round(opening.height[1] - opening.height[0] - 2 * panel.gap);
-  if (!(w > 0 && h > 0)) return refused('noRoom');
-  const rotation = quaternionFromBasis(opening.u, opening.v, opening.n, 1e-9);
+  if (!(Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)) return refused('noRoom');
+  if (!members.every((member) => spansPanelOpening(member, opening))) return refused('notRectangle');
+  const faceSign = panel.flip === true ? -1 : 1;
+  const rotation = quaternionFromBasis(opening.u, scaleVec3(opening.v, faceSign), scaleVec3(opening.n, faceSign), 1e-9);
   if (rotation === null) return refused('notRectangle');
-  const origin = openingPoint(opening, (opening.width[0] + opening.width[1]) / 2, (opening.height[0] + opening.height[1]) / 2, -panel.thickness / 2);
-  return { ok: true, width: w, height: h, placement: { position: [round(origin[0]), round(origin[1]), round(origin[2])], rotation } };
+  const origin = openingPoint(opening, (opening.width[0] + opening.width[1]) / 2, (opening.height[0] + opening.height[1]) / 2,
+    -faceSign * panel.thickness / 2);
+  const position = [round(origin[0]), round(origin[1]), round(origin[2])] as const;
+  if (!position.every(Number.isFinite)) return refused('invalidNumber');
+  return { ok: true, width: w, height: h, placement: { position, rotation } };
 }

@@ -12,6 +12,7 @@ import type { MessageKey } from '../i18n/t.js';
 const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
   // ZIP として開けない。中身を見る手前で壊れている。
   notZip: 'file.error.corrupted',
+  archiveExpansionLimit: 'file.error.archiveExpansionLimit',
   // ZIP ではあるが、部品の中身が入っていない。
   missingDocument: 'file.error.missingDocument',
   // 中身が JSON として読めない。

@@ -24,7 +24,7 @@ const SIDES: readonly FrameDoorChoices['side'][] = ['start', 'end'];
 function RowSelect({ label, guide, familyId, prefix, ready, value, onChange, none = 'catalog.framePanel.panelNone' }: {
   readonly label: MessageKey; readonly guide: MessageKey; readonly familyId: string; readonly prefix?: string; readonly ready: boolean;
   readonly value: string | null; readonly onChange: (key: string | null) => void; readonly none?: MessageKey }): React.JSX.Element {
-  const rows = (ready ? PRODUCT_CATALOG_REGISTRY.loaded(familyId)?.rows ?? [] : []).filter((row) => prefix === undefined || row.key.startsWith(prefix));
+  const rows = (ready ? PRODUCT_CATALOG_REGISTRY.loaded(familyId)?.rows ?? [] : []).filter((row) => row.listed !== false && (prefix === undefined || row.key.startsWith(prefix)));
   return <label className="pcad-field">
     <span className="pcad-field__label">{t(label)}</span>
     <select title={t(guide)} className="pcad-field__input" value={value ?? ''}
@@ -38,6 +38,7 @@ function RowSelect({ label, guide, familyId, prefix, ready, value, onChange, non
 export function FrameDoorDetails(): React.JSX.Element {
   const [keys, setKeys] = useState<Pick<FrameDoorChoices, 'boardKey' | 'frameKey' | 'hingeKey' | 'side' | 'holderKey' | 'connectorKey'>>(
     { boardKey: null, frameKey: null, hingeKey: null, side: 'start', holderKey: null, connectorKey: null });
+  const [partition, setPartition] = useState(false);
   const [offsetText, setOffsetText] = useState('100');
   // 板の押さえの間隔の初めの値(資料に決まりが無いので規格の値ではない。説明に書く)。
   const [pitchText, setPitchText] = useState('300');
@@ -55,25 +56,39 @@ export function FrameDoorDetails(): React.JSX.Element {
   }, [ready]);
   const offset = evaluateExpression(offsetText), clearance = evaluateExpression(clearanceText), pitch = evaluateExpression(pitchText);
   // 間隔は押さえを置く時だけ要る(読めない時は model が「数が正でない」で断る)。
-  const choices: FrameDoorChoices | null = offset.ok && clearance.ok ? { ...keys, offset: offset.value.value, clearance: clearance.value.value,
-    holderPitch: pitch.ok ? pitch.value.value : Number.NaN } : null;
+  const choices: FrameDoorChoices | null = clearance.ok && (partition || offset.ok) ? {
+    ...keys, partition, offset: offset.ok ? offset.value.value : Number.NaN, clearance: clearance.value.value,
+    holderPitch: pitch.ok ? pitch.value.value : Number.NaN,
+  } : null;
   const planned = choices === null ? { ok: false as const, reason: 'invalidNumber' } : frameDoorPlan(choices);
   const update = (patch: Partial<typeof keys>): void => { setKeys({ ...keys, ...patch }); setMessage(null); };
   const place = (): void => {
     if (choices === null) return;
     const placed = placeFrameDoor(choices);
-    setMessage(placed.ok ? { role: 'status', text: t('catalog.frameDoor.placed').replace('{count}', String(placed.componentIds.length)) }
-      : { role: 'alert', text: frameDoorReasonText(placed.reason) });
+    const placedKey = partition ? 'catalog.frameDoor.partitionPlaced' : 'catalog.frameDoor.placed';
+    setMessage(placed.ok ? { role: 'status', text: t(placedKey).replace('{count}', String(placed.componentIds.length)) }
+      : { role: 'alert', text: frameDoorReasonText(placed.reason, partition) });
   };
   return (
     <details className="pcad-popover__hint">
       <summary>{t('catalog.frameDoor.title')}</summary>
-      <p>{t('catalog.frameDoor.hint')}</p>
-      <p>{t('catalog.frameDoor.groupNote')}</p>
-      <RowSelect label="catalog.frameDoor.board" guide="catalog.frameDoor.boardGuide" familyId={FENCE_PANEL_FAMILY} ready={ready}
+      <label className="pcad-field">
+        <span className="pcad-field__label">{t('catalog.frameDoor.installation')}</span>
+        <select className="pcad-field__input" value={partition ? 'partition' : 'door'} title={t('catalog.frameDoor.installationGuide')}
+          onChange={(event) => { setPartition(event.currentTarget.value === 'partition'); setMessage(null); }}>
+          <option value="door">{t('catalog.frameDoor.installation.door')}</option>
+          <option value="partition">{t('catalog.frameDoor.installation.partition')}</option>
+        </select>
+      </label>
+      <p>{t(partition ? 'catalog.frameDoor.partitionHint' : 'catalog.frameDoor.hint')}</p>
+      <p>{t(partition ? 'catalog.frameDoor.partitionGroupNote' : 'catalog.frameDoor.groupNote')}</p>
+      <RowSelect label={partition ? 'catalog.frameDoor.partitionBoard' : 'catalog.frameDoor.board'}
+        guide={partition ? 'catalog.frameDoor.partitionBoardGuide' : 'catalog.frameDoor.boardGuide'} familyId={FENCE_PANEL_FAMILY} ready={ready}
         value={keys.boardKey} onChange={(key) => { update({ boardKey: key }); }} />
-      <RowSelect label="catalog.frameDoor.frame" guide="catalog.frameDoor.frameGuide" familyId={DOOR_FAMILIES.frame} ready={ready}
+      <RowSelect label={partition ? 'catalog.frameDoor.partitionFrame' : 'catalog.frameDoor.frame'}
+        guide={partition ? 'catalog.frameDoor.partitionFrameGuide' : 'catalog.frameDoor.frameGuide'} familyId={DOOR_FAMILIES.frame} ready={ready}
         value={keys.frameKey} onChange={(key) => { update({ frameKey: key }); }} />
+      {partition ? null : <>
       <RowSelect label="catalog.frameDoor.hinge" guide="catalog.frameDoor.hingeGuide" familyId={DOOR_FAMILIES.hinge} prefix={DOOR_HINGE_PREFIX}
         ready={ready} value={keys.hingeKey} onChange={(key) => { update({ hingeKey: key }); }} />
       <label className="pcad-field">
@@ -83,6 +98,7 @@ export function FrameDoorDetails(): React.JSX.Element {
           {SIDES.map((side) => <option key={side} value={side}>{t(`catalog.frameDoor.side.${side}`)}</option>)}
         </select>
       </label>
+      </>}
       <RowSelect label="catalog.frameDoor.holder" guide="catalog.frameDoor.holderGuide" familyId={DOOR_FAMILIES.hinge} prefix={DOOR_HOLDER_PREFIX}
         ready={ready} value={keys.holderKey} none="catalog.frameDoor.none" onChange={(key) => { update({ holderKey: key }); }} />
       <RowSelect label="catalog.frameDoor.connector" guide="catalog.frameDoor.connectorGuide" familyId={DOOR_FAMILIES.hinge}
@@ -91,20 +107,21 @@ export function FrameDoorDetails(): React.JSX.Element {
       {([['catalog.frameDoor.offset', 'catalog.frameDoor.offsetGuide', offsetText, setOffsetText],
         ['catalog.frameDoor.clearance', 'catalog.frameDoor.clearanceGuide', clearanceText, setClearanceText],
         ['catalog.frameDoor.pitch', 'catalog.frameDoor.pitchGuide', pitchText, setPitchText]] as const).map(([label, guide, value, set]) =>
-        <label key={label} className="pcad-field">
-          <span className="pcad-field__label">{t(label)}</span>
-          <input title={t(guide)} className="pcad-field__input" value={value} onKeyDown={keepEnter}
+        partition && label === 'catalog.frameDoor.offset' ? null : <label key={label} className="pcad-field">
+          <span className="pcad-field__label">{t(partition && label === 'catalog.frameDoor.clearance'
+            ? 'catalog.frameDoor.partitionClearance' : label)}</span>
+          <input title={t(partition && label === 'catalog.frameDoor.clearance' ? 'catalog.frameDoor.partitionClearanceGuide' : guide)} className="pcad-field__input" value={value} onKeyDown={keepEnter}
             onChange={(event) => { set(event.currentTarget.value); setMessage(null); }} />
           <span className="pcad-field__unit">mm</span>
         </label>)}
-      {planned.ok ? <p>{t('catalog.frameDoor.preview').replace('{width}', String(planned.plan.outer.width))
+      {planned.ok ? <p>{t(partition ? 'catalog.frameDoor.partitionPreview' : 'catalog.frameDoor.preview').replace('{width}', String(planned.plan.outer.width))
         .replace('{height}', String(planned.plan.outer.height)).replace('{boardWidth}', String(planned.plan.board.width))
         .replace('{boardHeight}', String(planned.plan.board.height))}
         {planned.plan.holders.length + planned.plan.connectors.length === 0 ? null : t('catalog.frameDoor.previewParts')
           .replace('{holders}', String(planned.plan.holders.length)).replace('{connectors}', String(planned.plan.connectors.length))}</p>
-        : <p className="pcad-field__message">{frameDoorReasonText(planned.reason)}</p>}
-      <button type="button" className="pcad-button pcad-button--action" disabled={!planned.ok} title={t('catalog.frameDoor.placeGuide')}
-        onClick={place}>{t('catalog.frameDoor.place')}</button>
+        : <p className="pcad-field__message">{frameDoorReasonText(planned.reason, partition)}</p>}
+      <button type="button" className="pcad-button pcad-button--action" disabled={!planned.ok} title={t(partition ? 'catalog.frameDoor.partitionPlaceGuide' : 'catalog.frameDoor.placeGuide')}
+        onClick={place}>{t(partition ? 'catalog.frameDoor.partitionPlace' : 'catalog.frameDoor.place')}</button>
       {message === null ? null : <p role={message.role}>{message.text}</p>}
     </details>
   );

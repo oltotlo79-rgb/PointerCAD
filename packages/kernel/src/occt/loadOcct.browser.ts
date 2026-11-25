@@ -266,8 +266,8 @@ async function fetchVerifiedStreamingOcct(
   signal?: AbortSignal,
   observe: (phase: string) => void = diagnosticObserver('parent-fetch'),
 ): Promise<VerifiedOcctResponse | undefined> {
-  const manifest = parseOcctAssetManifest(fetched.manifest);
-  const stream = manifest.stream;
+  // Both callers have already validated and normalized this manifest.
+  const stream = fetched.manifest.stream;
   if (stream === undefined) return undefined;
   const manifestUrl = new URL(fetched.url);
   const url = new URL(stream.file, manifestUrl);
@@ -384,25 +384,27 @@ export function loadOcctForBrowser(
   const pending = (async (): Promise<OpenCascadeInstance> => {
     const stage = diagnosticObserver('worker');
     stage('start');
-    const gluePromise = importOcctGlue();
-    const manifestPromise = moduleOffer === undefined ? fetchAssetManifest() : undefined;
-    const glueModule = await gluePromise;
-    stage('glue-ready');
-    if (!isOcctGlueModule(glueModule)) {
-      throw new Error(
-        `OCCT のグルーコードを読み込めませんでした(既定の書き出しが見つかりません): ${ocGlueUrl}`,
-      );
-    }
-    if (moduleOffer !== undefined) {
-      const offered = await moduleOffer();
-      if (offered !== undefined) {
-        stage('broker-verified');
-        const instance = await instantiateCompiledOcct(
-          offered, (options) => new glueModule.default(options), stage,
+    const gluePromise = importOcctGlue().then(glueModule => {
+      stage('glue-ready');
+      if (!isOcctGlueModule(glueModule)) {
+        throw new Error(
+          `OCCT のグルーコードを読み込めませんでした(既定の書き出しが見つかりません): ${ocGlueUrl}`,
         );
-        stage('ready');
-        return instance;
       }
+      return glueModule;
+    });
+    // This is already the first real geometry request. Glue import and the
+    // parent-owned verified module can proceed independently up to instantiation.
+    const offeredPromise = moduleOffer === undefined ? undefined : Promise.resolve().then(moduleOffer);
+    const manifestPromise = moduleOffer === undefined && location.protocol !== 'app:' ? fetchAssetManifest() : undefined;
+    const [glueModule, offered, initialManifest] = await Promise.all([gluePromise, offeredPromise, manifestPromise]);
+    if (offered !== undefined) {
+      stage('broker-verified');
+      const instance = await instantiateCompiledOcct(
+        offered, (options) => new glueModule.default(options), stage,
+      );
+      stage('ready');
+      return instance;
     }
     if (location.protocol === 'app:') {
       const verified = await fetchVerifiedDesktopOcct(ocWasmUrl, undefined, stage);
@@ -413,7 +415,7 @@ export function loadOcctForBrowser(
       stage('ready');
       return instance;
     }
-    const fetchedManifest = await (manifestPromise ?? fetchAssetManifest());
+    const fetchedManifest = manifestPromise === undefined ? await fetchAssetManifest() : initialManifest;
     if (fetchedManifest !== undefined) {
       const instance = await loadManifestOcct(
         fetchedManifest,

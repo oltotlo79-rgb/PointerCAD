@@ -39,7 +39,7 @@ import {
   camDimensionFailure,
   crossLevelGearDocumentFailure,
   crossLevelCamDocumentFailure,
-  contextReferencesHaveCycle,
+  contextReferenceTargetIds, contextReferencesHaveCycle,
   evaluateCamCouplings,
   evaluateMechanismCouplings,
   mechanismCouplingLoopFailure,
@@ -52,7 +52,7 @@ import {
   type BomSettings,
   type BomSortKey,
   type ComponentSource,
-  type ContextReferenceLink,
+  type ContextPlaneBinding, type ContextReferenceLink,
   type CrossLevelGearCouplingDefinition,
   type CrossLevelCamCouplingDefinition,
   type Joint,
@@ -286,7 +286,12 @@ function serializeCrossLevelCamCoupling(coupling: CrossLevelCamCouplingDefinitio
 
 function serializeContextReference(link: ContextReferenceLink): ContextReferenceLink {
   return { id: link.id, targetComponentId: link.targetComponentId, targetReferenceId: link.targetReferenceId,
-    sourceComponentId: link.sourceComponentId, source: serializeSubShapeRef(link.source) };
+    sourceComponentId: link.sourceComponentId, source: serializeSubShapeRef(link.source),
+    ...(link.plane === undefined ? {} : { plane: {
+      targetPartRef: link.plane.targetPartRef, targetPartId: link.plane.targetPartId,
+      sourcePartRef: link.plane.sourcePartRef, sourcePartId: link.plane.sourcePartId, pointIds: link.plane.pointIds,
+      ...(link.plane.sourceInvalidated === true ? { sourceInvalidated: true } : {}),
+    } }) };
 }
 
 function serializeJoint(joint: Joint): Joint {
@@ -1077,10 +1082,36 @@ function readBomSettings(
 }
 
 /** 結び付けの先の鍵(部品の ref と基準点 id)。先が抱き込んだ部品でなければ null。 */
-function contextTargetKey(document: AssemblyDocument, link: ContextReferenceLink): string | null {
-  const component = document.components.find((candidate) => candidate.id === link.targetComponentId);
-  return component === undefined || component.source.kind !== 'part' ? null
-    : JSON.stringify([component.source.partRef, link.targetReferenceId]);
+function contextTargetKeys(document: AssemblyDocument, link: ContextReferenceLink): readonly string[] | null {
+  const component = document.components.find(candidate => candidate.id === link.targetComponentId);
+  if (component?.source.kind !== 'part') return null;
+  const partRef = component.source.partRef;
+  if (link.plane !== undefined && link.plane.targetPartRef !== partRef) return null;
+  return contextReferenceTargetIds(link).map(id => JSON.stringify([partRef, id]));
+}
+
+function readContextPlane(value: unknown, path: string): Checked<ContextPlaneBinding> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const targetPartRef = readString(record.value, 'targetPartRef', path);
+  if (!targetPartRef.ok) return targetPartRef;
+  const targetPartId = readString(record.value, 'targetPartId', path);
+  if (!targetPartId.ok) return targetPartId;
+  const sourcePartRef = readString(record.value, 'sourcePartRef', path);
+  if (!sourcePartRef.ok) return sourcePartRef;
+  const sourcePartId = readString(record.value, 'sourcePartId', path);
+  if (!sourcePartId.ok) return sourcePartId;
+  const invalidated = record.value['sourceInvalidated'];
+  if (invalidated !== undefined && invalidated !== true) return fieldProblem(joinPath(path, 'sourceInvalidated'), 'type');
+  const ids = record.value['pointIds'];
+  if (!isUnknownArray(ids) || ids.length !== 3) return fieldProblem(joinPath(path, 'pointIds'), 'type');
+  const [origin, u, v] = ids;
+  if (typeof origin !== 'string' || typeof u !== 'string' || typeof v !== 'string'
+    || [targetPartRef.value, targetPartId.value, sourcePartRef.value, sourcePartId.value, origin, u, v]
+      .some(id => id.length === 0)) return fieldProblem(path, 'type');
+  return { ok: true, value: { targetPartRef: targetPartRef.value, targetPartId: targetPartId.value,
+    sourcePartRef: sourcePartRef.value, sourcePartId: sourcePartId.value, pointIds: [origin, u, v],
+    ...(invalidated === true ? { sourceInvalidated: true } : {}) } };
 }
 
 function readContextReference(value: unknown, path: string): Checked<ContextReferenceLink> {
@@ -1098,8 +1129,14 @@ function readContextReference(value: unknown, path: string): Checked<ContextRefe
   if (!found.ok) return found;
   const source = readSubShapeRef(found.value, joinPath(path, 'source'));
   if (!source.ok) return source;
+  const plane = record.value['plane'] === undefined ? null
+    : readContextPlane(record.value['plane'], joinPath(path, 'plane'));
+  if (plane !== null && !plane.ok) return plane;
+  if (plane !== null && (source.value.origin?.shapeKind !== 'face' || source.value.fingerprint.kind !== 'face'
+    || source.value.fingerprint.surfaceKind !== 'plane')) return fieldProblem(joinPath(path, 'source'), 'type');
   return { ok: true, value: { id: id.value, targetComponentId: targetComponentId.value,
-    targetReferenceId: targetReferenceId.value, sourceComponentId: sourceComponentId.value, source: source.value } };
+    targetReferenceId: targetReferenceId.value, sourceComponentId: sourceComponentId.value, source: source.value,
+    ...(plane === null ? {} : { plane: plane.value }) } };
 }
 
 function readAssemblyDocumentBody(value: unknown, path: string): Checked<AssemblyDocument> {
@@ -1254,13 +1291,14 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
   if (crossLevelCamDocumentFailure(document) !== null) return fieldProblem(joinPath(path, 'crossLevelCamCouplings'), 'type');
   const contextIds = new Set<string>(), contextTargets = new Set<string>();
   for (const link of document.contextReferences ?? []) {
-    const target = contextTargetKey(document, link);
-    if (link.id.length === 0 || contextIds.has(link.id) || target === null || contextTargets.has(target)
+    const targets = contextTargetKeys(document, link);
+    if (link.id.length === 0 || contextIds.has(link.id) || targets === null
+        || new Set(targets).size !== targets.length || targets.some(target => contextTargets.has(target))
         || link.targetComponentId === link.sourceComponentId
         || !document.components.some((component) => component.id === link.sourceComponentId))
       return fieldProblem(joinPath(path, 'contextReferences'), 'type');
     contextIds.add(link.id);
-    contextTargets.add(target);
+    for (const target of targets) contextTargets.add(target);
   }
   // 部品の単位の循環(同じ部品の別の配置を通るものも)は、確定の時と同じ判定で開かずに断る。形は計算しない。
   if (contextReferencesHaveCycle(document, document.contextReferences ?? [])) {

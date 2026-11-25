@@ -18,6 +18,7 @@ import {
   MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
+import { FramePanelDetails } from './FramePanelDetails.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
@@ -110,6 +111,22 @@ beforeEach(() => {
   expect(useAppStore.getState().openStandardPartPicker()).toBe(true);
 });
 afterEach(() => { vi.restoreAllMocks(); resetTestStore(); });
+
+it('注文寸法の板だけ枠への配置を表示し、材質の変更に追従する', async () => {
+  await PRODUCT_CATALOG_REGISTRY.ensure(['panel-board-order', 'panel-board-fixed']);
+  let nodes = change(select(render(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+  nodes = change(select(nodes, 'catalog.frame.kindGuide'), 'panel-board-order');
+  const materials = options(select(nodes, 'catalog.mechanical.materialGuide'));
+  expect(materials.length).toBeGreaterThan(1);
+  const initialKey = select(nodes, 'catalog.mechanical.sizeGuide').props.value;
+  expect(one(nodes, (item) => item.type === FramePanelDetails).props.catalogItemKey).toBe(initialKey);
+  nodes = change(select(nodes, 'catalog.mechanical.materialGuide'), String(materials[1]?.props.value));
+  const nextKey = select(nodes, 'catalog.mechanical.sizeGuide').props.value;
+  expect(nextKey).not.toBe(initialKey);
+  expect(one(nodes, (item) => item.type === FramePanelDetails).props.catalogItemKey).toBe(nextKey);
+  nodes = change(select(nodes, 'catalog.frame.kindGuide'), 'panel-board-fixed');
+  expect(nodes.some((item) => item.type === FramePanelDetails)).toBe(false);
+});
 
 describe('選ぶ窓の機械要素', () => {
   it('分類の欄の最後に「機械要素」があり、選ぶと機械要素の窓に替わり、分類を戻すと今の窓に戻る', () => {

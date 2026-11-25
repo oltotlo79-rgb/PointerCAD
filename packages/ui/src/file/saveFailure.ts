@@ -1,3 +1,10 @@
+import type { PcadSaveWorkerError } from './pcadSaveWorker.js';
+
+export function saveEncodingFailureKey(error: PcadSaveWorkerError): 'file.saveEncodingFailed' | 'assembly.error.internal' {
+  if (error.internal && import.meta.env.DEV) console.error('PointerCAD save encoding', error);
+  return error.internal ? 'assembly.error.internal' : 'file.saveEncodingFailed';
+}
+
 /** Electron がエラーを直列化しても識別できる、保存失敗の回収情報。パスは含めない。 */
 export const SAVE_RECOVERY_COPY_MARKER = 'PCAD_SAVE_RECOVERY_COPY:';
 

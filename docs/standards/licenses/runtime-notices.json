@@ -198,6 +198,44 @@
       "retrievedOn": "2026-09-27",
       "status": "wired",
       "note": "P13-6cで配線済み: collectRuntimeNotices(scripts/vite/runtimeNotices.mjs)がこの原文をlicenses/runtime/配下の配布資産へ追加し、SBOM(scripts/release/sbom.mjs)がopencascade.js部品のpointercad:distributedFile属性としてこのfile/sha256を記録する。検査はapps/desktop/src/main/runtimeNotices.test.tsとapps/desktop/src/main/sbom.test.ts。"
+    },
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "OCCT の生成に使用した Emscripten 3.1.14 の FreeType version_1 ポートに含まれる許諾の案内（LICENSE.TXT）。",
+      "file": "runtime-occt-freetype-version-1-license.txt",
+      "sha256": "f6333b3a9106f10190e96d9f994f934deb7a5632851a1aaf846b94651a80f4da",
+      "source": "https://github.com/emscripten-ports/FreeType/blob/version_1/docs/LICENSE.TXT",
+      "status": "wired"
+    },
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "OCCT の生成に使用した Emscripten 3.1.14 の FreeType version_1 ポートに含まれる FreeType License の原文（FTL.TXT）。",
+      "file": "runtime-occt-freetype-version-1-ftl.txt",
+      "sha256": "f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8",
+      "source": "https://github.com/emscripten-ports/FreeType/blob/version_1/docs/FTL.TXT",
+      "status": "wired"
+    },
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "OCCT の生成に使用した Emscripten 3.1.14 の FreeType version_1 ポートに含まれる GPL version 2 の原文（GPLv2.TXT）。",
+      "file": "runtime-occt-freetype-version-1-gplv2.txt",
+      "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18",
+      "source": "https://github.com/emscripten-ports/FreeType/blob/version_1/docs/GPLv2.TXT",
+      "status": "wired"
+    },
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "Open CASCADE Technology の生成に使用した RapidJSON ヘッダーの許諾原文。",
+      "file": "runtime-occt-rapidjson-license.txt",
+      "sha256": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32",
+      "source": "https://github.com/Tencent/rapidjson"
+    },
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "Open CASCADE Technology の実行用コードを生成した Emscripten 3.1.14 の許諾原文。対応ソースには実際のリンク構成と Emscripten のライブラリーごとの許諾を収録します。",
+      "file": "runtime-occt-emscripten-3.1.14-license.txt",
+      "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
+      "source": "https://github.com/emscripten-core/emscripten/blob/4343cbec72b7db283ea3bda1adc6cb1811ae9a73/LICENSE"
     }
   ]
 }

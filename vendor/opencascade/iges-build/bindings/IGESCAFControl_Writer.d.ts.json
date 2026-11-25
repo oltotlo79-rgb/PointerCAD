@@ -1,0 +1,8 @@
+{
+  ".d.ts": "export declare class IGESCAFControl_Writer extends IGESControl_Writer {\n  Perform_1(doc: Handle_TDocStd_Document, filename: XCAFDoc_PartId, theProgress: Message_ProgressRange): Standard_Boolean;\n  SetColorMode(colormode: Standard_Boolean): void;\n  SetNameMode(namemode: Standard_Boolean): void;\n  SetLayerMode(layermode: Standard_Boolean): void;\n  delete(): void;\n}\n\n  export declare class IGESCAFControl_Writer_1 extends IGESCAFControl_Writer {\n    constructor();\n  }\n\n",
+  "kind": "class",
+  "exports": [
+    "IGESCAFControl_Writer",
+    "IGESCAFControl_Writer_1"
+  ]
+}

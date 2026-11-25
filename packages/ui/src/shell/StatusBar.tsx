@@ -137,22 +137,7 @@ function StatusMark(props: StatusMarkProps): React.JSX.Element {
   );
 }
 
-/**
- * 下端のステータスバー(要件§7.1、FR-905)。
- *
- * 左は今の状況を伝える。計算中も道具の操作ガイドを残し、計算状態を小さく並べる。
- * どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
- * 右は「作図面」「吸着」(部品の文書だけ)と「単位」を小さな札で見せる。**単位の札だけは押せる**
- * (mm ↔ inch、FR-811)。札の数も区画も増やしていない。
- * 帯の幅が足りない時は、案内の 1 文を最後に縮める(縮む順と最小の幅は `statusBarSlotStyle`。UI の点検の指摘 1)。
- * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
- *
- * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
- * 出さない**(`PROGRESS_DELAY_MS`)。短い計算で出すと、操作のたびに札が
- * 点滅するため。
- */
-export function StatusBar(): React.JSX.Element {
-  const isComputing = useAppStore((state) => state.isComputing);
+function useAssemblyStatusInputs() {
   const mateDraft = useAppStore((state) => state.assemblyMateDraft);
   const mateDiagnosis = useAppStore((state) => state.assemblyView?.diagnosis ?? null);
   const mateTargetErrors = useAppStore((state) => state.assemblyView?.mateTargetErrors ?? null);
@@ -179,205 +164,23 @@ export function StatusBar(): React.JSX.Element {
     (state) => state.assemblyInterferenceResult?.pairs.length ?? null,
   );
   const viewingAssemblyBom = useAppStore((state) => state.selection.includes('bom'));
-  // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける。
-  const kernelLoaded = useAppStore((state) => state.kernelLoaded);
-  const errorMessage = useAppStore((state) => state.errorMessage);
-  const sketchErrors = useAppStore((state) => state.sketchErrors);
-  const partErrors = useAppStore((state) => state.partErrors);
-  const faceErrorKey = useAppStore((state) => state.faceErrorKey);
-  const solidErrorKey = useAppStore((state) => state.solidErrorKey);
-  // 整形系の道具(オフセット等)を作れなかった理由(FR-321)。
-  const editErrorKey = useAppStore((state) => state.editErrorKey);
-  // 整形系の道具がうまくいったときの案内(FR-323)。断りではないので赤くしない。
-  const editNoticeKey = useAppStore((state) => state.editNoticeKey);
-  // 外観を割り当てられなかった理由(FR-1106〜1110)。
-  const appearanceErrorKey = useAppStore((state) => state.appearanceErrorKey);
-  // 測れなかった理由(FR-1101、FR-1102)。
-  const measureErrorKey = useAppStore((state) => state.measureErrorKey);
-  /*
-   * 選び直せなかった外観の割り当て(FR-1106)。件数だけを取り出すのは、取り出す式が
-   * 毎回新しい物を返すと変わっていなくても描き直しになるため(つまみの札と同じ事情)。
-   * 数えるのは `appearanceCommands.ts` の 1 か所だけ(同じ判定を画面側に書かない)。
-   */
-  const appearanceMissing = useAppStore((state) =>
-    missingAppearanceCount(state.document, state.appearanceMatches),
-  );
-  // 新しい図形を作れなかった理由。文言キーではなく組み立て済みの文。
-  const shapeErrorMessage = useAppStore(currentShapeError);
-  // 基準ジオメトリを作れなかった理由。こちらも組み立て済みの文。
-  const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
-  // 原点を移したときの一言(FR-331)。断りではないので赤くしない。
-  const originNoticeMessage = useAppStore((state) => state.originNoticeMessage);
-  /*
-   * タイムラインのつまみ(FR-507)。末尾でないあいだは札を出したままにする。
-   * 取り出すのは数だけにして、札の組み立て(新しい物を作る計算)は下の本体で行う。
-   * 取り出す式が毎回新しい物を返すと、変わっていなくても描き直しになるため。
-   */
-  const timelineIndex = useAppStore((state) => state.timelineIndex);
-  const historyCount = useAppStore(
-    (state) => state.document.references.length + state.document.solids.length,
-  );
-  const timelineNoticeKey = useAppStore((state) => state.timelineNoticeKey);
-  // 書き出しの添え物。うまくいったときの知らせなので赤くしない。
-  const exchangeNotice = useAppStore((state) => state.exchangeNotice);
-  // 3D プリントの点検(FR-815)。断りと「点検しています…」の 2 つ。
-  const printCheckErrorMessage = useAppStore((state) => state.printCheckErrorMessage);
-  const inspectingPrint = useAppStore((state) => state.isInspectingPrint);
-  // 形の計算に使うメモリ(NFR-PF-6)。上限に近いかどうかの判断と文言は statusText.ts が持つ。
-  const kernelMemory = useAppStore((state) => state.kernelMemory);
-  /*
-   * 順序の入れ替えの断り(FR-507、FR-504)。文だけを取り出す。
-   * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
-   */
-  const timelineRefusalMessage = useAppStore((state) => state.timelineRefusal?.message ?? null);
-  /*
-   * 拘束(FR-313)。断りと「次に何を押せばよいか」、そして決まり具合の 1 文。
-   * 決まり具合は model の診断(`ConstraintDiagnosis.summary`)をそのまま出す
-   * (「あと N か所決まっていません」「すべて決まりました」「付けすぎの拘束が N 件あります」
-   * 「同時に成り立たない拘束が N 件あります」)。同じ文言を ja.json に二重に書かない。
-   */
-  const constraintErrorMessage = useAppStore((state) => state.constraintErrorMessage);
-  const constraintPickMessage = useAppStore((state) => constraintPickGuide(state));
-  const constraintSummaryText = useAppStore(
-    (state) => state.constraintDiagnosis?.summary ?? null,
-  );
-  // 引っぱり(FR-313)。掴めなかった理由と、引っぱっている最中の案内。
-  const dragRefusalKey = useAppStore((state) => state.dragRefusalKey);
-  const dragging = useAppStore((state) => state.sketchDrag !== null);
-  const activeTool = useAppStore((state) => state.activeTool);
-  const workPlaneId = useAppStore((state) => state.workPlaneId);
-  // 任意の作業平面(FR-328)の名前を札に出すための一覧。
-  const customPlanes = workPlaneEntries(useAppStore((state) => state.document));
-  const snapEnabled = useAppStore((state) => state.snapEnabled);
-  /*
-   * 表示の長さの単位(FR-811)。**区画も札の数も増やさない。**
-   * いままで固定の文字だった右端の「単位: mm」の札を、そのまま押せる 2 択にする。
-   * 端末に覚える設定なので、テーマや拡大率と同じ `displaySettings` に入っている。
-   */
-  const displaySettings = useAppStore((state) => state.displaySettings);
-  const setDisplaySettings = useAppStore((state) => state.setDisplaySettings);
-  /*
-   * 選択フィルタ(FR-112)。**端末に覚える設定**なので単位と同じ
-   * `displaySettings` の中にある(`localStorage` の鍵を増やさない)。
-   */
-  const selectionFilter = displaySettings.selectionFilter;
-  const snapIndicator = useAppStore((state) => state.snapIndicator);
-  // 向きの吸着の案内線(FR-110)。帯の一言に角度と要素の名前を出す。
-  const trackIndicator = useAppStore((state) => state.trackIndicator);
-  // 名前(「線分1」)は履歴が持っている。案内線のもとになった要素だけを引く。
-  const sketchFeatures = useAppStore((state) => state.sketch.features);
-  const fileName = useAppStore(activeFileName);
-  // 作図面・吸着・拘束の推定の札は部品の文書だけで使う(ツールバーと同じ判定。UI の点検の小 21)。
-  const documentKind = useAppStore((state) => activeDocumentKind(state));
-  const fileMessage = useAppStore((state) => state.fileMessage);
-  const saveOperation = useAppStore(state => state.documentSaveOperation?.documentId === state.activeDocumentId
-    && state.documentSaveOperation.gateway === state.fileGateway ? state.documentSaveOperation : null);
-  const recoveryState = useAppStore(state => state.recoverySaveState?.documentId === state.activeDocumentId
-    && state.recoverySaveState.saver === state.autoSaver ? state.recoverySaveState : null);
-  const recomputeProgress = useAppStore((state) => state.recomputeProgress);
-  const recomputeCancelled = useAppStore((state) => state.recomputeCancelled);
-  const cancelRecompute = useAppStore((state) => state.cancelRecompute);
-  // 真偽で取り出して、印が付くか外れるかが変わったときだけ描き直す(NFR-PF-1)。
-  const unsaved = useAppStore(activeHasUnsavedChanges);
-  // 数で取り出す。ブーリアンの案内を出すかどうかにしか使わない(FR-404)。
-  const selectedBodyCount = useAppStore((state) =>
-    countSelectedBodies(state.selection, liveBodyIds(state.document)),
-  );
-  // 選択の種類の札。立体を選ぶ道具のときは部分形状を数えない(0 のまま)。
-  const selectionKind = useAppStore((state) => state.selectionKind);
-  const selectedSubShapeCount = useAppStore((state) =>
-    state.selectionKind === 'body' ? 0 : countSelectedSubShapes(state.selection, state.selectionKind),
-  );
-  /*
-   * ばねの段階的な案内。始点にする点が選ばれているかは、
-   * ツールバーの「ばね」ボタンの押せる条件と同じ solidToolReadiness で判定する
-   * (同じ判断を2か所に書かない)。activeTool が spring でないときは常に false にし、
-   * 無関係な選択の変化のたびには描き直さない(NFR-PF-1、上の selectedBodyCount と同じ考え方)。
-   */
-  const springOriginSelected = useAppStore((state) =>
-    state.activeTool === 'spring'
-      ? solidToolReadiness(state.document, state.selection, 'spring').ready
-      : false,
-  );
-  // いま開いているその場入力がばねの何段目か(springShape / springLength)。それ以外は null。
-  const springStep = useAppStore((state): SpringNumericInputStep | null => {
-    if (state.numericInput === null || state.numericInput.toolId !== 'spring') {
-      return null;
-    }
-    const { step } = state.numericInput;
-    return step === 'springShape' || step === 'springLength' ? step : null;
-  });
-  /*
-   * いま開いているその場入力の段(FR-905)。窓が次の段(線分の終点・外ねじの大きさ)へ
-   * 進んだら案内もその段の一手へ替える(`numericStepGuideText`)。今の道具の窓でなければ
-   * null にして、ほかの道具の案内へ前の窓の段が混ざらないようにする。段名は文字列なので、
-   * 変わらない間は描き直さない(NFR-PF-1)。
-   */
-  const numericInputStep = useAppStore((state) =>
-    state.numericInput === null || state.numericInput.toolId !== state.activeTool
-      ? null
-      : state.numericInput.step,
-  );
-  /*
-   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23)。判断は
-   * `math/mathGeometryToolGuide.ts` の純関数 1 か所に置く(節の先頭の文も同じものを使う)。
-   * 道具が有効なときだけ呼び、それ以外は常に null にして、無関係な選択の変化のたびには
-   * 描き直さない(上の springOriginSelected と同じ考え方、NFR-PF-1)。取り出すのは組み立てた
-   * 文字列だけにする。毎回新しい物を返す取り出し方だと、変わっていなくても描き直しになるため。
-   */
-  const mathGeometryGuide = useAppStore((state) => {
-    if (state.activeTool !== 'mathGeometry') {
-      return null;
-    }
-    const guide = mathGeometryToolGuide(state);
-    return guide === null ? null : mathGeometryToolGuideText(guide);
-  });
+  return {
+    mateDraft, mateDiagnosis, mateTargetErrors, assemblyDragNotice,
+    assemblyPlacement, standardPartPickerOpen, assemblyReplacementBusy, assemblyReplacementPreview,
+    assemblyExplodeDraft, boltedJointDraft, boltedJointPreview, filletWeldDraft,
+    circularWeldDraft, filletWeldPreview, nestedWeldDraft, nestedBoltDraft,
+    nestedBoltRefusal, checkingAssemblyInterference, assemblyInterferenceCount, viewingAssemblyBom,
+  };
+}
 
-  /*
-   * 進み具合を出してよいかどうかだけを持つ表示専用の状態(rules/04: useState は
-   * 表示専用の一時状態だけ)。見張るのは「進み具合が届いているか」の真偽で、
-   * 段が進むたびに動く中身ではない。中身で見張ると段ごとに待ち時間が振り出しへ戻り、
-   * 長い計算でもいつまでも出なくなる。
-   */
-  const hasProgress = recomputeProgress !== null;
-  const [progressVisible, setProgressVisible] = useState(false);
-  /*
-   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208)。
-   * 帯に出すのは 1 文だけなので、他の断りと同じ優先順位の列(`describeStatus`)へ渡す。
-   * 断りは「いま押した Enter への返事」で、次に打ち直せば消える表示だけの一時状態なので
-   * ここで持つ(rules/04-設計の規律.md。欄の打ちかけも `CommandLine.tsx` が同じ扱いで持つ)。
-   */
-  const [commandFailure, setCommandFailure] = useState<CommandLineFailure | null>(null);
-  useEffect(() => {
-    if (!hasProgress) {
-      setProgressVisible(false);
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      setProgressVisible(true);
-    }, PROGRESS_DELAY_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [hasProgress]);
-
-  // 開いているファイルの名前。保存していない変更があれば末尾に印が付く(FR-806)。
-  const fileLabel = documentLabel(fileName, unsaved);
-
-  // 案内線 1 本ごとに、帯へ出す材料(種類・角度・もとの要素の名前)へ詰め替える。
-  const track: readonly TrackStatus[] | null =
-    trackIndicator === null
-      ? null
-      : trackIndicator.map((line) => ({
-          kind: line.kind,
-          angleDegrees: line.angleDegrees,
-          sourceName:
-            line.sourceFeatureId === null
-              ? null
-              : (sketchFeatures.find((feature) => feature.id === line.sourceFeatureId)?.name ??
-                null),
-        }));
-
+function describeAssemblyStatus(inputs: ReturnType<typeof useAssemblyStatusInputs>) {
+  const {
+    mateDraft, mateDiagnosis, mateTargetErrors, assemblyDragNotice,
+    assemblyPlacement, standardPartPickerOpen, assemblyReplacementBusy, assemblyReplacementPreview,
+    assemblyExplodeDraft, boltedJointDraft, boltedJointPreview, filletWeldDraft,
+    circularWeldDraft, filletWeldPreview, nestedWeldDraft, nestedBoltDraft,
+    nestedBoltRefusal, checkingAssemblyInterference, assemblyInterferenceCount, viewingAssemblyBom,
+  } = inputs;
   const assemblyOperationStatus = assemblyReplacementPreview !== null
     ? t('assembly.status.replaceConfirm')
     : assemblyReplacementBusy
@@ -398,7 +201,7 @@ export function StatusBar(): React.JSX.Element {
     : { text: t(circularWeldDraft.picks.length === 0 ? 'assembly.circularFilletWeld.pickPlane'
       : circularWeldDraft.picks.length === 1 ? 'assembly.circularFilletWeld.pickEdge'
         : circularWeldDraft.picks.length === 2 ? 'assembly.circularFilletWeld.pickCylinder' : 'assembly.circularFilletWeld.picked'), failed: false };
-  const line = describeStatus({
+  return {
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
     assemblyMateActive: mateDraft !== null,
     assemblyBoltedJointStatus: boltedJointStatus(boltedJointDraft, boltedJointPreview, nestedBoltDraft, nestedBoltRefusal)
@@ -406,54 +209,48 @@ export function StatusBar(): React.JSX.Element {
     assemblyOperationStatus,
     assemblyInterferenceCount,
     assemblyDragNotice,
-    fileMessage,
-    faceErrorKey,
-    solidErrorKey,
-    editErrorKey,
-    appearanceErrorKey,
-    measureErrorKey,
-    appearanceMissingCount: appearanceMissing,
-    editNoticeKey,
-    shapeErrorMessage,
-    referenceErrorMessage,
-    commandLineFailure: commandFailure,
-    originNoticeMessage,
-    // つまみが末尾でないことの札と、末尾へ戻したことの知らせ(FR-507)。
-    rollback: rollbackOf(historyCount, timelineIndex),
-    timelineNoticeKey,
-    exchangeNotice,
-    printCheckErrorMessage,
-    inspectingPrint,
-    // 上限に近いときだけ、帯に保存と開き直しを促す(NFR-PF-6)。ふだんは何も出さない。
-    kernelMemory,
-    timelineRefusalMessage,
-    constraintErrorMessage,
-    constraintPickMessage,
-    constraintSummaryText,
-    dragRefusalKey,
-    dragging,
-    errorMessage,
-    partErrors,
-    sketchErrors,
-    cancelled: recomputeCancelled,
-    progress: progressVisible ? recomputeProgress : null,
-    isComputing,
-    kernelLoaded,
-    snapKind: snapIndicator === null ? null : snapIndicator.kind,
-    track,
-    activeTool,
-    selectedBodyCount,
-    selectedSubShapeCount,
-    selectionKind,
-    springOriginSelected,
-    springStep,
-    // その場入力の段ごとの案内(FR-905)。窓が開いていなければ null。
-    numericInputStep,
-    // 図形の測定値の道具の段階の案内。道具が有効でなければ null。
-    mathGeometryGuide,
-    // 3D スケッチのときだけ案内へ一言を添える(FR-330)。
-    workPlaneId,
-  });
+  };
+}
+
+type StatusBarState = ReturnType<typeof useAppStore.getState>;
+
+interface StatusBarContent {
+  readonly line: ReturnType<typeof describeStatus>;
+  readonly fileLabel: string;
+  readonly unsaved: boolean;
+  readonly setCommandFailure: (failure: CommandLineFailure | null) => void;
+  readonly saveOperation: StatusBarState['documentSaveOperation'];
+  readonly recoveryState: StatusBarState['recoverySaveState'];
+  readonly fileMessage: StatusBarState['fileMessage'];
+  readonly cancelRecompute: StatusBarState['cancelRecompute'];
+  readonly documentKind: ReturnType<typeof activeDocumentKind>;
+  readonly workPlaneId: StatusBarState['workPlaneId'];
+  readonly customPlanes: ReturnType<typeof workPlaneEntries>;
+  readonly snapEnabled: boolean;
+  readonly displaySettings: StatusBarState['displaySettings'];
+  readonly setDisplaySettings: StatusBarState['setDisplaySettings'];
+}
+
+function OpenReadStatus(): React.JSX.Element | null {
+  const cancel = useAppStore(state => state.cancelDocumentOpen);
+  if (cancel === null) return null;
+  return (
+    <>
+      <span className="pcad-statusbar__activity" role="status">
+        <span className="pcad-spinner" aria-hidden="true" />
+        <span>{t('file.openReading')}</span>
+      </span>
+      <button type="button" className="pcad-button pcad-button--action pcad-statusbar__cancel" title={t('file.openCancelGuide')} onClick={cancel}>
+        {t('file.openCancel')}
+      </button>
+    </>
+  );
+}
+
+function renderStatusBar(content: StatusBarContent): React.JSX.Element {
+  const { line, fileLabel, unsaved, setCommandFailure, saveOperation, recoveryState, fileMessage,
+    cancelRecompute, documentKind, workPlaneId, customPlanes, snapEnabled, displaySettings, setDisplaySettings } = content;
+  const selectionFilter = displaySettings.selectionFilter;
   const className =
     line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';
   const saveText = saveOperation === null ? null : t(`file.save.${saveOperation.stage}`)
@@ -511,6 +308,7 @@ export function StatusBar(): React.JSX.Element {
           <span className="pcad-statusbar__hint">{line.hint}</span>
         ) : null}
       </span>
+      <OpenReadStatus />
       {line.activity === null ? null : (
         <span
           className="pcad-statusbar__activity"
@@ -659,4 +457,273 @@ export function StatusBar(): React.JSX.Element {
       </button>
     </footer>
   );
+}
+
+/**
+ * 下端のステータスバー(要件§7.1、FR-905)。
+ *
+ * 左は今の状況を伝える。計算中も道具の操作ガイドを残し、計算状態を小さく並べる。
+ * どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
+ * 右は「作図面」「吸着」(部品の文書だけ)と「単位」を小さな札で見せる。**単位の札だけは押せる**
+ * (mm ↔ inch、FR-811)。札の数も区画も増やしていない。
+ * 帯の幅が足りない時は、案内の 1 文を最後に縮める(縮む順と最小の幅は `statusBarSlotStyle`。UI の点検の指摘 1)。
+ * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
+ *
+ * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
+ * 出さない**(`PROGRESS_DELAY_MS`)。短い計算で出すと、操作のたびに札が
+ * 点滅するため。
+ */
+export function StatusBar(): React.JSX.Element {
+  const isComputing = useAppStore((state) => state.isComputing);
+  const assemblyStatusInputs = useAssemblyStatusInputs();
+  // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける。
+  const kernelLoaded = useAppStore((state) => state.kernelLoaded);
+  const errorMessage = useAppStore((state) => state.errorMessage);
+  const sketchErrors = useAppStore((state) => state.sketchErrors);
+  const partErrors = useAppStore((state) => state.partErrors);
+  const faceErrorKey = useAppStore((state) => state.faceErrorKey);
+  const solidErrorKey = useAppStore((state) => state.solidErrorKey);
+  // 整形系の道具(オフセット等)を作れなかった理由(FR-321)。
+  const editErrorKey = useAppStore((state) => state.editErrorKey);
+  // 整形系の道具がうまくいったときの案内(FR-323)。断りではないので赤くしない。
+  const editNoticeKey = useAppStore((state) => state.editNoticeKey);
+  // 外観を割り当てられなかった理由(FR-1106〜1110)。
+  const appearanceErrorKey = useAppStore((state) => state.appearanceErrorKey);
+  // 測れなかった理由(FR-1101、FR-1102)。
+  const measureErrorKey = useAppStore((state) => state.measureErrorKey);
+  /*
+   * 選び直せなかった外観の割り当て(FR-1106)。件数だけを取り出すのは、取り出す式が
+   * 毎回新しい物を返すと変わっていなくても描き直しになるため(つまみの札と同じ事情)。
+   * 数えるのは `appearanceCommands.ts` の 1 か所だけ(同じ判定を画面側に書かない)。
+   */
+  const appearanceMissing = useAppStore((state) =>
+    missingAppearanceCount(state.document, state.appearanceMatches),
+  );
+  // 新しい図形を作れなかった理由。文言キーではなく組み立て済みの文。
+  const shapeErrorMessage = useAppStore(currentShapeError);
+  // 基準ジオメトリを作れなかった理由。こちらも組み立て済みの文。
+  const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
+  // 原点を移したときの一言(FR-331)。断りではないので赤くしない。
+  const originNoticeMessage = useAppStore((state) => state.originNoticeMessage);
+  /*
+   * タイムラインのつまみ(FR-507)。末尾でないあいだは札を出したままにする。
+   * 取り出すのは数だけにして、札の組み立て(新しい物を作る計算)は下の本体で行う。
+   * 取り出す式が毎回新しい物を返すと、変わっていなくても描き直しになるため。
+   */
+  const timelineIndex = useAppStore((state) => state.timelineIndex);
+  const historyCount = useAppStore(
+    (state) => state.document.references.length + state.document.solids.length,
+  );
+  const timelineNoticeKey = useAppStore((state) => state.timelineNoticeKey);
+  // 書き出しの添え物。うまくいったときの知らせなので赤くしない。
+  const exchangeNotice = useAppStore((state) => state.exchangeNotice);
+  // 3D プリントの点検(FR-815)。断りと「点検しています…」の 2 つ。
+  const printCheckErrorMessage = useAppStore((state) => state.printCheckErrorMessage);
+  const inspectingPrint = useAppStore((state) => state.isInspectingPrint);
+  // 形の計算に使うメモリ(NFR-PF-6)。上限に近いかどうかの判断と文言は statusText.ts が持つ。
+  const kernelMemory = useAppStore((state) => state.kernelMemory);
+  /*
+   * 順序の入れ替えの断り(FR-507、FR-504)。文だけを取り出す。
+   * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
+   */
+  const timelineRefusalMessage = useAppStore((state) => state.timelineRefusal?.message ?? null);
+  /*
+   * 拘束(FR-313)。断りと「次に何を押せばよいか」、そして決まり具合の 1 文。
+   * 決まり具合は model の診断(`ConstraintDiagnosis.summary`)をそのまま出す
+   * (「あと N か所決まっていません」「すべて決まりました」「付けすぎの拘束が N 件あります」
+   * 「同時に成り立たない拘束が N 件あります」)。同じ文言を ja.json に二重に書かない。
+   */
+  const constraintErrorMessage = useAppStore((state) => state.constraintErrorMessage);
+  const constraintPickMessage = useAppStore((state) => constraintPickGuide(state));
+  const constraintSummaryText = useAppStore(
+    (state) => state.constraintDiagnosis?.summary ?? null,
+  );
+  // 引っぱり(FR-313)。掴めなかった理由と、引っぱっている最中の案内。
+  const dragRefusalKey = useAppStore((state) => state.dragRefusalKey);
+  const dragging = useAppStore((state) => state.sketchDrag !== null);
+  const activeTool = useAppStore((state) => state.activeTool);
+  const workPlaneId = useAppStore((state) => state.workPlaneId);
+  // 任意の作業平面(FR-328)の名前を札に出すための一覧。
+  const customPlanes = workPlaneEntries(useAppStore((state) => state.document));
+  const snapEnabled = useAppStore((state) => state.snapEnabled);
+  /*
+   * 表示の長さの単位(FR-811)。**区画も札の数も増やさない。**
+   * いままで固定の文字だった右端の「単位: mm」の札を、そのまま押せる 2 択にする。
+   * 端末に覚える設定なので、テーマや拡大率と同じ `displaySettings` に入っている。
+   */
+  const displaySettings = useAppStore((state) => state.displaySettings);
+  const setDisplaySettings = useAppStore((state) => state.setDisplaySettings);
+  /*
+   * 選択フィルタ(FR-112)。**端末に覚える設定**なので単位と同じ
+   * `displaySettings` の中にある(`localStorage` の鍵を増やさない)。
+   */
+  const snapIndicator = useAppStore((state) => state.snapIndicator);
+  // 向きの吸着の案内線(FR-110)。帯の一言に角度と要素の名前を出す。
+  const trackIndicator = useAppStore((state) => state.trackIndicator);
+  // 名前(「線分1」)は履歴が持っている。案内線のもとになった要素だけを引く。
+  const sketchFeatures = useAppStore((state) => state.sketch.features);
+  const fileName = useAppStore(activeFileName);
+  // 作図面・吸着・拘束の推定の札は部品の文書だけで使う(ツールバーと同じ判定。UI の点検の小 21)。
+  const documentKind = useAppStore((state) => activeDocumentKind(state));
+  const fileMessage = useAppStore((state) => state.fileMessage);
+  const saveOperation = useAppStore(state => state.documentSaveOperation?.documentId === state.activeDocumentId
+    && state.documentSaveOperation.gateway === state.fileGateway ? state.documentSaveOperation : null);
+  const recoveryState = useAppStore(state => state.recoverySaveState?.documentId === state.activeDocumentId
+    && state.recoverySaveState.saver === state.autoSaver ? state.recoverySaveState : null);
+  const recomputeProgress = useAppStore((state) => state.recomputeProgress);
+  const recomputeCancelled = useAppStore((state) => state.recomputeCancelled);
+  const cancelRecompute = useAppStore((state) => state.cancelRecompute);
+  // 真偽で取り出して、印が付くか外れるかが変わったときだけ描き直す(NFR-PF-1)。
+  const unsaved = useAppStore(activeHasUnsavedChanges);
+  // 数で取り出す。ブーリアンの案内を出すかどうかにしか使わない(FR-404)。
+  const selectedBodyCount = useAppStore((state) =>
+    countSelectedBodies(state.selection, liveBodyIds(state.document)),
+  );
+  // 選択の種類の札。立体を選ぶ道具のときは部分形状を数えない(0 のまま)。
+  const selectionKind = useAppStore((state) => state.selectionKind);
+  const selectedSubShapeCount = useAppStore((state) =>
+    state.selectionKind === 'body' ? 0 : countSelectedSubShapes(state.selection, state.selectionKind),
+  );
+  /*
+   * ばねの段階的な案内。始点にする点が選ばれているかは、
+   * ツールバーの「ばね」ボタンの押せる条件と同じ solidToolReadiness で判定する
+   * (同じ判断を2か所に書かない)。activeTool が spring でないときは常に false にし、
+   * 無関係な選択の変化のたびには描き直さない(NFR-PF-1、上の selectedBodyCount と同じ考え方)。
+   */
+  const springOriginSelected = useAppStore((state) =>
+    state.activeTool === 'spring'
+      ? solidToolReadiness(state.document, state.selection, 'spring').ready
+      : false,
+  );
+  // いま開いているその場入力がばねの何段目か(springShape / springLength)。それ以外は null。
+  const springStep = useAppStore((state): SpringNumericInputStep | null => {
+    if (state.numericInput === null || state.numericInput.toolId !== 'spring') {
+      return null;
+    }
+    const { step } = state.numericInput;
+    return step === 'springShape' || step === 'springLength' ? step : null;
+  });
+  /*
+   * いま開いているその場入力の段(FR-905)。窓が次の段(線分の終点・外ねじの大きさ)へ
+   * 進んだら案内もその段の一手へ替える(`numericStepGuideText`)。今の道具の窓でなければ
+   * null にして、ほかの道具の案内へ前の窓の段が混ざらないようにする。段名は文字列なので、
+   * 変わらない間は描き直さない(NFR-PF-1)。
+   */
+  const numericInputStep = useAppStore((state) =>
+    state.numericInput === null || state.numericInput.toolId !== state.activeTool
+      ? null
+      : state.numericInput.step,
+  );
+  /*
+   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23)。判断は
+   * `math/mathGeometryToolGuide.ts` の純関数 1 か所に置く(節の先頭の文も同じものを使う)。
+   * 道具が有効なときだけ呼び、それ以外は常に null にして、無関係な選択の変化のたびには
+   * 描き直さない(上の springOriginSelected と同じ考え方、NFR-PF-1)。取り出すのは組み立てた
+   * 文字列だけにする。毎回新しい物を返す取り出し方だと、変わっていなくても描き直しになるため。
+   */
+  const mathGeometryGuide = useAppStore((state) => {
+    if (state.activeTool !== 'mathGeometry') {
+      return null;
+    }
+    const guide = mathGeometryToolGuide(state);
+    return guide === null ? null : mathGeometryToolGuideText(guide);
+  });
+
+  /*
+   * 進み具合を出してよいかどうかだけを持つ表示専用の状態(rules/04: useState は
+   * 表示専用の一時状態だけ)。見張るのは「進み具合が届いているか」の真偽で、
+   * 段が進むたびに動く中身ではない。中身で見張ると段ごとに待ち時間が振り出しへ戻り、
+   * 長い計算でもいつまでも出なくなる。
+   */
+  const hasProgress = recomputeProgress !== null;
+  const [progressVisible, setProgressVisible] = useState(false);
+  /*
+   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208)。
+   * 帯に出すのは 1 文だけなので、他の断りと同じ優先順位の列(`describeStatus`)へ渡す。
+   * 断りは「いま押した Enter への返事」で、次に打ち直せば消える表示だけの一時状態なので
+   * ここで持つ(rules/04-設計の規律.md。欄の打ちかけも `CommandLine.tsx` が同じ扱いで持つ)。
+   */
+  const [commandFailure, setCommandFailure] = useState<CommandLineFailure | null>(null);
+  useEffect(() => {
+    if (!hasProgress) {
+      setProgressVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setProgressVisible(true);
+    }, PROGRESS_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [hasProgress]);
+
+  // 開いているファイルの名前。保存していない変更があれば末尾に印が付く(FR-806)。
+  const fileLabel = documentLabel(fileName, unsaved);
+
+  // 案内線 1 本ごとに、帯へ出す材料(種類・角度・もとの要素の名前)へ詰め替える。
+  const track: readonly TrackStatus[] | null =
+    trackIndicator === null
+      ? null
+      : trackIndicator.map((line) => ({
+          kind: line.kind,
+          angleDegrees: line.angleDegrees,
+          sourceName:
+            line.sourceFeatureId === null
+              ? null
+              : (sketchFeatures.find((feature) => feature.id === line.sourceFeatureId)?.name ??
+                null),
+        }));
+
+  const line = describeStatus({
+    ...describeAssemblyStatus(assemblyStatusInputs),
+    fileMessage,
+    faceErrorKey,
+    solidErrorKey,
+    editErrorKey,
+    appearanceErrorKey,
+    measureErrorKey,
+    appearanceMissingCount: appearanceMissing,
+    editNoticeKey,
+    shapeErrorMessage,
+    referenceErrorMessage,
+    commandLineFailure: commandFailure,
+    originNoticeMessage,
+    // つまみが末尾でないことの札と、末尾へ戻したことの知らせ(FR-507)。
+    rollback: rollbackOf(historyCount, timelineIndex),
+    timelineNoticeKey,
+    exchangeNotice,
+    printCheckErrorMessage,
+    inspectingPrint,
+    // 上限に近いときだけ、帯に保存と開き直しを促す(NFR-PF-6)。ふだんは何も出さない。
+    kernelMemory,
+    timelineRefusalMessage,
+    constraintErrorMessage,
+    constraintPickMessage,
+    constraintSummaryText,
+    dragRefusalKey,
+    dragging,
+    errorMessage,
+    partErrors,
+    sketchErrors,
+    cancelled: recomputeCancelled,
+    progress: progressVisible ? recomputeProgress : null,
+    isComputing,
+    kernelLoaded,
+    snapKind: snapIndicator === null ? null : snapIndicator.kind,
+    track,
+    activeTool,
+    selectedBodyCount,
+    selectedSubShapeCount,
+    selectionKind,
+    springOriginSelected,
+    springStep,
+    // その場入力の段ごとの案内(FR-905)。窓が開いていなければ null。
+    numericInputStep,
+    // 図形の測定値の道具の段階の案内。道具が有効でなければ null。
+    mathGeometryGuide,
+    // 3D スケッチのときだけ案内へ一言を添える(FR-330)。
+    workPlaneId,
+  });
+  return renderStatusBar({ line, fileLabel, unsaved, setCommandFailure, saveOperation, recoveryState, fileMessage,
+    cancelRecompute, documentKind, workPlaneId, customPlanes, snapEnabled, displaySettings, setDisplaySettings });
 }

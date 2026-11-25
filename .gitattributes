@@ -32,6 +32,8 @@ scripts/manual/fonts/*.txt -text
 # (Git for Windows・CI の windows-latest の既定)で取り出すと改行が CRLF になり SHA-256 が
 # 3e448789… に変わる(2026-11-12、main の CI run 43038990339 で判明)。一式に改行変換を適用しない。
 /vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/** -text
+/vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315/** -text
+/vendor/opencascade/iges-build/** -text
 
 # packages/ui/src/help/mathCatalogHelp.ts が生成する内容と、mathCatalogHelp.test.ts が
 # バイト単位でtoBe比較する収録済みの章。core.autocrlf=true(Git for Windowsの既定)で取り出すと

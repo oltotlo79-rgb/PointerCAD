@@ -373,6 +373,42 @@ function joinWithAnd(names: readonly string[]): string {
  * 3. 入口
  * ------------------------------------------------------------------ */
 
+function tooManyConstraintVariables(variables: number, variableSet: VariableSet): ConstraintDiagnosis {
+  // 解かないので、拘束は 1 つも効いていない = 全部の変数が未決定のまま。
+  return {
+    variables,
+    equations: 0,
+    rank: 0,
+    degreesOfFreedom: variables,
+    excess: 0,
+    redundant: [],
+    conflicting: [],
+    dangling: [],
+    frozen: variableSet.frozen,
+    redundantDetails: [],
+    conflictDetails: [],
+    skipped: [],
+    tooMany: true,
+    maxResidual: 0,
+    satisfied: false,
+    messages: [{ kind: 'tooMany', text: CONSTRAINT_TOO_MANY_MESSAGE, constraintIds: [] }],
+    summary: CONSTRAINT_TOO_MANY_MESSAGE,
+  };
+}
+
+function largestConstraintResidual(rows: readonly ResidualRow[]): number {
+  let maxResidual = 0;
+  for (const row of rows) {
+    const size = Math.abs(row.value);
+    if (!(size <= maxResidual)) {
+      // NaN もここへ来る。
+      maxResidual = size;
+    }
+  }
+
+  return maxResidual;
+}
+
 /**
  * 拘束を診断する。**例外を投げない**(FR-504、NFR-RE-1)。
  *
@@ -387,28 +423,7 @@ export function diagnoseConstraints(
   const tolerance = options?.tolerance ?? CONSTRAINT_TOLERANCE;
   const variables = variableSet.variables.length;
 
-  if (variables > MAX_CONSTRAINT_VARIABLES) {
-    // 解かないので、拘束は 1 つも効いていない = 全部の変数が未決定のまま。
-    return {
-      variables,
-      equations: 0,
-      rank: 0,
-      degreesOfFreedom: variables,
-      excess: 0,
-      redundant: [],
-      conflicting: [],
-      dangling: [],
-      frozen: variableSet.frozen,
-      redundantDetails: [],
-      conflictDetails: [],
-      skipped: [],
-      tooMany: true,
-      maxResidual: 0,
-      satisfied: false,
-      messages: [{ kind: 'tooMany', text: CONSTRAINT_TOO_MANY_MESSAGE, constraintIds: [] }],
-      summary: CONSTRAINT_TOO_MANY_MESSAGE,
-    };
-  }
+  if (variables > MAX_CONSTRAINT_VARIABLES) return tooManyConstraintVariables(variables, variableSet);
 
   const report = buildResidualReport(constraints, variableSet, x);
   const rows = report.rows;
@@ -427,14 +442,7 @@ export function diagnoseConstraints(
   const visible = (constraintId: string): boolean => !isImplicitConstraintId(constraintId);
   const nameOf = (constraintId: string): string => nameById.get(constraintId) ?? constraintId;
 
-  let maxResidual = 0;
-  for (const row of rows) {
-    const size = Math.abs(row.value);
-    if (!(size <= maxResidual)) {
-      // NaN もここへ来る。
-      maxResidual = size;
-    }
-  }
+  const maxResidual = largestConstraintResidual(rows);
 
   const redundantDetails: RedundantConstraint[] = [];
   const conflictDetails: ConflictingConstraint[] = [];

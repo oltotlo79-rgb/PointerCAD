@@ -1,11 +1,12 @@
 /** 保存を実行する環境に依存しない契約。ブラウザーのWorkerとheadless検査が同じIOを使う。 */
-import type { AssemblyDocumentBundle, DrawingDocument, DrawingTemplate, PartDocument } from '@pointercad/model';
+import { ownedAttachmentsDigestOf, type AssemblyDocumentBundle, type DrawingDocument, type DrawingTemplate, type PartDocument } from '@pointercad/model';
 import { IO_LIMITS } from '../limits.js';
-import { drawingBundleEntries } from './drawingBundle.js';
+import { drawingBundleEntries, drawingEntriesWithMeshes } from './drawingBundle.js';
 import { drawingTemplateEntries } from './drawingTemplateFile.js';
-import { documentBundleEntries, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX, zipPcadEntriesPartsAsync,
-  type WriteDocumentBundleOptions, type WritePcadFileOptions, type WritePcaddFileOptions } from './pcadFile.js';
-import { concatZipParts, hasSteppedZipEntry, zipEntriesWithOwnedBuffersPartsAsync, type ZipStepEntry } from './zipSteps.js';
+import { bundleEntriesWithMeshes, documentBundleEntries, dropAssemblySaveExtras, ownedMeshEntryBytes,
+  partEntriesWithMeshes, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX, zipPcadEntriesPartsAsync,
+  type ImportedMeshBytes, type PcadZipEntries, type WriteDocumentBundleOptions, type WritePcadFileOptions, type WritePcaddFileOptions } from './pcadFile.js';
+import { concatZipParts, hasSteppedZipEntry, packOwnedZipEntries, zipEntriesWithOwnedBuffersPartsAsync, type ZipChunkedBytes, type ZipStepEntry } from './zipSteps.js';
 import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
 import type { AnalysisResultIssue } from './codecs/analysisResult.js';
 
@@ -31,6 +32,11 @@ export interface SaveEncodingControl {
    */
   readonly onAnalysisResultIssue?: (analysisId: string, issue: AnalysisResultIssue) => void;
 }
+/** The callback owns the input views and may release a component after its last use. */
+export interface OwnedSaveEncodingControl extends SaveEncodingControl {
+  readonly onMeshComponentWritten: (component: Float32Array | Uint32Array) => void;
+}
+
 export type SaveDocumentEncoder = (input: SaveDocumentInput, control?: SaveEncodingControl) => Promise<Uint8Array>;
 /**
  * `SaveDocumentEncoder` と同じ符号化で、結果を順につなぐとファイルの全体になる部分の並びで返す。
@@ -53,28 +59,82 @@ function ownedPartMeshBuffers(input: SaveDocumentInput,
 
 /** この関数自身はスレッドを作らない。UIは必ず専用Workerから呼ぶ。 */
 export const encodeSaveDocumentParts: SaveDocumentPartsEncoder = async (input, control = {}) => {
+  return encodeSaveParts(input, control);
+};
+
+/** Save Worker route. Its snapshot owns the input, including all mesh components. */
+export function encodeOwnedSaveDocumentParts(input: SaveDocumentInput, control: OwnedSaveEncodingControl): Promise<readonly Uint8Array[]> {
+  const results = input.kind === 'part' ? input.options.analysisResults
+    : input.kind === 'assembly' ? input.bundle.analysisResults : undefined;
+  // The saved-result writer may still use raw data during preparation.
+  const release = results === undefined || results.size === 0 ? control.onMeshComponentWritten : undefined;
+  return encodeSaveParts(input, control, mesh => ownedMeshEntryBytes(mesh, release));
+}
+
+type OwnedEntries = PcadZipEntries<ZipChunkedBytes>;
+type MeshEncoder = (mesh: ImportedMeshBytes) => Uint8Array | ZipChunkedBytes | null;
+
+function usesIndividualBytes(entries: OwnedEntries): entries is PcadZipEntries {
+  for (const [bytes] of entries.values()) if (!(bytes instanceof Uint8Array)) return false;
+  return true;
+}
+
+function buildSaveEntries(input: SaveDocumentInput, report: SaveEncodingControl['onAnalysisResultIssue'],
+  encodeMesh?: MeshEncoder): OwnedEntries | Promise<OwnedEntries> {
+  const withReport = <T extends object>(options: T): T => report === undefined ? options
+    : { ...options, onAnalysisResultIssue: report };
+  switch (input.kind) {
+    case 'part': {
+      const options = withReport(input.options);
+      return encodeMesh === undefined ? pcadEntries(input.document, options) : partEntriesWithMeshes(input.document, options, encodeMesh);
+    }
+    case 'assembly': {
+      const options = withReport(input.options);
+      return encodeMesh === undefined ? documentBundleEntries(input.bundle, options) : bundleEntriesWithMeshes(input.bundle, options, encodeMesh, ownedAttachmentsDigestOf);
+    }
+    case 'drawing': return encodeMesh === undefined ? drawingBundleEntries(input.document, input.options)
+      : drawingEntriesWithMeshes(input.document, input.options, encodeMesh, IO_LIMITS, ownedAttachmentsDigestOf);
+    case 'drawingTemplate': return drawingTemplateEntries(input.template, input.savedAt);
+  }
+}
+
+async function encodeSaveParts(input: SaveDocumentInput, control: SaveEncodingControl,
+  encodeMesh?: MeshEncoder): Promise<readonly Uint8Array[]> {
   control.signal?.throwIfAborted();
   control.onProgress?.('preparing');
   const report = control.onAnalysisResultIssue;
-  const withReport = <T extends object>(options: T): T => report === undefined ? options
-    : { ...options, onAnalysisResultIssue: report };
-  const entries = input.kind === 'part' ? pcadEntries(input.document, withReport(input.options))
-    : input.kind === 'assembly' ? await documentBundleEntries(input.bundle, withReport(input.options))
-      : input.kind === 'drawingTemplate' ? drawingTemplateEntries(input.template, input.savedAt)
-        : await drawingBundleEntries(input.document, input.options);
+  const pending = buildSaveEntries(input, report, encodeMesh);
+  const entries = pending instanceof Promise ? await pending : pending;
   control.signal?.throwIfAborted();
   control.onEntriesBuilt?.();
   control.onProgress?.('compressing');
-  // 大きい項目は区切って圧縮し、区切りごとに Worker の終了要求・取消を受け付ける(取消を1秒以内に)。
-  const ownedBuffers = ownedPartMeshBuffers(input, entries);
-  const parts = ownedBuffers.size > 0 && hasSteppedZipEntry(entries)
-    ? await zipEntriesWithOwnedBuffersPartsAsync(entries, ownedBuffers, { signal: control.signal })
-    : await zipPcadEntriesPartsAsync(entries, { signal: control.signal });
-  if (input.kind === 'drawing' && parts.reduce((total, part) => total + part.byteLength, 0) > IO_LIMITS.archiveCompressedBytes) {
+  const zipControl = { signal: control.signal };
+  let renderPacked: Awaited<ReturnType<typeof packOwnedZipEntries>> | undefined;
+  let parts: Uint8Array[];
+  if (usesIndividualBytes(entries)) parts = await zipIndividualEntries(input, entries, zipControl);
+  else {
+    renderPacked = await packOwnedZipEntries(entries, zipControl);
+    parts = renderPacked(entries);
+  }
+  const compressedSize = (): number => parts.reduce((total, part) => total + part.byteLength, 0);
+  if (input.kind === 'assembly' && compressedSize() > IO_LIMITS.archiveCompressedBytes) {
+    if (dropAssemblySaveExtras(entries, report)) {
+      parts = [];
+      if (renderPacked !== undefined) parts = renderPacked(entries);
+      else if (usesIndividualBytes(entries)) parts = await zipPcadEntriesPartsAsync(entries, zipControl);
+    }
+  }
+  if ((input.kind === 'drawing' || input.kind === 'assembly') && compressedSize() > IO_LIMITS.archiveCompressedBytes) {
     throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
   }
   return parts;
-};
+}
+
+function zipIndividualEntries(input: SaveDocumentInput, entries: PcadZipEntries, control: Pick<SaveEncodingControl, 'signal'>): Promise<Uint8Array[]> {
+  const owned = ownedPartMeshBuffers(input, entries);
+  return owned.size > 0 && hasSteppedZipEntry(entries)
+    ? zipEntriesWithOwnedBuffersPartsAsync(entries, owned, control) : zipPcadEntriesPartsAsync(entries, control);
+}
 
 /** 部分の並びの符号化と同じ符号化の結果を、1 つの並びにつないで返す(ファイル 1 つを丸ごと受ける保存先用)。 */
 export const encodeSaveDocument: SaveDocumentEncoder = async (input, control = {}) =>

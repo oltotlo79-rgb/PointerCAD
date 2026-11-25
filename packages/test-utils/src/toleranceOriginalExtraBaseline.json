@@ -1,6 +1,0 @@
-{
-  "packages/kernel/src/math/splineInterpolation.ts": {
-    "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
-    "Math.abs(work[pivot][column]) < MIN_PIVOT": 1
-  }
-}

@@ -84,6 +84,8 @@ export interface CatalogItemRow {
    * 置いた部品に材質を付けない(統括の決定 2026-11-17 19:5x の (1))。
    */
   readonly densityMaterialId?: string;
+  /** 材質の指定が無い場合に既定の鋼の密度を使わない。 */
+  readonly omitDefaultDensity?: true;
   readonly dims: Readonly<Record<string, number>>;
   /** 寸法の出どころ。形は鋼材と同じ(題名・版・URL・頁・SHA-256・取得日)。 */
   readonly evidence: SteelEvidence;
@@ -186,6 +188,6 @@ export interface CatalogFamilyEntry {
    * `specified` は寸法を指定して作る族(行の文字は「寸法を指定して作る」)、`simplified` は資料の寸法に合わせて形を簡略にした族
    * (簡略の印を持つ行は、呼びに印を添える)。族を足す時は、この行だけを書けばよい(ui に族ごとの表を持たない)。
    */
-  readonly hint?: { readonly key: string; readonly rowLabel: 'specified' | 'simplified' };
+  readonly hint?: { readonly key: string; readonly rowLabel: 'specified' | 'simplified' | 'default' };
   readonly load: () => Promise<CatalogFamily>;
 }

@@ -1,6 +1,6 @@
 import type { PartDocument } from '../part/types.js';
 import { nextSerialName } from '../sketch/createSketchDocument.js';
-import { COMPONENT_NAME_SEPARATOR } from './assemblyEdit.js';
+import { componentNamePrefix, COMPONENT_NAME_SEPARATOR } from './assemblyEdit.js';
 import type { CatalogRegistry } from './catalog/registry.js';
 import type { PartLibrary } from './partLibrary.js';
 import type { StandardPartSource } from './resolveAssembly.js';
@@ -42,8 +42,11 @@ export interface ReplacementPartNames {
 
 /** 「元の部品名:番号」の時だけ、配置と同じ連番で新しい名前を付ける。 */
 export function nextComponentNameFor(name: string, { before, after }: ReplacementPartNames, used: Iterable<string>): string {
-  if (before === null || after === null || before === after) return name;
-  const prefix = `${before}${COMPONENT_NAME_SEPARATOR}`;
-  if (!name.startsWith(prefix) || !/^[0-9]+$/u.test(name.slice(prefix.length))) return name;
-  return nextSerialName(used, `${after}${COMPONENT_NAME_SEPARATOR}`);
+  if (before === null || after === null) return name;
+  const prefix = componentNamePrefix(before);
+  const legacyPrefix = `${before}${COMPONENT_NAME_SEPARATOR}`;
+  const nextPrefix = componentNamePrefix(after);
+  // 旧版で空の文書名から作った「:番号」も、その元文書を替える時は従来の自動名として扱う。
+  const previous = [prefix, legacyPrefix].find(value => name.startsWith(value) && /^[0-9]+$/u.test(name.slice(value.length)));
+  return previous === undefined || previous === nextPrefix ? name : nextSerialName(used, nextPrefix);
 }

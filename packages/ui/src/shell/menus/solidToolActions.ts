@@ -25,6 +25,7 @@ import {
   type SolidToolReadiness,
 } from '../../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../../solid/subShapeSelection.js';
+import { commitWorkingPartDocument } from '../../store/partEditActions.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { viewportCenterAnchor } from './toolbarShared.js';
 
@@ -52,16 +53,17 @@ function solidAnchor(): readonly [number, number] {
  * 押し出し・回転・縫合(FR-401〜403)。道具を選び、その場で数値を聞く(NFR-UX-2)。
  * 回転は線分が選ばれていれば「選んだ線分」も軸の候補に加える。
  */
-function openSolidInput(tool: SolidToolId): void {
+function openSolidInput(tool: SolidToolId, keepSingleProfile = false): void {
   const store = useAppStore.getState();
   // 前の押し出しの確かめた形・古い確定の知らせを、新しい入力の窓へ持ち越さない。
   if (tool === 'extrude' || tool === 'holeTranslate' || tool === 'faceRotate') cancelExtrusion();
   // 面を選ばずに辺 2 本だけを選んで穴・ねじ穴を押した時は、辺からの距離で開く(M-10 ③)。
   const fromEdges = (tool === 'hole' || tool === 'threadHole')
     && faceOfEdgePair(subShapeBodiesOf(store.bodies), store.selection) !== null;
-  const keepProfiles = tool === 'extrude' && selectedExtrudeProfiles(store.document, store.selection).length > 1;
+  const keepProfiles = tool === 'extrude'
+    && selectedExtrudeProfiles(store.document, store.selection).length >= (keepSingleProfile ? 1 : 2);
   store.setActiveTool(tool);
-  // 道具を変えると選ぶ種類が面に変わり選択が空になるので、選んだ 2 本を選んだ順(辺 1・辺 2)のまま戻す。
+  // 選ぶ種類が変わっても、穴の辺を選んだ順と押し出しに渡す作図面を保つ。
   if (fromEdges || (keepProfiles && useAppStore.getState().selection.length === 0)) store.setSelection(store.selection);
   const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
   /*
@@ -101,9 +103,10 @@ function commitBooleanAction(operation: BooleanOperation): void {
     store.setSolidError(outcome.reasonKey);
     return;
   }
-  store.applyDocument(outcome.document);
-  store.setSelection([outcome.featureId]);
-  store.setActiveTool('select');
+  void commitWorkingPartDocument(store, outcome.document, current => {
+    current.setSelection([outcome.featureId]);
+    current.setActiveTool('select');
+  });
 }
 
 /**
@@ -150,7 +153,7 @@ export function runPushPull(): void {
     return;
   }
   const readiness = solidToolReadiness(store.document, store.selection, target.tool, bodies);
-  if (readiness.ready) openSolidInput(target.tool);
+  if (readiness.ready) openSolidInput(target.tool, true);
   else store.setSolidError(readiness.reasonKey);
 }
 

@@ -165,108 +165,19 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
  * 開いているかどうか・一覧を出しているかどうかは見た目だけの一時状態なのでコンポーネントに
  * 持つ(`FeatureTree` と同じ)。形の正本はストアの `assembly` だけ。
  */
-/** One focusable explicit source-update entry, shared by the actual row menu and tests. */
-export function AssemblyPartRefreshItem(props: {
-  readonly componentId: string; readonly close: () => void;
-}): React.JSX.Element {
-  const state = useAppStore(current => current);
-  const readiness = refreshPartReadiness(state, props.componentId);
-  return <>
-    <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
-      aria-disabled={!readiness.ready} aria-describedby="assembly-refresh-source-reason"
-      title={t('assembly.refresh.hint')}
-      data-help-topic="replace-subassembly"
-      onClick={() => {
-        if (!refreshPartReadiness(useAppStore.getState(), props.componentId).ready) return;
-        void startRefreshPartSource(props.componentId);
-        props.close();
-      }}>
-      {t('assembly.refresh.action')}
-    </button>
-    <p id="assembly-refresh-source-reason">
-      {readiness.reasonKey === null ? t('assembly.refresh.sharedSource') : t(readiness.reasonKey)}
-    </p>
-  </>;
+interface AssemblyTreeRowDisplay {
+  readonly view: AssemblyView | null | undefined;
+  readonly selectedIds: ReadonlySet<string>;
+  readonly collapsedComponents: readonly string[];
+  readonly hoveredElementId: string | null;
+  readonly menu: RowMenuState | null;
+  readonly menuTriggerRef: { current: HTMLButtonElement | null };
+  readonly setMenu: (menu: RowMenuState | null) => void;
+  readonly setCollapsedComponents: (reduce: (ids: readonly string[]) => readonly string[]) => void;
 }
 
-export function AssemblyTree(): React.JSX.Element {
-  const searchReveal = useRevealNamedTreeRow();
-  const assembly = useAppStore(activeAssemblyDocument);
-  const view = useAppStore((state) => state.assemblyView);
-  const selection = useAppStore((state) => state.selection);
-  const hoveredElementId = useAppStore((state) => state.hoveredElementId);
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [collapsed, setCollapsed] = useState<readonly AssemblyTreeSectionKey[]>([]);
-  const [collapsedComponents, setCollapsedComponents] = useState<readonly string[]>([]);
-  const [menu, setMenu] = useState<RowMenuState | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-
-  // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
-  useEffect(() => {
-    if (menu === null) {
-      return undefined;
-    }
-    const onPointerDown = (event: PointerEvent): void => {
-      const node = menuRef.current;
-      if (node !== null && event.target instanceof Node && node.contains(event.target)) {
-        return;
-      }
-      setMenu(null);
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
-        setMenu(null);
-        menuTriggerRef.current?.focus();
-      }
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [menu]);
-
-  // 開いた直後は先頭の項目へ焦点を移し、キーボードだけでも選べるようにする(NFR-UX-7)。
-  useEffect(() => {
-    if (menu === null) {
-      return;
-    }
-    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
-  }, [menu]);
-
-  if (assembly === null) {
-    /*
-      アセンブリを開いていないときは出さない(`AppShell` が部品の木の側を出す)。
-      それでも空の区画を返すのは、種類が入れ替わる一瞬に区画そのものが消えて
-      幅が動かないようにするため。
-    */
-    return (
-      <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
-        <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
-        <div className="pcad-panel__body">
-          <div className="pcad-panel__empty">
-            <EmptyBoxIcon size={28} />
-            <p className="pcad-panel__empty-text">{t('featureTree.empty')}</p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  const conflictingIds = new Set([
-    ...(view?.diagnosis?.provenConflictMateIds ?? []),
-  ]);
-  const sections = assemblyTreeRows(assembly, view === null || view === undefined ? undefined : {
-    ...view.resolved,
-    conflictingIds,
-  });
-  const selectedIds = new Set(selection);
-  const menuComponent = menu?.kind === 'component' ? findComponent(assembly, menu.rowId) : undefined;
-  const menuMate = menu?.kind === 'mate' ? assembly.mates.find((mate) => mate.id === menu.rowId) : undefined;
-  const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
-
+function createAssemblyTreeRowRenderer(display: AssemblyTreeRowDisplay) {
+  const { view, selectedIds, collapsedComponents, hoveredElementId, menu, menuTriggerRef, setMenu, setCollapsedComponents } = display;
   const renderRow = (row: AssemblyTreeRow, sectionKey: AssemblyTreeSectionKey, depth = 0): React.JSX.Element => {
     const details = sectionKey === 'mate' ? assemblyMateRowDetails(row.id, view) : null;
     const errorMessage = details?.message ?? row.errorMessage;
@@ -398,6 +309,219 @@ export function AssemblyTree(): React.JSX.Element {
     );
   };
 
+  return renderRow;
+}
+
+function renderAssemblyRowMenu(menu: RowMenuState | null, menuComponent: ReturnType<typeof findComponent>,
+  hasMate: boolean, menuRef: React.RefObject<HTMLDivElement | null>,
+  menuTriggerRef: React.RefObject<HTMLButtonElement | null>,
+  setMenu: (menu: RowMenuState | null) => void): React.JSX.Element | null {
+  return menu === null || (menuComponent === undefined && !hasMate) ? null : (
+    <div
+      ref={menuRef}
+      className="pcad-menu__panel pcad-tree__menu"
+      role="menu"
+      style={{ left: menu.x, top: menu.y }}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          setMenu(null);
+          menuTriggerRef.current?.focus();
+          return;
+        }
+        const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
+        const current = Math.max(0, items.findIndex(item => item === event.currentTarget.ownerDocument.activeElement));
+        const next = nextHighlightIndex(current, event.key, items.length);
+        if (next !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          items[next]?.focus();
+        }
+      }}
+    >
+      {menuComponent === undefined ? null : <>
+      <AssemblyPartRefreshItem componentId={menu.rowId} close={() => setMenu(null)} />
+      <button title={t('controlGuide.button.assemblyDuplicate')}
+        type="button"
+        role="menuitem"
+        className="pcad-button pcad-menu__item"
+        onClick={() => {
+          duplicateAssemblyComponent(menu.rowId);
+          setMenu(null);
+        }}
+      >
+        {t('assembly.tool.duplicate')}
+      </button>
+      <button title={t('controlGuide.button.assemblyDelete')}
+        type="button" role="menuitem"
+        className="pcad-button pcad-menu__item"
+        onClick={() => {
+          deleteAssemblyComponents([menu.rowId]);
+          setMenu(null);
+        }}
+      >
+        {t('assembly.tool.delete')}
+      </button>
+      <button title={t('controlGuide.button.assemblyFixed')}
+        type="button"
+        role="menuitem"
+        className="pcad-button pcad-menu__item"
+        onClick={() => {
+          toggleAssemblyComponentFixed(menu.rowId);
+          setMenu(null);
+        }}
+      >
+        {t(menuComponent.fixed ? 'assembly.tree.unfix' : 'assembly.tool.fixComponent')}
+      </button>
+      <button title={t('controlGuide.button.assemblyVisible')}
+        type="button"
+        role="menuitem"
+        className="pcad-button pcad-menu__item"
+        onClick={() => {
+          toggleAssemblyComponentVisible(menu.rowId);
+          setMenu(null);
+        }}
+      >
+        {t(menuComponent.visible ? 'featureTree.hide' : 'featureTree.show')}
+      </button>
+      <button title={t('controlGuide.button.assemblySuppress')}
+        type="button"
+        role="menuitem"
+        className="pcad-button pcad-menu__item"
+        onClick={() => {
+          toggleAssemblyComponentSuppressed(menu.rowId);
+          setMenu(null);
+        }}
+      >
+        {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
+      </button>
+      <AccessoryDetachItem componentId={menu.rowId} onDone={() => { setMenu(null); }} /></>}
+      {!hasMate ? null : <>
+        <button title={t('controlGuide.button.mateEdit')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
+          onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>
+          {t('assembly.mate.edit')}
+        </button>
+        <button title={t('controlGuide.button.mateFlip')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
+          onClick={() => { flipAssemblyMate(menu.rowId); setMenu(null); }}>
+          {t('assembly.mate.flip')}
+        </button>
+        <button title={t('controlGuide.button.mateDelete')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
+          onClick={() => { deleteAssemblyMate(menu.rowId); setMenu(null); }}>
+          {t('assembly.mate.delete')}
+        </button>
+      </>}
+    </div>
+  );
+}
+
+/** One focusable explicit source-update entry, shared by the actual row menu and tests. */
+export function AssemblyPartRefreshItem(props: {
+  readonly componentId: string; readonly close: () => void;
+}): React.JSX.Element {
+  const state = useAppStore(current => current);
+  const readiness = refreshPartReadiness(state, props.componentId);
+  return <>
+    <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+      aria-disabled={!readiness.ready} aria-describedby="assembly-refresh-source-reason"
+      title={t('assembly.refresh.hint')}
+      data-help-topic="replace-subassembly"
+      onClick={() => {
+        if (!refreshPartReadiness(useAppStore.getState(), props.componentId).ready) return;
+        void startRefreshPartSource(props.componentId);
+        props.close();
+      }}>
+      {t('assembly.refresh.action')}
+    </button>
+    <p id="assembly-refresh-source-reason">
+      {readiness.reasonKey === null ? t('assembly.refresh.sharedSource') : t(readiness.reasonKey)}
+    </p>
+  </>;
+}
+
+export function AssemblyTree(): React.JSX.Element {
+  const searchReveal = useRevealNamedTreeRow();
+  const assembly = useAppStore(activeAssemblyDocument);
+  const view = useAppStore((state) => state.assemblyView);
+  const selection = useAppStore((state) => state.selection);
+  const hoveredElementId = useAppStore((state) => state.hoveredElementId);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [collapsed, setCollapsed] = useState<readonly AssemblyTreeSectionKey[]>([]);
+  const [collapsedComponents, setCollapsedComponents] = useState<readonly string[]>([]);
+  const [menu, setMenu] = useState<RowMenuState | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
+  useEffect(() => {
+    if (menu === null) {
+      return undefined;
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const node = menuRef.current;
+      if (node !== null && event.target instanceof Node && node.contains(event.target)) {
+        return;
+      }
+      setMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
+        setMenu(null);
+        menuTriggerRef.current?.focus();
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menu]);
+
+  // 開いた直後は先頭の項目へ焦点を移し、キーボードだけでも選べるようにする(NFR-UX-7)。
+  useEffect(() => {
+    if (menu === null) {
+      return;
+    }
+    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
+  }, [menu]);
+
+  if (assembly === null) {
+    /*
+      アセンブリを開いていないときは出さない(`AppShell` が部品の木の側を出す)。
+      それでも空の区画を返すのは、種類が入れ替わる一瞬に区画そのものが消えて
+      幅が動かないようにするため。
+    */
+    return (
+      <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
+        <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
+        <div className="pcad-panel__body">
+          <div className="pcad-panel__empty">
+            <EmptyBoxIcon size={28} />
+            <p className="pcad-panel__empty-text">{t('featureTree.empty')}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const conflictingIds = new Set([
+    ...(view?.diagnosis?.provenConflictMateIds ?? []),
+  ]);
+  const sections = assemblyTreeRows(assembly, view === null || view === undefined ? undefined : {
+    ...view.resolved,
+    conflictingIds,
+  });
+  const selectedIds = new Set(selection);
+  const menuComponent = menu?.kind === 'component' ? findComponent(assembly, menu.rowId) : undefined;
+  const menuMate = menu?.kind === 'mate' ? assembly.mates.find((mate) => mate.id === menu.rowId) : undefined;
+  const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
+
+  const renderRow = createAssemblyTreeRowRenderer({
+    view, selectedIds, collapsedComponents, hoveredElementId, menu, menuTriggerRef, setMenu, setCollapsedComponents,
+  });
+
   return (
     <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
@@ -485,104 +609,7 @@ export function AssemblyTree(): React.JSX.Element {
         部品の行の一覧(FR-602、FR-605、FR-503)。指し先が消えている間は開かない
         (部品の木の「⋮」と同じ約束)。
       */}
-      {menu === null || (menuComponent === undefined && menuMate === undefined) ? null : (
-        <div
-          ref={menuRef}
-          className="pcad-menu__panel pcad-tree__menu"
-          role="menu"
-          style={{ left: menu.x, top: menu.y }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              event.stopPropagation();
-              setMenu(null);
-              menuTriggerRef.current?.focus();
-              return;
-            }
-            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
-            const current = Math.max(0, items.findIndex(item => item === event.currentTarget.ownerDocument.activeElement));
-            const next = nextHighlightIndex(current, event.key, items.length);
-            if (next !== null) {
-              event.preventDefault();
-              event.stopPropagation();
-              items[next]?.focus();
-            }
-          }}
-        >
-          {menuComponent === undefined ? null : <>
-          <AssemblyPartRefreshItem componentId={menu.rowId} close={() => setMenu(null)} />
-          <button title={t('controlGuide.button.assemblyDuplicate')}
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              duplicateAssemblyComponent(menu.rowId);
-              setMenu(null);
-            }}
-          >
-            {t('assembly.tool.duplicate')}
-          </button>
-          <button title={t('controlGuide.button.assemblyDelete')}
-            type="button" role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              deleteAssemblyComponents([menu.rowId]);
-              setMenu(null);
-            }}
-          >
-            {t('assembly.tool.delete')}
-          </button>
-          <button title={t('controlGuide.button.assemblyFixed')}
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              toggleAssemblyComponentFixed(menu.rowId);
-              setMenu(null);
-            }}
-          >
-            {t(menuComponent.fixed ? 'assembly.tree.unfix' : 'assembly.tool.fixComponent')}
-          </button>
-          <button title={t('controlGuide.button.assemblyVisible')}
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              toggleAssemblyComponentVisible(menu.rowId);
-              setMenu(null);
-            }}
-          >
-            {t(menuComponent.visible ? 'featureTree.hide' : 'featureTree.show')}
-          </button>
-          <button title={t('controlGuide.button.assemblySuppress')}
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              toggleAssemblyComponentSuppressed(menu.rowId);
-              setMenu(null);
-            }}
-          >
-            {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
-          </button>
-          <AccessoryDetachItem componentId={menu.rowId} onDone={() => { setMenu(null); }} /></>}
-          {menuMate === undefined ? null : <>
-            <button title={t('controlGuide.button.mateEdit')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
-              onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>
-              {t('assembly.mate.edit')}
-            </button>
-            <button title={t('controlGuide.button.mateFlip')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
-              onClick={() => { flipAssemblyMate(menu.rowId); setMenu(null); }}>
-              {t('assembly.mate.flip')}
-            </button>
-            <button title={t('controlGuide.button.mateDelete')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
-              onClick={() => { deleteAssemblyMate(menu.rowId); setMenu(null); }}>
-              {t('assembly.mate.delete')}
-            </button>
-          </>}
-        </div>
-      )}
+      {renderAssemblyRowMenu(menu, menuComponent, menuMate !== undefined, menuRef, menuTriggerRef, setMenu)}
     </section>
   );
 }

@@ -234,7 +234,9 @@ describe('資料 1 の板の 2 族(定尺の寸法・幅と高さを入れる)�
     // 注文の寸法の族の欄は幅と高さで、選ぶ画面は欄の名前を自分の鍵で出す(長さの名前に落ちない)。定尺の族は欄を持たない。
     const order = PRODUCT_CATALOG_REGISTRY.loaded('panel-board-order');
     expect(order?.options.map((spec) => [spec.key, t(messageKeyOr(spec.labelKey, 'catalog.mechanical.length'))]))
-      .toEqual([['width', t('catalog.board.option.width')], ['height', t('catalog.board.option.height')]]);
+      .toEqual([['width', t('catalog.board.option.width')], ['height', t('catalog.board.option.height')],
+        ['holeDiameter', t('catalog.framePanel.holeDiameter')], ['holeX', t('catalog.framePanel.holeX')], ['holeY', t('catalog.framePanel.holeY')]]);
+    expect(order?.options.filter((spec) => spec.optional).map((spec) => spec.key)).toEqual(['holeDiameter', 'holeX', 'holeY']);
     expect([t('catalog.board.option.width'), t('catalog.board.option.height')]).not.toContain(t('catalog.mechanical.length'));
     expect(PRODUCT_CATALOG_REGISTRY.loaded('panel-board-fixed')?.options).toEqual([]);
   });

@@ -32,6 +32,7 @@ import {
 export function acceptsShellBody(format: ExportFormat): boolean {
   switch (format) {
     case 'step':
+    case 'iges':
     case 'obj':
     case 'glb':
       return true;
@@ -56,6 +57,7 @@ export function acceptsMeshBody(format: ExportFormat): boolean {
     case 'glb':
       return true;
     case 'step':
+    case 'iges':
       return false;
   }
 }
@@ -100,6 +102,7 @@ export function usesTriangles(kind: FileKind): boolean {
     case 'pcadscript':
     case 'pcadinput':
     case 'step':
+    case 'iges':
     case 'dxf':
     case 'dwg':
       return false;
@@ -113,6 +116,7 @@ export function usesTriangles(kind: FileKind): boolean {
 export function carriesColor(format: ExportFormat): boolean {
   switch (format) {
     case 'step':
+    case 'iges':
     case '3mf':
     case 'obj':
     case 'glb':

@@ -1,4 +1,4 @@
-import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
+import { concatZipParts, encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
 import { createDrawingDocument, createEmptyPartDocument, embedDrawingSource, emptyDrawingSourceLibrary,
   type DrawingDocument, type GdtFeature, type ToleranceCharacteristic } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { attachAutoSave, exportAutoSave, loadAutoSavePrompt, restoreAutoSave, startAutoSave } from './attachAutoSave.js';
+import type { FileGateway } from './fileGateway.js';
 import { savePart, type PartFileDeps } from './partFile.js';
 import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
@@ -50,7 +51,7 @@ describe('製作指示を含む図面の自動保存・異常終了からの復�
     useAppStore.getState().openDrawing(document, { sources: f.library });
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
   });
-  it('実pcaddの控えに全14公差・失われた参照・溶接・元部品を保持し、起動時に別種の文書から復元する', async () => {
+  it.each(['parts', 'legacy'] as const)('実pcaddの控えに全14公差・失われた参照・溶接・元部品を保持し、起動時に別種の文書から復元する (%s)', async (mode) => {
     const f = await fixture(), storage = createMemoryAutoSaveStorage();
     const original = createAutoSaver({ storage, kind: 'drawing', documentId: 'drawing-id', sessionId: 'old-window' }); cleanup.push(() => original.stop());
     await original.saveNow({ kind: 'drawing', document: f.document, source: f.source });
@@ -65,13 +66,33 @@ describe('製作指示を含む図面の自動保存・異常終了からの復�
     expect(useAppStore.getState().drawingSources.sources[0].document).toEqual(f.source.document);
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
     expect(await storage.listRecords()).toHaveLength(1);
-    const savePcad = vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValue('復元図面.pcadd');
-    useAppStore.setState({ fileGateway: { ...useAppStore.getState().fileGateway, savePcad, hasSaveTarget: () => false } });
+    const write = vi.fn<FileGateway['savePcad']>()
+      .mockRejectedValueOnce(new Error('disk full')).mockResolvedValueOnce(null).mockResolvedValue('復元図面.pcadd');
+    const savePcad = vi.fn<FileGateway['savePcad']>((...args) => write(...args));
+    const savePcadParts = vi.fn<NonNullable<FileGateway['savePcadParts']>>(
+      (name, parts, saveAs, kind) => write(name, concatZipParts(parts), saveAs, kind));
+    useAppStore.setState({ fileGateway: { ...useAppStore.getState().fileGateway,
+      savePcad, savePcadParts: mode === 'parts' ? savePcadParts : undefined, hasSaveTarget: () => false } });
+    const restoredId = useAppStore.getState().activeDocumentId;
     await savePart(deps, false);
+    expect(write).toHaveBeenCalledTimes(1);
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
     expect(useAppStore.getState().drawing).toEqual(f.document);
     expect(await storage.listRecords()).toHaveLength(1);
     await savePart(deps, false);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
+    expect(await storage.listRecords()).toHaveLength(1);
+    await savePart(deps, false);
+    expect(savePcad).toHaveBeenCalledTimes(mode === 'legacy' ? 3 : 0);
+    expect(savePcadParts).toHaveBeenCalledTimes(mode === 'parts' ? 3 : 0);
+    expect(write).toHaveBeenCalledTimes(3);
+    for (const [name, bytes, saveAs, kind] of write.mock.calls) {
+      expect([name, saveAs, kind]).toEqual([f.document.name + '.pcadd', true, 'drawing']);
+      expect(await readDrawingBundle(bytes)).toMatchObject({ ok: true, document: f.document, source: f.source });
+    }
+    expect(useAppStore.getState().drawingFileName).toBe('復元図面.pcadd');
+    expect(useAppStore.getState().activeDocumentId).toBe(restoredId);
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(false);
     expect(await storage.listRecords()).toHaveLength(0);
   });

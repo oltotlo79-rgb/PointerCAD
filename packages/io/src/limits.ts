@@ -56,3 +56,12 @@ export function isMeshAllocationWithinLimit(
   const byteLength = meshAllocationByteLength(vertexCount, triangleCount);
   return byteLength !== null && byteLength <= maximumBytes;
 }
+
+/** Maximum size of one input range, including metadata and compressed payloads. */
+export const ARCHIVE_READ_CHUNK_BYTES = 1024 * 1024;
+
+export function validArchiveReadRange(size: number, offset: number, length: number): boolean {
+  return Number.isSafeInteger(size) && Number.isSafeInteger(offset) && Number.isSafeInteger(length)
+    && offset >= 0 && length > 0 && length <= ARCHIVE_READ_CHUNK_BYTES && offset <= size - length;
+}
+

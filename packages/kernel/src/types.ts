@@ -343,6 +343,8 @@ export interface SketchProjectionItem {
    * `null` なら立体そのもの(含まれるすべての辺)を投影する。
    */
   readonly subShape: SubShapeQuery | null;
+  /** Assembly context requires analytic curves and native outer/inner loops. */
+  readonly faceBoundaries?: true;
   /** 投影先の作図面。 */
   readonly plane: SketchPlaneFrame;
 }
@@ -375,6 +377,7 @@ export interface SketchSectionRequest {
 export interface SketchProjectionResult {
   readonly id: string;
   readonly curves: readonly PlaneCurve[];
+  readonly holes?: readonly (readonly PlaneCurve[])[];
 }
 
 /** 投影・交差を作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
@@ -2108,6 +2111,13 @@ export type ShapeExportRequest =
       /** 色を書くか。省くと書く。列挙が取れない環境では形だけになる。 */
       readonly withColors?: boolean;
     }
+  | {
+      readonly partId?: string;
+      readonly format: 'iges';
+      readonly bodies: readonly ShapeExportItem[];
+      readonly withColors?: boolean;
+      readonly unit?: 'mm' | 'inch';
+    }
   | ({
       readonly partId?: string;
       readonly format: 'stl';
@@ -2183,6 +2193,11 @@ export type ShapeExportResult =
       readonly colorWritten: boolean;
     }
   | {
+      readonly format: 'iges';
+      readonly bytes: Uint8Array;
+      readonly colorWritten: boolean;
+    }
+  | {
       readonly format: 'stl' | 'obj' | 'gltf';
       /** 保存するファイル。STL は `[.stl]`、OBJ は `[.obj, .mtl]`、glTF は `[.glb]`。 */
       readonly files: readonly ShapeExportFile[];
@@ -2255,6 +2270,11 @@ export type ShapeImportRequest =
       /** 仮想ファイルに付ける名前(省くと `import.step`)。中身の判別には使わない。 */
       readonly fileName?: string;
       /** 色を読むか(省くと読む)。false なら `color` は必ず `null` になる。 */
+      readonly withColors?: boolean;
+    }
+  | {
+      readonly format: 'iges';
+      readonly bytes: Uint8Array;
       readonly withColors?: boolean;
     }
   | {

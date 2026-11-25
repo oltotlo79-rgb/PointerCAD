@@ -20,9 +20,6 @@ import {recomputeFunctionPoints} from './recomputeFunctionPoints.js';
 import type {FunctionRecomputeContext} from './recomputeFunctionCurves.js';
 import {readFunctionPointChoice,type FunctionPointReference} from './functionPointReference.js';
 
-/** Pinned expected values: the same literals as the product constants, kept independent of them. */
-const POINT_DEADLINE_MESSAGE = '関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
-
 let backend:MathExecutionBackend;beforeAll(()=>{backend=createMathBackend();});
 /** A point on the circle X^2+Y^2=r^2 chosen at X=0 on the positive Y branch. */
 function fixture():PartDocument {
@@ -73,16 +70,34 @@ describe('文書の再計算で時間で止まった関数上の点を壊れた�
       const input=fixture(),before=JSON.stringify(input);
       const result=await recompute(input,stopped(ending));
       expect(result.cancelled).toBe(false);expect(result.point).toBeNull();
-      expect([...result.invalidInputs]).toEqual([['chosen',plainText(POINT_DEADLINE_MESSAGE)]]);
-      expect(POINT_DEADLINE_MESSAGE).not.toMatch(/選び直|範囲|精度/u);
+      expect([...result.invalidInputs]).toEqual([['chosen',{ key: 'partError.functionPoint.recomputeDeadline', parameters: {} }]]);
       expect(JSON.stringify(input)).toBe(before);
       // The same document calculates the same choice again on the next recomputation.
       const again=await recompute(input,working);
       expect([...again.invalidInputs]).toEqual([]);expect(again.point).toEqual([0,2,0]);
     });
 
+  it('計算部が結果を返さなかったら、範囲と指定座標の確認を案内する', async () => {
+    const result = await recompute(fixture(), { curves: noCurves, points: {
+      evaluate: request => Promise.resolve({ status: 'worker-error', identity: request.identity }),
+    } });
+    expect(result.cancelled).toBe(false);
+    expect(result.point).toBeNull();
+    expect([...result.invalidInputs]).toEqual([['chosen', { key: 'partError.functionPoint.recomputeIncomplete', parameters: {} }]]);
+  });
+
+  it('計算部が返した具体的な理由をそのまま保持する', async () => {
+    const message = '計算部が返した入力の理由';
+    const result = await recompute(fixture(), { curves: noCurves, points: {
+      evaluate: request => Promise.resolve({ status: 'result', identity: request.identity,
+        result: { status: 'invalid', message } }),
+    } });
+    expect(result.point).toBeNull();
+    expect([...result.invalidInputs]).toEqual([['chosen', plainText(message)]]);
+  });
+
   it('計算量の停止は、これまでどおり候補の選び直しを案内する',async()=>{
     const result=await recompute(fixture(),stopped({status:'stopped',reason:'budget'}));
-    expect([...result.invalidInputs]).toEqual([['chosen',plainText('選択した関数上の点の追従を確認できません。候補を選び直してください。')]]);
+    expect([...result.invalidInputs]).toEqual([['chosen',{ key: 'partError.functionPoint.recomputeUnconfirmed', parameters: {} }]]);
   });
 });

@@ -130,7 +130,7 @@ function showNotices(notices: readonly string[]): void {
  * 次の再計算で形が見つからないか、保存したファイルが開き直せなくなる
  * (`packages/io` の `findMissingAttachment`)。
  */
-export async function importFile(format?: ImportFileKind): Promise<void> {
+export async function importFile(format?: ImportFileKind, igesAvailable = false): Promise<void> {
   const store = useAppStore.getState();
   /*
    * 待ちの間(ファイルを選ぶ・形を読む・単位を訊く)に文書を切り替えた・編集した・取り消した
@@ -140,7 +140,7 @@ export async function importFile(format?: ImportFileKind): Promise<void> {
    */
   const request = beginDocumentRequest('import', store);
   const outcome = await runImport(
-    createExchangeDeps(''),
+    { ...createExchangeDeps(''), igesAvailable, importIsCurrent: () => request.status() === 'current' },
     store.document,
     store.sketch,
     store.workPlane,

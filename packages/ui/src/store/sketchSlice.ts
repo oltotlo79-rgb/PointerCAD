@@ -297,6 +297,7 @@ export const createSketchSlice: StateCreator<
       const kindChanged = selectionKind !== state.selectionKind;
       return {
         activeTool,
+        ...(state.partEdit?.contextPick != null ? { partEdit: { ...state.partEdit, contextPick: null } } : {}),
         ...emptySheetMetalTool(),
         selectionKind,
         numericInput: null,

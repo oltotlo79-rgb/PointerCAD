@@ -114,6 +114,19 @@ describe('保存の完了を開始した文書へ結び付ける（レビュー 
     useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
     await savePart(deps, false); expect(useAppStore.getState().fileName).toBe('retry.pcad');
   });
+  it('保存の不正な返信は内部の誤りを表示し、以前の文書と控えを保つ', async () => {
+    const discard = vi.fn(() => Promise.resolve()), write = vi.fn(() => Promise.resolve('retry.pcad'));
+    const document = useAppStore.getState().document;
+    const unexpected = new PcadSaveWorkerError('rejected', 'Invalid save reply', true);
+    useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write },
+      autoSaver: saver(discard), saveDocumentEncoder: () => Promise.reject(unexpected) });
+    await savePart(deps, false);
+    expect(useAppStore.getState().fileMessage).toEqual({ key: 'assembly.error.internal', failed: true });
+    expect(useAppStore.getState().document).toBe(document);
+    expect(unexpected).toMatchObject({ reason: 'rejected', message: 'Invalid save reply' });
+    expect(write).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
+  });
   it.each(['success', 'failure'])('保存待機中に開いた別文書の名前・保存状態・控えを変えない（%s）', async (outcome) => {
     const delayed = delayedGateway();
     const pending = savePart(deps, false);

@@ -1,0 +1,319 @@
+{
+  "image": "donalffons/opencascade.js@sha256:3069f4c2e3ab62bb82d81843bad2c0f8552ee92373208f8f655ef9bf71c0524d",
+  "platform": "linux/amd64",
+  "versions": {
+    "ocjs": "b5ff9847200016dce0d92fe747fc38a945771dc5",
+    "occt": "bb368e271e24f63078129283148ce83db6b9670a",
+    "occtRelease": "7.6.2",
+    "emscripten": "4343cbec72b7db283ea3bda1adc6cb1811ae9a73",
+    "emscriptenRelease": "3.1.14"
+  },
+  "imageFiles": {
+    "/emsdk/upstream/emscripten/tools/ports/freetype.py": {
+      "bytes": 23738,
+      "sha256": "f45f1eb66679aab25d6492177a457453e80d8a2bf5729f1b0b25abbee4cd2422"
+    },
+    "/emsdk/upstream/emscripten/tools/ports/__init__.py": {
+      "bytes": 12276,
+      "sha256": "3de69d09d42d59f6df5522f68bfda2b8250d8311fcac56b294d7302c980e3d40"
+    },
+    "/opencascade.js/src/buildFromYaml.py": {
+      "bytes": 11941,
+      "sha256": "79b280afc1e56883a7b351e0d5e6a690ecff0e2f7b3493eab0664e5bd42be697"
+    },
+    "/opencascade.js/src/compileBindings.py": {
+      "bytes": 1950,
+      "sha256": "82578f9896c88c7aaf3a81acc6095831dc5dd665a3799210c3f33e720a838160"
+    }
+  },
+  "configuration": {
+    "base": {
+      "bytes": 14456,
+      "sha256": "746249211720f7988d875f2360557e7b57343a9672acf3cdb85dcd3601ad52ab"
+    },
+    "candidate": {
+      "bytes": 14686,
+      "sha256": "c7cf1c5976cdd7ae7223661213065def6bad520356b5dd8f1792bb062bf55036"
+    },
+    "counts": [
+      244,
+      248
+    ],
+    "add": [
+      "IGESControl_Reader",
+      "IGESControl_Writer",
+      "IGESCAFControl_Reader",
+      "IGESCAFControl_Writer"
+    ]
+  },
+  "exports": [
+    "IGESControl_Reader",
+    "IGESControl_Writer",
+    "IGESCAFControl_Reader",
+    "IGESCAFControl_Reader_1",
+    "IGESCAFControl_Writer",
+    "IGESCAFControl_Writer_1"
+  ],
+  "bindingPrefix": {
+    "bytes": 317210,
+    "sha256": "438f1603829677de19ba9b4f94d58d06eca4544edaea3272846ecd3b3317418d"
+  },
+  "bindings": [
+    {
+      "input": "IGESControl_Reader.cpp.tail",
+      "imagePath": "IGESControl/IGESControl_Reader.hxx/IGESControl_Reader.cpp",
+      "after": {
+        "bytes": 318353,
+        "sha256": "5cc587d73259eceee986fdb7bb7c078a3fa1edd0ab200d3ea78ef0ee18bd6541"
+      },
+      "source": {
+        "bytes": 1143,
+        "sha256": "93f232e15048c64f531532445cad0e9560183622c90d40a4a39ed24553c942a2"
+      },
+      "before": {
+        "bytes": 318581,
+        "sha256": "0d432cf61908f42d8d8364943db4c65f748e32f19433bf5a737cd3841328a3dc"
+      }
+    },
+    {
+      "input": "IGESControl_Reader.d.ts.json",
+      "imagePath": "IGESControl/IGESControl_Reader.hxx/IGESControl_Reader.d.ts.json",
+      "after": {
+        "bytes": 279,
+        "sha256": "197e41c6d112084b40ad96b975e6a1d998949c4b06e1fd19c4670c0c272a2f63"
+      },
+      "source": {
+        "bytes": 279,
+        "sha256": "197e41c6d112084b40ad96b975e6a1d998949c4b06e1fd19c4670c0c272a2f63"
+      },
+      "before": {
+        "bytes": 731,
+        "sha256": "486aced31956ad30e8540d98a8d5d4893c37e0c15bfaaed458bc84b47b0c0899"
+      }
+    },
+    {
+      "input": "IGESControl_Writer.cpp.tail",
+      "imagePath": "IGESControl/IGESControl_Writer.hxx/IGESControl_Writer.cpp",
+      "after": {
+        "bytes": 318299,
+        "sha256": "03a85ede8012da3ed3865b0ce0af800248f5617dcf0a58f401c0c20ea5eb6492"
+      },
+      "source": {
+        "bytes": 1089,
+        "sha256": "b9eadc336508fd8cce6e33edde152a9c373c637d7a4f9e41deb546987495f993"
+      },
+      "before": {
+        "bytes": 319591,
+        "sha256": "ccddde5266855f7dd7318d132f5b0892e4e103733332e20fde3fcea510057d2c"
+      }
+    },
+    {
+      "input": "IGESControl_Writer.d.ts.json",
+      "imagePath": "IGESControl/IGESControl_Writer.hxx/IGESControl_Writer.d.ts.json",
+      "after": {
+        "bytes": 353,
+        "sha256": "1b73e397384376c60fa0b884969c7770fd22fedb2fb912bb0fab2f381ece45e4"
+      },
+      "source": {
+        "bytes": 353,
+        "sha256": "1b73e397384376c60fa0b884969c7770fd22fedb2fb912bb0fab2f381ece45e4"
+      },
+      "before": {
+        "bytes": 1164,
+        "sha256": "9c7bea92212709c62fa26a81db1dc50820e8ba0541ffe26726b6e004bacd2ca3"
+      }
+    },
+    {
+      "input": "IGESCAFControl_Reader.cpp.tail",
+      "imagePath": "IGESCAFControl/IGESCAFControl_Reader.hxx/IGESCAFControl_Reader.cpp",
+      "after": {
+        "bytes": 318298,
+        "sha256": "6796db65b89f5cc2ca682133c696bee7b08f6a89c959ab26a4010c99a906b427"
+      },
+      "source": {
+        "bytes": 1088,
+        "sha256": "2690f9430b5a5255e1787cf880375b8e9589b56802d0949435b1db4b00085891"
+      },
+      "before": {
+        "bytes": 319632,
+        "sha256": "597cd1eb9b02087dc4efb65bba286692c68e1855fc00752a584d88c378f87225"
+      }
+    },
+    {
+      "input": "IGESCAFControl_Reader.d.ts.json",
+      "imagePath": "IGESCAFControl/IGESCAFControl_Reader.hxx/IGESCAFControl_Reader.d.ts.json",
+      "after": {
+        "bytes": 599,
+        "sha256": "8aad8f6eb50e6ae776412985301ce75f68c90459b2c589322a0f06084cb64421"
+      },
+      "source": {
+        "bytes": 599,
+        "sha256": "8aad8f6eb50e6ae776412985301ce75f68c90459b2c589322a0f06084cb64421"
+      },
+      "before": {
+        "bytes": 1120,
+        "sha256": "6c1b06058272bac40c840810e5b83694c3fc08a332e30659880818c302381124"
+      }
+    },
+    {
+      "input": "IGESCAFControl_Writer.cpp.tail",
+      "imagePath": "IGESCAFControl/IGESCAFControl_Writer.hxx/IGESCAFControl_Writer.cpp",
+      "after": {
+        "bytes": 318298,
+        "sha256": "e6e36093ff6cf54a27de893817809b27c71979f4a924a8cd23d2bb3fb25e2b2f"
+      },
+      "source": {
+        "bytes": 1088,
+        "sha256": "7ce41aa3ccf3c74d1aa303d8a917da119206c9a6b097703b19a51a82a72632ff"
+      },
+      "before": {
+        "bytes": 320198,
+        "sha256": "1dbaf4ab6ac97e3b92eafadad8e4f26177460284ef014b75361498908bbae69e"
+      }
+    },
+    {
+      "input": "IGESCAFControl_Writer.d.ts.json",
+      "imagePath": "IGESCAFControl/IGESCAFControl_Writer.hxx/IGESCAFControl_Writer.d.ts.json",
+      "after": {
+        "bytes": 598,
+        "sha256": "d3d3a60e4ccc50d31576e6d072157b6e2280e9ec92f067e161bf9be5ef8422a0"
+      },
+      "source": {
+        "bytes": 598,
+        "sha256": "d3d3a60e4ccc50d31576e6d072157b6e2280e9ec92f067e161bf9be5ef8422a0"
+      },
+      "before": {
+        "bytes": 1288,
+        "sha256": "3a2cac8ed1a5ae9cf347b6d01316521e76ddd01ce9766faa987991af5f399e44"
+      }
+    }
+  ],
+  "customBindings": {
+    "Handle_IMeshTools_Context.cpp": {
+      "input": "Handle_IMeshTools_Context.cpp.tail",
+      "after": {
+        "bytes": 319248,
+        "sha256": "637c709c43c874ae9a88d751066b2381f04041802bd4b58d858a8fa2ddc266b9"
+      },
+      "source": {
+        "bytes": 2038,
+        "sha256": "241ce468393bdb22b9b2a280df135c6c786b489b883c4398e69970f124ba732b"
+      }
+    },
+    "Handle_IMeshTools_Context.d.ts.json": {
+      "input": "Handle_IMeshTools_Context.d.ts.json",
+      "after": {
+        "bytes": 944,
+        "sha256": "f50e40ca64032b03be7885e3d61ad5f59aeb72ee40b3a144d27e69786bb9a750"
+      },
+      "source": {
+        "bytes": 944,
+        "sha256": "f50e40ca64032b03be7885e3d61ad5f59aeb72ee40b3a144d27e69786bb9a750"
+      }
+    },
+    "OCJS.cpp": {
+      "input": "OCJS.cpp.tail",
+      "after": {
+        "bytes": 317620,
+        "sha256": "995fd23ef798589f993bbfe293a71a2695d70a86baaa55906d24bdda828748e9"
+      },
+      "source": {
+        "bytes": 410,
+        "sha256": "554e01241a11e024bb54e5a8c1d5acb2338575088d343290ba7eae6d4d61a213"
+      }
+    },
+    "OCJS.d.ts.json": {
+      "input": "OCJS.d.ts.json",
+      "after": {
+        "bytes": 199,
+        "sha256": "58fff6b5834a989531f819472df916f10f662e5eca1bdfeb9b543a978428189b"
+      },
+      "source": {
+        "bytes": 199,
+        "sha256": "58fff6b5834a989531f819472df916f10f662e5eca1bdfeb9b543a978428189b"
+      }
+    }
+  },
+  "freetype": {
+    "url": "https://github.com/emscripten-ports/FreeType/archive/version_1.zip",
+    "bytes": 2270210,
+    "sha256": "0cdfd7045172abfe443286ebc795fa96bcebad9471ce3499c30f1bbb5472a6df",
+    "sha512": "0d0b1280ba0501ad0a23cf1daa1f86821c722218b59432734d3087a89acd22aabd5c3e5e1269700dcd41e87073046e906060f167c032eb91a3ac8c5808a02783",
+    "entries": 774,
+    "decodedBytes": 10579211,
+    "notices": {
+      "FreeType-version_1/docs/LICENSE.TXT": {
+        "file": "runtime-occt-freetype-version-1-license.txt",
+        "bytes": 1611,
+        "sha256": "f6333b3a9106f10190e96d9f994f934deb7a5632851a1aaf846b94651a80f4da"
+      },
+      "FreeType-version_1/docs/FTL.TXT": {
+        "file": "runtime-occt-freetype-version-1-ftl.txt",
+        "bytes": 6741,
+        "sha256": "f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8"
+      },
+      "FreeType-version_1/docs/GPLv2.TXT": {
+        "file": "runtime-occt-freetype-version-1-gplv2.txt",
+        "bytes": 17994,
+        "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18"
+      }
+    }
+  },
+  "baseline": {
+    "vendor": "vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677",
+    "package": {
+      "bytes": 428,
+      "sha256": "2095d5bc427c831b48c02f34fcae5e0690a3f6c616c1bbbd4b1889d1510b26cc"
+    },
+    "files": {
+      "dist/opencascade.full.js": {
+        "bytes": 279750,
+        "sha256": "81cf6d926fefd75a700bd59f518750ff265ba7275886a25397505184f371f946"
+      },
+      "dist/opencascade.full.wasm": {
+        "bytes": 19082393,
+        "sha256": "0839d9bcc8ac4677e346dee92c7b428b91ea9c646110fcdeee8a8701424472a7"
+      },
+      "dist/opencascade.full.d.ts": {
+        "bytes": 388318,
+        "sha256": "d8633f5a7afe9e3356245b1259b6f7c2977c5680cbb2eec572d04d247aa82555"
+      }
+    },
+    "rawGlueSha256": "9617bf5cb7f3c65ca57b9f61bc0cbcbf9970a0b017d7644d97da05425d04f041",
+    "rawDeclarationSha256": "7e5e72b2caecb6e57f2ef2f5052dda12d76a8eb903a643ba66a1bcfeb848ba52",
+    "patch": "e6176c68e6bc668179e1491d299747848c4b51344c3bb5ff9ad1764f31e28e64",
+    "cspReplacements": [
+      {
+        "name": "createNamedFunction",
+        "oldSha256": "a95503dfa8465a8517c1b5d99e003f0b381cc7055e723205c0c7bd250cb99a6c",
+        "newSha256": "630b951641dc891c0be14e397ea5ec22fcf16a11c549123f70575626d4c60576"
+      },
+      {
+        "name": "craftInvokerFunction",
+        "oldSha256": "c3b5cdb7cca16a1c5e64153b4c4a1fe191754afcb67e3821dbeb82992761732f",
+        "newSha256": "41e73c08df1202dab95755fea515e02267e28df66e3dfc82b7a6c6424810fbaf"
+      }
+    ],
+    "dynamicSites": {
+      "__emval_get_method_caller:new_(Function": 1
+    },
+    "classes": [
+      792,
+      798
+    ],
+    "instanceEntries": [
+      810,
+      816
+    ]
+  },
+  "notices": {
+    "vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/LICENSE": {
+      "bytes": 26526,
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+    },
+    "docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt": {
+      "bytes": 663,
+      "sha256": "04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b"
+    }
+  }
+}

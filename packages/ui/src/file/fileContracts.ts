@@ -42,6 +42,7 @@ export const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindS
   pcad: { label: 'PointerCAD', descriptionKey: 'file.typeDescription', accept: { [PCAD_MIME_TYPE]: [PCAD_EXTENSION] } },
   pcadt: { label: 'PointerCAD', accept: { [PCAD_MIME_TYPE]: ['.pcadt'] } },
   step: { label: 'STEP', accept: { 'model/step': ['.step', '.stp'] } },
+  iges: { label: 'IGES', accept: { 'model/iges': ['.iges', '.igs'] } },
   stl: { label: 'STL', accept: { 'model/stl': ['.stl'] } },
   obj: { label: 'OBJ', accept: { 'model/obj': ['.obj'] } },
   glb: { label: 'glTF', accept: { 'model/gltf-binary': ['.glb'], 'model/gltf+json': ['.gltf'] } },
@@ -74,7 +75,7 @@ export function isFileDialogKind(kind: string): kind is FileKind | SaveFileKind 
 /** 種類つきの読込の上限(バイト)。Record なので、種類を足すと、ここに上限を決めるまで型の誤りになる。 */
 const TYPED_READ_LIMITS: Readonly<Record<FileKind, number>> = {
   pcad: MAX_COMPRESSED_INPUT_BYTES, pcadt: MAX_COMPRESSED_INPUT_BYTES, pcadscript: SCRIPT_READ_BYTES,
-  pcadinput: INPUT_SETTINGS_FILE_BYTES, step: MAX_COMPRESSED_INPUT_BYTES, stl: MAX_COMPRESSED_INPUT_BYTES,
+  pcadinput: INPUT_SETTINGS_FILE_BYTES, step: MAX_COMPRESSED_INPUT_BYTES, iges: MAX_COMPRESSED_INPUT_BYTES, stl: MAX_COMPRESSED_INPUT_BYTES,
   obj: MAX_COMPRESSED_INPUT_BYTES, glb: MAX_COMPRESSED_INPUT_BYTES, '3mf': MAX_COMPRESSED_INPUT_BYTES,
   dxf: MAX_COMPRESSED_INPUT_BYTES, dwg: MAX_COMPRESSED_INPUT_BYTES,
 };
@@ -93,3 +94,5 @@ export function typedReadLimitOf(fileName: string): number {
   }
   return MAX_COMPRESSED_INPUT_BYTES;
 }
+
+export { ARCHIVE_READ_CHUNK_BYTES, validArchiveReadRange } from '@pointercad/io/limits';

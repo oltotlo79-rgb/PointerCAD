@@ -1,8 +1,8 @@
-import { canonicalDrawingSourceText, sha256HexSync } from '@pointercad/model';
+import { canonicalDrawingSourceText, sha256HexChunksSync, sha256HexSync } from '@pointercad/model';
 import { decodeUtf8 } from '../decodeUtf8.js';
 import { isRecord } from './guards.js';
 
-type BindingInput = readonly [name: string, bytes: Uint8Array, documentEnvelope: boolean];
+type BindingInput = readonly [name: string, bytes: Uint8Array | readonly (Uint8Array | undefined)[], documentEnvelope: boolean];
 
 function documentContent(bytes: Uint8Array): Uint8Array {
   const text = decodeUtf8(bytes);
@@ -21,8 +21,13 @@ export function analysisResultBinding(inputs: Iterable<BindingInput>): string {
   const digests: [string, string][] = [];
   for (const [name, bytes, documentEnvelope] of inputs) {
     // A fresh view reads the actual ZIP bytes even when a caller has reused a mutable array.
-    const content = documentEnvelope ? documentContent(bytes) : bytes.subarray();
-    digests.push([name, sha256HexSync(content)]);
+    if (bytes instanceof Uint8Array) {
+      const content = documentEnvelope ? documentContent(bytes) : bytes.subarray();
+      digests.push([name, sha256HexSync(content)]);
+    } else {
+      if (documentEnvelope) throw new Error('Segmented document envelope');
+      digests.push([name, sha256HexChunksSync(bytes)]);
+    }
   }
   digests.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
   return sha256HexSync(new TextEncoder().encode(JSON.stringify(digests)));

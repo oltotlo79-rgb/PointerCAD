@@ -21,7 +21,7 @@ import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
 import { ScriptToolsMenu } from '../scripting/ScriptToolsMenu.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
-import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
+import { activeDocumentKind, activeFileName, editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { NamedViewsMenu } from '../viewport/NamedViewsMenu.js';
 import { CubeIcon, FileMenuIcon, RedoIcon, UndoIcon } from './icons.js';
@@ -67,7 +67,7 @@ import { DisplayStyleGroup, DrawingAidsGroup, ProjectionGroup, SnapGroup, Viewpo
  * 必ず読み上げ名(aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
  */
 export function Toolbar(): React.JSX.Element {
-  const documentKind = useAppStore(state => activeDocumentKind(state));
+  const documentKind = useAppStore(editingDocumentKind);
   return (
     <header className="pcad-toolbar">
       <div className="pcad-toolbar__brand">
@@ -93,6 +93,7 @@ export function Toolbar(): React.JSX.Element {
           <CubeIcon className="pcad-toolbar__mode-icon" />
           <span className="pcad-toolbar__mode-label" style={{ padding: '0 var(--pcad-space-2)' }}>{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
         </span>
+        <EndPartEditButton />
       </div>
 
       {documentKind === 'part' ? <PartModelingTools /> : (
@@ -134,6 +135,28 @@ export function Toolbar(): React.JSX.Element {
       <SavePointsDialogHost />
     </header>
   );
+}
+
+function EndPartEditButton(): React.JSX.Element | null {
+  const edit = useAppStore(state => state.partEdit);
+  if (edit === null) return null;
+  const options = [
+    ['plane', 'assembly.partEdit.planeCopy', 'assembly.guide.partEditPlane'],
+    ['holeCenters', 'assembly.partEdit.holeCenters', 'assembly.guide.partEditHoles'],
+    ['outline', 'assembly.partEdit.outline', 'assembly.guide.partEditOutline'],
+  ] as const;
+  return <>
+    {options.map(([kind, label, guide]) => {
+      const picking = edit.contextPick?.kind === kind;
+      return <button key={kind} type="button" className="pcad-button" aria-pressed={picking} title={t(guide)} onClick={() => {
+        const state = useAppStore.getState();
+        state.setPartEditContextPick(picking ? null : kind);
+        if (!picking) state.requestViewportFocus();
+      }}>{t(label)}</button>;
+    })}
+    <button type="button" className="pcad-button"
+      title={t('assembly.guide.partEditEnd')} onClick={() => { useAppStore.getState().endAssemblyPartEdit(); }}>{t('assembly.partEdit.end')}</button>
+  </>;
 }
 
 function FileActionsGroup(): React.JSX.Element {

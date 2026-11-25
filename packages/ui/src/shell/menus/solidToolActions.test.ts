@@ -1,5 +1,8 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { appendSolid, createEmptyPartDocument, type HoleFeature, type PartDocument, type SolidBody } from '@pointercad/model';
+import {
+  appendFeature, appendSolid, createEmptyPartDocument, DEFAULT_FACE_COLOR, replaceSketch,
+  type HoleFeature, type PartDocument, type SolidBody,
+} from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { subShapeElementId } from '../../solid/subShapeSelection.js';
 import { bodyFor, resetTestStore } from '../../store/testing/createTestStore.js';
@@ -70,6 +73,25 @@ describe('solid creation menu explicit targets', () => {
 });
 
 describe('押し引き(M-05 4-1a)', () => {
+  it.each(['face', 'edge'] as const)('選ぶ種類が %s でも、履歴の作図面1枚を押し出しへ渡す', selectionKind => {
+    const base = fixture();
+    const sketch = appendFeature(base.sketches[0], {
+      id: 'profile-face', name: '面1', kind: 'face', planeId: 'xy', boundary: [], color: DEFAULT_FACE_COLOR,
+    });
+    const document = replaceSketch(base, sketch);
+    useAppStore.setState({ document, selectionKind, selection: ['profile-face'] });
+    const before = useAppStore.getState();
+    runPushPull();
+    const after = useAppStore.getState();
+    expect(after.activeTool).toBe('extrude');
+    expect(after.selectionKind).toBe('body');
+    expect(after.selection).toEqual(['profile-face']);
+    expect(after.numericInput?.step).toBe(SOLID_TOOL_STEPS.extrude);
+    expect(after.numericInput?.extrudeRegion).toBeUndefined();
+    expect(after.document).toBe(document);
+    expect(after.undoStack).toBe(before.undoStack);
+  });
+
   it('立体の平らな面 1 枚なら、面の移動の入力欄を開き、選んだ面を残す', () => {
     const face = subShapeElementId('body-a', 'face', 0);
     const body: SolidBody = { ...bodyFor('body-a'), faces: [{ index: 0, surfaceKind: 'plane', area: 100, centroid: [5, 5, 10],

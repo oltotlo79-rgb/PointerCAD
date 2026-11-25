@@ -118,6 +118,7 @@ export {
   type ExportColor,
   type ExportFaceRange,
   type ImportedBody,
+  type ImportedBrepInspection,
   type KernelBridge,
   type DrawingKernelBridge,
   type KernelHealth,
@@ -149,6 +150,7 @@ export {
   SKETCH_TOLERANCE_MM, subVec3,
 } from './sketch/vec3.js';
 export { crossVec2 } from './sketch/vec2.js';
+export { curvesTouch as sketchCurvesTouch } from './sketch/faceHoles.js';
 export type { BaseWorkPlaneId, WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
 export {
   baseWorkPlane, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane, distanceToPlane,
@@ -288,7 +290,7 @@ export type {
   CurveChain,
 } from './sketch/intersectionMath.js';
 export {
-  curveEvaluator, curveIntersections, curveParameterNear, curvePointAt, FULL_TURN,
+  curveEvaluator, curveIntersections, curveParameterNear, curvePointAt, FULL_TURN, FULL_TURN_EPSILON,
   INTERSECTION_TOLERANCE_MM, isClosedCurve, segmentSegmentIntersection, traceCurveChain,
 } from './sketch/intersectionMath.js';
 export type { TrimErrorKey } from './sketch/trimExtend.js';
@@ -1137,9 +1139,9 @@ export type {
   PartLibrary,
 } from './assembly/partLibrary.js';
 export {
-  assemblyOf, attachmentsDigestOf, canonicalPartDocumentText, CONTENT_HASH_ALGORITHM, contentHashOf,
+  assemblyOf, attachmentsDigestOf, ownedAttachmentsDigestOf, canonicalPartDocumentText, CONTENT_HASH_ALGORITHM, contentHashOf,
   embedPart, emptyEmbeddedPartAttachments, EMPTY_PART_LIBRARY, nextPartRef, PART_REF_PREFIX,
-  partAttachmentsOf, partFileOf, partOf, replacePartDocument, staleParts,
+  partAttachmentReferences, partAttachmentsOf, partFileOf, partOf, replacePartDocument, staleParts,
 } from './assembly/partLibrary.js';
 
 /**
@@ -1258,6 +1260,8 @@ export { DISPLAY_MESH_DEVIATION_MM } from './kernelBridge/displayMeshDeviation.j
 export { frameScribeMarks, type FrameScribeMember } from './assembly/frame/frameScribeMarks.js';
 export { planSafetyFence, type SafetyFenceResult } from './assembly/frame/safetyFence.js';
 export { framePanelOpening, type FramePanelOpeningResult } from './assembly/frame/framePanelOpening.js';
+export { planFramePanelFittings } from './assembly/frame/framePanelFittings.js';
+export { canMachinePanelBoard, panelBoardHole } from './assembly/catalog/profiles/panelBoardMachining.js';
 export { planFrameDoor, type FrameDoorResult } from './assembly/frame/frameDoor.js';
 export {
   checkFrameJoints, slotFastenerParts, type FrameJointCheckResult, type FrameJointFastening, type PartBox,
@@ -1355,7 +1359,7 @@ export {
   mateValueOf, MAX_ASSEMBLY_VARIABLES, MAX_MOVABLE_COMPONENTS, TOO_MANY_COMPONENTS_MESSAGE,
 } from './assembly/constraints/mateVariables.js';
 export { importedShapeOf, type ImportedShape } from './part/types.js';
-export { sha256HexSync } from './sha256.js';
+export { Sha256Digest, sha256HexChunksSync, sha256HexSync } from './sha256.js';
 export type { SolidFailureReason, SurfaceBodyFailureReason } from './part/surfaceBodyPlan.js';
 export type {
   MonitoredKernelBridge,
@@ -1515,7 +1519,8 @@ export {
   applyContextReference,
   commitContextReference,
   contextPointResolverFromBodies,
-  contextReferencesHaveCycle,
+  contextReferenceTargetIds, contextReferencesHaveCycle, pruneContextPlaneLinks, withContextPlaneLink,
+  type ContextPlaneBinding, type ContextPlanePoints,
   type ContextReferenceLink,
   type ContextReferenceRejection,
   type ContextReferenceRejectionCode,

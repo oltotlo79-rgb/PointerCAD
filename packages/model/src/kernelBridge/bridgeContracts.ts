@@ -44,6 +44,7 @@ import type {
   PrintabilityOptions,
 } from './analysisContracts.js';
 import type {
+  ImportedBrepInspection,
   ShapeExportOptions,
   ShapeExportOutcome,
   ShapeImportOptions,
@@ -206,6 +207,8 @@ export interface KernelBridge {
    * 読めなかった理由は投げずに `kind: 'failed'` で返す(文言の正本は幾何カーネル)。
    */
   importShape(options: ShapeImportOptions): Promise<ShapeImportOutcome>;
+  supportsIges?(): Promise<boolean>;
+  inspectImportedBrep?(bytes: Uint8Array): Promise<ImportedBrepInspection>;
   /**
    * 3D プリント向けの点検(FR-815)。**測定・書き出しと同じく再計算を
    * 起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
@@ -326,6 +329,7 @@ export interface InterferenceKernelBridge extends AssemblyKernelBridge {
 }
 
 export interface MonitoredKernelBridge extends InterferenceKernelBridge, AnalysisBoundarySource {
+  inspectImportedBrep(bytes: Uint8Array): Promise<ImportedBrepInspection>;
   pendingWaiters(): number;
   /** On-demand metadata read only; not GPU/native allocation or complete transfer coverage. */
   readRuntimePhases(): Promise<RuntimePhaseObservation>;

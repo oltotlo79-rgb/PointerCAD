@@ -3,12 +3,15 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { importFile } from './exchangeActions.js';
 import { IMPORT_FILE_KINDS, type ImportFileKind } from './exchangeFile.js';
+import { useIgesSupport } from './useIgesSupport.js';
 import './importFormat.css';
 
 /** ファイルを開く前の形式選択。DWGではファイル選択を起動せず、変換手順を出す。 */
 export function ImportFormatPanel({ onClose }: { readonly onClose: () => void }): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null);
   const [dwg, setDwg] = useState(false);
+  const igesSupport = useIgesSupport();
+  const igesAvailable = igesSupport === 'supported';
   const documentId = useAppStore(state => state.document.id);
   useEffect(() => {
     const outside = (event: PointerEvent): void => {
@@ -21,8 +24,10 @@ export function ImportFormatPanel({ onClose }: { readonly onClose: () => void })
   useEffect(() => { if (documentId !== initialDocumentId.current) onClose(); }, [documentId, onClose]);
   const choose = (kind?: ImportFileKind): void => {
     if (kind === 'dwg') { setDwg(true); return; }
+    // The common picker freezes its extension filter when it opens.
+    if (kind === undefined && igesSupport === 'checking') return;
     onClose();
-    void importFile(kind);
+    void importFile(kind, igesAvailable);
   };
   return <div className="pcad-menu pcad-menu--exchange" ref={container}>
     <form className="pcad-menu__panel pcad-exchange pcad-import-format" aria-label={t('exchange.importTitle')}
@@ -30,9 +35,10 @@ export function ImportFormatPanel({ onClose }: { readonly onClose: () => void })
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
       <span className="pcad-exchange__title">{t('exchange.importTitle')}</span>
       <p className="pcad-exchange__notice">{t('exchange.chooseImportFormat')}</p>
-      <button title={t('controlGuide.button.importChoose')} type="button" className="pcad-button pcad-button--action" autoFocus onClick={() => { choose(); }}>{t('exchange.chooseImportFile')}</button>
+      <button title={t('controlGuide.button.importChoose')} type="button" className="pcad-button pcad-button--action"
+        aria-disabled={igesSupport === 'checking'} autoFocus onClick={() => { choose(); }}>{t('exchange.chooseImportFile')}</button>
       <div className="pcad-import-format__kinds" role="group" aria-label={t('exchange.format')}>
-        {IMPORT_FILE_KINDS.map(kind => <button title={t(kind === 'dwg' ? 'controlGuide.button.importDwg' : 'controlGuide.button.importFormat')} key={kind} type="button" className="pcad-button pcad-button--action"
+        {IMPORT_FILE_KINDS.filter(kind => kind !== 'iges' || igesAvailable).map(kind => <button title={t(kind === 'dwg' ? 'controlGuide.button.importDwg' : 'controlGuide.button.importFormat')} key={kind} type="button" className="pcad-button pcad-button--action"
           onClick={() => { choose(kind); }} aria-pressed={kind === 'dwg' && dwg}>
           {kind === 'glb' ? 'glTF' : kind.toUpperCase()}{kind === 'dwg' ? ` (${t('exchange.conversionRequired')})` : ''}
         </button>)}

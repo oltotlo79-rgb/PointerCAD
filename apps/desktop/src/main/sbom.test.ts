@@ -579,9 +579,22 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     const occt = byName(components, 'opencascade.js');
     expect(occt?.licenses).toEqual([{ license: { id: 'LGPL-2.1-only' } }]);
     const distributed = occt?.properties?.filter((entry) => entry.name === 'pointercad:distributedFile') ?? [];
-    expect(distributed).toHaveLength(2);
-    expect(distributed.some((entry) => entry.value.startsWith('licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-license.txt|'))).toBe(true);
-    expect(distributed.some((entry) => entry.value.startsWith('licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt|'))).toBe(true);
+    // npm LICENSEとOCCT例外条項、および同版エンジンの対応ソースに記録した5原文の固定値。
+    const expected = [
+      'licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-license.txt|20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331',
+      'licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt|04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b',
+      'licenses/runtime/runtime-occt-freetype-version-1-license.txt|f6333b3a9106f10190e96d9f994f934deb7a5632851a1aaf846b94651a80f4da',
+      'licenses/runtime/runtime-occt-freetype-version-1-ftl.txt|f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8',
+      'licenses/runtime/runtime-occt-freetype-version-1-gplv2.txt|c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18',
+      'licenses/runtime/runtime-occt-rapidjson-license.txt|a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32',
+      'licenses/runtime/runtime-occt-emscripten-3.1.14-license.txt|620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86',
+    ];
+    expect(distributed.map((entry) => entry.value).sort()).toEqual(expected.slice().sort());
+    const expectedPaths = new Set(expected.map((value) => value.split('|')[0]));
+    const otherOwners = components.filter((component) => component !== occt && component.properties?.some(
+      (entry) => entry.name === 'pointercad:distributedFile' && expectedPaths.has(entry.value.split('|')[0]),
+    ));
+    expect(otherOwners.map((component) => component.name)).toEqual([]);
   });
 
   it('数式字体20個と数式の追加原文2件を固定資産として集め、既存のnpm部品と二重計上しない', () => {

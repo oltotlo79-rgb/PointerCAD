@@ -13,6 +13,7 @@ import { regionFillInputOf } from '../solid/regionPick.js';
 import { solidAnalysisLayersChanged, solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import type { AppState } from '../store/appState.js';
 import { activePartDocument } from '../store/documentKind.js';
+import { assemblyCalculation } from '../store/partEditActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { CameraControls } from './attachCameraControls.js';
 import { sameRegionFillInput } from './buildRegionFill.js';
@@ -205,9 +206,10 @@ function syncAssemblyDisplay(sync: ViewportStoreSync, next: AppState, previous: 
   if (
     next.assembly !== previous.assembly ||
     next.assemblyView !== previous.assemblyView ||
-    next.requestedGeneration !== previous.requestedGeneration ||
-    next.completedGeneration !== previous.completedGeneration ||
-    next.recomputeCancelled !== previous.recomputeCancelled ||
+    next.partEdit?.id !== previous.partEdit?.id ||
+    assemblyCalculation(next).requestedGeneration !== assemblyCalculation(previous).requestedGeneration ||
+    assemblyCalculation(next).completedGeneration !== assemblyCalculation(previous).completedGeneration ||
+    assemblyCalculation(next).recomputeCancelled !== assemblyCalculation(previous).recomputeCancelled ||
     next.assemblyDragOverlay !== previous.assemblyDragOverlay ||
     next.assemblyMotionPlacements !== previous.assemblyMotionPlacements ||
     next.assemblyOccurrenceDrives !== previous.assemblyOccurrenceDrives ||
@@ -259,8 +261,11 @@ function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppStat
   if (cutPreviewChanged || next.resolvedSketch !== previous.resolvedSketch || next.sketch !== previous.sketch) {
     const faceHandle = distanceHandleOf(next);
     if (faceHandle !== null || distanceHandleOf(previous) !== null) scene.setFaceOffsetHandle(faceHandle);
-    // 窓が避ける箱を持たない時(押し出しを木から開いた時など)は、つまみを避けさせる。窓がつまみを覆うと掴めない。
-    const avoid = faceHandle === null || next.numericInputAvoid !== null ? null : distanceHandleScreenRect(faceHandle, point => scene.worldToScreen(point));
+    // 最初に出たつまみと、選び直した領域のつまみを避ける。距離を引いている間は窓を動かさない。
+    const region = next.numericInput?.extrudeRegion;
+    const regionChanged = region !== undefined && region !== previous.numericInput?.extrudeRegion;
+    const avoid = faceHandle !== null && (next.numericInputAvoid === null || regionChanged)
+      ? distanceHandleScreenRect(faceHandle, point => scene.worldToScreen(point)) : null;
     if (avoid !== null) next.setNumericInputAvoid(avoid);
   }
   /*

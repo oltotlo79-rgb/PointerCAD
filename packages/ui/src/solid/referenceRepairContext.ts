@@ -1,6 +1,6 @@
 import type { SolidBody, SubShapeRef } from '@pointercad/model';
 import type { AppState } from '../store/appState.js';
-import { activeDocument } from '../store/documentKind.js';
+import { activeDocument, activePartDocument } from '../store/documentKind.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { assemblyRepairSlots } from './referenceRepairAssembly.js';
 import { drawingRepairSlots } from './referenceRepairDrawing.js';
@@ -35,11 +35,11 @@ export function repairContextReady(state: AppState): boolean {
 
 /** 現文書・同世代の表示bodyと、実scopeが所有する中間bodyだけを借りる。保存参照は変更しない。 */
 export function currentPartReferenceBodies(state: AppState): readonly SolidBody[] {
-  const active = activeDocument(state);
-  if (active.kind !== 'part') return [];
+  const document = activePartDocument(state);
+  if (document === null) return [];
   const snapshot = state.referenceRepairBodies;
-  const upstream = snapshot !== null && snapshot.scope.current && snapshot.document === active.document
-    && snapshot.scope.document === active.document && snapshot.scope.context.generation === snapshot.generation
+  const upstream = snapshot !== null && snapshot.scope.current && snapshot.document === document
+    && snapshot.scope.document === document && snapshot.scope.context.generation === snapshot.generation
     && snapshot.activeDocumentId === state.activeDocumentId && snapshot.generation === state.completedGeneration
     && snapshot.generation === state.requestedGeneration && snapshot.displayBodies === state.bodies
     ? snapshot.bodies.filter(body => state.bodies.includes(body) || snapshot.scope.referenceBodyCurrent(body)) : [];

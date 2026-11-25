@@ -484,3 +484,44 @@ describe('終了の片付けは片付け中の「開く」も見る・1 つの�
     expect(await invoke('pcad:confirmTarget', token)).toBe(true);
   });
 });
+
+
+describe('通常Openの大容量範囲IPC', () => {
+  async function beginRange(): Promise<Receipt> {
+    // Metadata is an IPC fixture. The real >256MiB ZIP is covered by the application acceptance.
+    disk.files.set(chosen, { bytes: pattern(12), modifiedAt: 1, declaredSize: MAX_COMPRESSED_INPUT_BYTES + 1 });
+    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [chosen] });
+    return receiptOf(await invoke('pcad:openBegin', 'all', true));
+  }
+
+  it('選択した記述子から必要な位置だけを順番に読み、短い読取では保存先を作らずに閉じる', async () => {
+    const receipt = await beginRange();
+    expect(receipt).toMatchObject({ size: MAX_COMPRESSED_INPUT_BYTES + 1, chunkBytes: 1024 * 1024 });
+    expect(disk.readCalls).toBe(0);
+    await expect(invoke('pcad:openChunk', receipt.readId, 0, 6, 4)).resolves.toEqual(pattern(12).slice(6, 10));
+    await expect(invoke('pcad:openChunk', receipt.readId, 1, 1, 2)).resolves.toEqual(pattern(12).slice(1, 3));
+    await expect(invoke('pcad:openChunk', receipt.readId, 2, MAX_COMPRESSED_INPUT_BYTES, 1)).rejects.toThrow();
+    await expect(invoke('pcad:openFinish', receipt.readId)).rejects.toThrow(REFUSED);
+    expect(disk.openFiles.size).toBe(0);
+  });
+
+  it('別の送り手からは読めず、1 MiB超または範囲外なら読取を始めずに閉じる', async () => {
+    for (const [offset, length] of [[0, 1024 * 1024 + 1], [MAX_COMPRESSED_INPUT_BYTES, 2]]) {
+      const receipt = await beginRange();
+      await expect(invokeAs({ id: serial + 1 }, 'pcad:openChunk', receipt.readId, 0, 0, 1)).rejects.toThrow(REFUSED);
+      expect(disk.openFiles.size).toBe(1);
+      await expect(invoke('pcad:openChunk', receipt.readId, 0, offset, length)).rejects.toThrow(REFUSED);
+      expect(disk.readCalls).toBe(0);
+      expect(disk.openFiles.size).toBe(0);
+    }
+  });
+
+  it('新しい選択と競合した古い範囲読取は保存先候補を発行できない', async () => {
+    const older = await beginRange();
+    await expect(invoke('pcad:openChunk', older.readId, 0, 0, 1)).resolves.toEqual(pattern(1));
+    const newer = await beginRange();
+    await expect(invoke('pcad:openFinish', older.readId)).rejects.toThrow(REFUSED);
+    await invoke('pcad:openAbort', newer.readId);
+    expect(disk.openFiles.size).toBe(0);
+  });
+});

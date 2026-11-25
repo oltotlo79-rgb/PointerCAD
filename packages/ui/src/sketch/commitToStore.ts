@@ -37,10 +37,11 @@ import {
 import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
 import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
-import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import { parseSubShapeId, subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { currentStagedSolid, type StagedConfirmation } from '../store/recomputeSlice.js';
 import { activePartDocument } from '../store/documentKind.js';
+import { commitWorkingPartDocument } from '../store/partEditActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { splitLineFailureMessage } from './splitLineMessages.js';
 import { commitSketchChamfer, commitSketchFillet } from './cornerCommands.js';
@@ -79,9 +80,10 @@ export function applySelectedFace(): boolean {
   const outcome = commitFace(state.sketch, state.resolvedSketch, state.workPlaneId, state.selection);
   if (!outcome.ok) { state.setFaceError(outcome.reasonKey); return false; }
   state.setFaceError(null);
-  state.setSketch(outcome.document);
-  state.setSelection([]);
-  return true;
+  const applied = commitWorkingPartDocument(state, replaceSketch(state.document, outcome.document), current => {
+    current.setSelection([]);
+  });
+  return applied === true;
 }
 
 /** Keep coefficient identities private until the same operation publishes a real feature. */
@@ -142,7 +144,8 @@ export function commitSketchStep(
 export function applySketchCommit(
   commit: NumericInputCommit,
   input: NumericInputState | null,
-): boolean {
+  advance?: () => void,
+): boolean | Promise<boolean> {
   const store = useAppStore.getState();
   const base = mathCommitBase([commit, store.shapeDraft]);
   if (base === null) return false;
@@ -169,11 +172,13 @@ export function applySketchCommit(
   // The preview concerned the whole straight line. Do not attach it to only its final piece.
   if (connected) store.setInferredConstraints(null);
   else document = withInferredConstraints(store, commit, document);
-  if (document !== store.sketch) {
-    store.applyDocument(replaceSketch(base, document));
-  }
-  store.setPendingStart(outcome.pendingStart);
-  store.setShapeDraft(outcome.shapeDraft);
+  const finish = (current: typeof store): void => {
+    current.setPendingStart(outcome.pendingStart);
+    current.setShapeDraft(outcome.shapeDraft);
+    if (outcome.rejection === null) advance?.();
+  };
+  if (document !== store.sketch) return commitWorkingPartDocument(store, replaceSketch(base, document), finish);
+  finish(store);
   return outcome.rejection === null;
 }
 
@@ -234,6 +239,17 @@ function currentCutSketches(store: ReturnType<typeof useAppStore.getState>) {
   return snapshot;
 }
 
+/** Existing B-rep face sewing can use the same staged preview and adoption as other solid tools. */
+export function stagesImportedSew(
+  tool: string, state: Pick<ReturnType<typeof useAppStore.getState>, 'document' | 'selection'>,
+): boolean {
+  return tool === 'sew' && state.selection.some(id => {
+    const face = parseSubShapeId(id);
+    return face?.kind === 'face' && state.document.solids.some(feature =>
+      feature.id === face.bodyFeatureId && feature.kind === 'importedSolid');
+  });
+}
+
 function stagesCreation(commit: SolidInputCommit): boolean {
   if (!supportsSolidOperation(commit.tool)) return false;
   const mode = commit.shapeChoices?.extrudeOperation;
@@ -241,10 +257,12 @@ function stagesCreation(commit: SolidInputCommit): boolean {
   return mode === 'join' || mode === 'cut' || (store.numericInput?.toolId === commit.tool && currentStagedSolid(store) !== null);
 }
 
-export function applySolidCommit(commit: SolidInputCommit): boolean {
+export function applySolidCommit(commit: SolidInputCommit, advance?: () => void): boolean | Promise<boolean> {
   // 押し出しは形を計算してから確定する(文書だけ先に積まない)。同期で積む道は残さない。
   if (commit.tool === 'extrude') return confirmExtrudeCommit(commit) === 'adopted';
-  if (commit.tool === 'cut' || stagesCreation(commit)) return confirmStagedSolidCommit(commit) === 'adopted';
+  if (commit.tool === 'cut' || stagesCreation(commit) || stagesImportedSew(commit.tool, useAppStore.getState())) {
+    return confirmStagedSolidCommit(commit) === 'adopted';
+  }
   if (commit.tool === 'faceOffset' || commit.tool === 'holeTranslate' || commit.tool === 'faceRotate') return confirmStagedSolidCommit(commit) === 'adopted';
   // 計算担当が未接続なら従来の同期確定と後始末を使う。接続済みは成功した候補だけを採用する。
   if ((commit.tool === 'hole' || commit.tool === 'threadHole')
@@ -272,10 +290,11 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
     // 断られたらポップアップを閉じない(理由は帯に出ている)。
     return false;
   }
-  store.applyDocument(outcome.document);
-  store.setActiveTool('select');
-  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
-  return true;
+  return commitWorkingPartDocument(store, outcome.document, current => {
+    current.setActiveTool('select');
+    current.setSelection([outcome.featureId], { kind: 'sketch', sketchId: current.sketch.id });
+    advance?.();
+  });
 }
 
 /**
@@ -345,7 +364,7 @@ export function confirmExtrudeCommit(commit: SolidInputCommit): StagedConfirmati
 function confirmStagedSolidCommit(commit: SolidInputCommit): StagedConfirmation {
   const store = useAppStore.getState();
   // 切断・結合・切り抜きでは、計算部が未接続でも対象や入力の誤りを先に伝える。
-  const validateFirst = commit.tool === 'cut' || stagesCreation(commit);
+  const validateFirst = commit.tool === 'cut' || stagesCreation(commit) || stagesImportedSew(commit.tool, store);
   const checked = validateFirst ? solidStageCandidateOf(commit) : null;
   if (validateFirst && checked === null) return 'refused';
   if (store.partStager === null) {
@@ -372,10 +391,13 @@ export function previewExtrudeTransition(transition: NumericInputTransition): vo
     store.updateNumericInput(transition.state);
     return;
   }
-  if (transition.kind !== 'solidCommitted' || !supportsSolidOperation(transition.commit.tool)) return;
-  if (transition.commit.tool === 'extrude' && selectedExtrudeProfiles(store.document, store.selection).length > 1) return;
+  if (transition.kind !== 'solidCommitted') return;
+  const tool = transition.commit.tool;
+  const importedSew = stagesImportedSew(tool, store);
+  if (!supportsSolidOperation(tool) && !importedSew) return;
+  if (tool === 'extrude' && selectedExtrudeProfiles(store.document, store.selection).length > 1) return;
   if (store.partStager === null) {
-    store.setSolidError('solidError.extrudeUnavailable');
+    store.setSolidError(importedSew ? 'solidError.notYetAvailable' : 'solidError.extrudeUnavailable');
     return;
   }
   const candidate = solidStageCandidateOf(transition.commit);
@@ -392,7 +414,7 @@ export function previewExtrudeTransition(transition: NumericInputTransition): vo
  *
  * (`AppShell.tsx` から移した。手順そのものは 1 行も変えていない。)
  */
-export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
+export function applyReferenceCommit(commit: ReferenceInputCommit, advance?: () => void): boolean | Promise<boolean> {
   const store = useAppStore.getState();
   const base = mathCommitBase([commit, store.referenceDraft]);
   if (base === null) return false;
@@ -406,14 +428,13 @@ export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
   if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
   const outcome = calculated.value;
   store.setReferenceError(outcome.rejection);
-  if (outcome.document !== base) {
-    store.applyDocument(outcome.document);
-  }
-  store.setReferenceDraft(outcome.draft);
-  if (outcome.createdPlaneId !== null) {
-    store.setWorkPlane(outcome.createdPlaneId);
-  }
-  // 断られたらポップアップを閉じない。
+  const finish = (current: typeof store): void => {
+    current.setReferenceDraft(outcome.draft);
+    if (outcome.createdPlaneId !== null) current.setWorkPlane(outcome.createdPlaneId);
+    if (outcome.rejection === null) advance?.();
+  };
+  if (outcome.document !== base) return commitWorkingPartDocument(store, outcome.document, finish);
+  finish(store);
   return outcome.rejection === null;
 }
 
@@ -458,6 +479,7 @@ export function applyNumericTransition(transition: NumericInputTransition): void
         return;
       }
       if (stagesCreation(transition.commit) || transition.commit.tool === 'cut' || transition.commit.tool === 'faceOffset' || transition.commit.tool === 'holeTranslate' || transition.commit.tool === 'faceRotate'
+        || stagesImportedSew(transition.commit.tool, store)
         || ((transition.commit.tool === 'hole' || transition.commit.tool === 'threadHole') && store.partStager !== null)) {
         if (store.numericInput !== transition.state) store.updateNumericInput(transition.state);
         confirmStagedSolidCommit(transition.commit);
@@ -465,34 +487,22 @@ export function applyNumericTransition(transition: NumericInputTransition): void
       }
       // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
       // (nextNumericInput も null を返す)。断られたときは閉じない。
-      if (!applySolidCommit(transition.commit)) {
-        return;
-      }
-      store.closeNumericInput();
+      void applySolidCommit(transition.commit, () => { store.closeNumericInput(); });
       return;
     case 'referenceCommitted': {
       // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある。
       // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
-      if (!applyReferenceCommit(transition.commit)) {
-        return;
-      }
-      openNext(transition.state);
+      void applyReferenceCommit(transition.commit, () => { openNext(transition.state); });
       return;
     }
     case 'committed': {
-      if (!applySketchCommit(transition.commit, transition.state)) {
-        return;
-      }
-      openNext(transition.state);
+      void applySketchCommit(transition.commit, transition.state, () => { openNext(transition.state); });
       return;
     }
     case 'editCommitted':
       // 整形系(オフセット、FR-321)は対象を選び直さないと続けられないので、
       // ソリッドと同じく決めたら必ず閉じる(nextNumericInput も null を返す)。
-      if (!applyEditCommit(transition.commit)) {
-        return;
-      }
-      store.closeNumericInput();
+      void applyEditCommit(transition.commit, () => { store.closeNumericInput(); });
       return;
   }
 }
@@ -516,12 +526,12 @@ function openNext(state: NumericInputState): void {
  *
  * 断りは帯へ出すだけで、履歴も選択も変えない(NFR-UX-5、FR-504)。
  */
-export function applyEditCommit(commit: EditInputCommit): boolean {
+export function applyEditCommit(commit: EditInputCommit, advance?: () => void): boolean | Promise<boolean> {
   const store = useAppStore.getState();
   const base = mathCommitBase(commit);
   if (base === null) return false;
   if (commit.tool === 'sketchFillet' || commit.tool === 'sketchChamfer') {
-    return applyCornerCommit(commit, base);
+    return applyCornerCommit(commit, base, advance);
   }
   const calculated = tryMathComposition(() => editCommitOutcome(commit, store));
   if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
@@ -535,10 +545,11 @@ export function applyEditCommit(commit: EditInputCommit): boolean {
     return false;
   }
   store.setEditError(null);
-  store.applyDocument(replaceSketch(base, outcome.document));
-  store.setActiveTool('select');
-  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
-  return true;
+  return commitWorkingPartDocument(store, replaceSketch(base, outcome.document), current => {
+    current.setActiveTool('select');
+    current.setSelection([outcome.featureId], { kind: 'sketch', sketchId: current.sketch.id });
+    advance?.();
+  });
 }
 
 /**
@@ -585,7 +596,9 @@ export function applyProjectionCommit(
  * 案内は `setSketch` の**あと**に出す。`applyDocument` は文書が変わるたびに古い断り・
  * 案内を落とすので、先に出すと消えてしまう。
  */
-function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean {
+function applyCornerCommit(
+  commit: EditInputCommit, base: PartDocument, advance?: () => void,
+): boolean | Promise<boolean> {
   const store = useAppStore.getState();
   const options = cornerResolveOptions(store.workPlaneId, store.workPlane);
   const outcome =
@@ -598,13 +611,12 @@ function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean
     return false;
   }
   store.setEditError(null);
-  store.applyDocument(replaceSketch(base, outcome.document));
-  // 足した円弧・線分を選んでおく(次の一手がそのまま続く、NFR-UX-1)。道具は残す。
-  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
-  if (outcome.boundaryUpdated) {
-    store.setEditNotice('corner.notice.faceBoundary');
-  }
-  return true;
+  return commitWorkingPartDocument(store, replaceSketch(base, outcome.document), current => {
+    // 足した円弧・線分を選び、道具を残して次の角に進めるようにする。
+    current.setSelection([outcome.featureId], { kind: 'sketch', sketchId: current.sketch.id });
+    if (outcome.boundaryUpdated) current.setEditNotice('corner.notice.faceBoundary');
+    advance?.();
+  });
 }
 
 /**

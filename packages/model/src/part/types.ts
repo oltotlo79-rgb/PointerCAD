@@ -1241,7 +1241,7 @@ export interface CutFeature extends SolidFeatureBase {
  * どの形式から入ったか」である。3MF / glTF の読み込みは Could(FR-809)なので
  * 口が開くのは後になるが、開いた後に文書の型を広げると版が上がってしまう。
  */
-export type ImportedSourceFormat = 'step' | 'stl' | 'obj' | '3mf' | 'gltf';
+export type ImportedSourceFormat = 'step' | 'iges' | 'stl' | 'obj' | '3mf' | 'gltf';
 
 /**
  * 読み込んだ形の素性。**形そのものではなく、由来の記録**である。

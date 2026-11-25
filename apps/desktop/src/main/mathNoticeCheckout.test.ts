@@ -18,7 +18,7 @@ const runtimeManifest = JSON.parse(readFileSync(join(root, notices, 'runtime-not
 const occtNotice = runtimeManifest.packages.find(item => item.name === 'opencascade.js')?.notices
   .find(item => item.installedFile === 'LICENSE');
 if (occtNotice === undefined) throw new Error('Missing verified opencascade.js license record');
-const occtVendorPath = 'vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/' + occtNotice.installedFile;
+const occtVendorPath = 'vendor/opencascade/opencascade.js-b5ff984-closed-d98f42dd4b9b6315/' + occtNotice.installedFile;
 const records = [
   ...[...manifest.packages, ...manifest.additionalNotices].map(record => ({ path: `${notices}/${record.notice}`, sha256: record.sha256 })),
   { path: `${notices}/${occtNotice.file}`, sha256: occtNotice.sha256 },

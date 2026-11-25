@@ -108,6 +108,7 @@ export interface FileSlice {
   /** 実行環境から注入する保存口。製品はWorker、headless単体だけ明示注入した実IOを使う。 */
   readonly saveDocumentEncoder: SaveDocumentEncoder;
   /** 文書へ保存しない処理の状態。表示側でも文書ID/gatewayを照合する。 */
+  readonly cancelDocumentOpen: (() => void) | null;
   readonly documentSaveOperation: DocumentSaveOperation | null;
   readonly recoverySaveState: RecoverySaveState | null;
   /**
@@ -230,6 +231,7 @@ export const createFileSlice: StateCreator<
     pending.resolve(approved && partSourceRequestIsCurrent(pending));
   },
   saveDocumentEncoder: encodePcadInWorker,
+  cancelDocumentOpen: null,
   documentSaveOperation: null,
   recoverySaveState: null,
   discardConfirm: null,

@@ -1,13 +1,16 @@
+/// <reference lib="dom" />
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from '../../packages/io/src/index.js';
 import {
-  addComponent, appendReference, appendSolid, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor,
+  absoluteCoordinate, addComponent, appendFeature, appendReference, appendSolid, createAssemblyDocument, createAssemblyDocumentBundle,
+  createComponentFor, createPointFeature, partLibraryOfBundle, replaceSketch,
   createEmptyPartDocument, createPrimitiveFeature, embedPart, EMPTY_PART_LIBRARY, type ContextReferenceLink, type PartDocument,
-  type Placement, type PrimitiveFeature, type ReferencePointFeature,
+  type Placement, type PrimitiveFeature, type ReferencePointFeature, type Vec3,
 } from '../../packages/model/src/index.js';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { uiMessage } from './uiMessages.js';
+import { clickWorldPoint } from './solidCaptureSupport.js';
 
 /*
  * EX-18 の 5 つ目の作り方(組立の文脈の参照)の「参照の直し」を画面で通す(模型の検査
@@ -221,4 +224,144 @@ test.describe('EX-18 流れ5 参照の直し', () => {
     expect(undone.links).toEqual(linked.links);
     expect(errors).toEqual([]);
   });
+});
+
+
+function piercedBox(): PartDocument {
+  const part = boxPart(), sketch = part.sketches[0];
+  const center = createPointFeature(sketch, absoluteCoordinate(0, 0, 10));
+  return appendSolid(replaceSketch(part, appendFeature(sketch, center)), {
+    id: 'hole-1', name: '貫通穴', kind: 'hole', suppressed: false, targetFeatureId: 'box-1',
+    face: { bodyFeatureId: 'box-1', index: 0, fingerprint: { kind: 'face', surfaceKind: 'plane',
+      area: 400, position: [0, 0, 10], axis: [0, 0, 1], radius: null },
+    origin: { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'box-1', role: 'top' } } },
+    centers: [{ sketchId: sketch.id, pointFeatureId: center.id }], diameter: value(4), depth: { kind: 'through' },
+    tiltAngle: value(0), tiltAzimuth: value(0),
+  });
+}
+
+function assemblyButton(page: Page, key: keyof typeof partEditButtons): Locator {
+  return page.getByRole('button', { name: uiMessage('assembly', partEditButtons[key]), exact: true });
+}
+
+const partEditButtons = {
+  begin: 'assembly.partEdit.begin', end: 'assembly.partEdit.end', plane: 'assembly.partEdit.planeCopy',
+  holes: 'assembly.partEdit.holeCenters', outline: 'assembly.partEdit.outline',
+} as const;
+
+async function clickSourceTop(page: Page, kind: 'plane' | 'holes' | 'outline'): Promise<void> {
+  await waitForSettledRecompute(page);
+  const renders = await page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders ?? 0);
+  await page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.home.label'), exact: true }).click();
+  await expect.poll(() => page.evaluate(previous => {
+    const rendered = window.pcadViewportRenderStats?.();
+    const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+    const observation: unknown = typeof read === 'function' ? Reflect.apply(read, window, []) : null;
+    const owner: unknown = observation !== null && typeof observation === 'object'
+      ? Reflect.get(observation, 'ownership') : null;
+    return { drawn: rendered !== undefined && rendered.completedRenders > previous, owner };
+  }, renders)).toMatchObject({
+    drawn: true,
+    owner: {
+      publicationCurrent: { value: true, error: null },
+      receiptCurrent: { value: true, error: null },
+      backingInspectionCurrent: { value: true, error: null },
+    },
+  });
+  await assemblyButton(page, kind).click();
+  // B's top face is z=20 in A's frame, outside the circular opening at (10,15).
+  await clickWorldPoint(page, [15, 15, 20]);
+  await expect(assemblyButton(page, kind)).toHaveAttribute('aria-pressed', 'false');
+  await waitForSettledRecompute(page);
+}
+
+async function planeCoordinates(page: Page, expectedId?: string) {
+  const saved = await savedContext(await saveBytes(page));
+  const link = saved.links.find(row => row.plane !== undefined);
+  if (link?.plane === undefined) throw new Error('作図面の参照がありません。');
+  if (expectedId !== undefined) expect(link.id).toBe(expectedId);
+  const points = link.plane.pointIds.map(id => {
+    const point = saved.part.references.find(feature => feature.id === id);
+    if (point?.kind !== 'referencePoint' || point.definition.kind !== 'coordinate' || point.definition.at.mode !== 'absolute') {
+      throw new Error('作図面を決める基準点がありません。');
+    }
+    const { x, y, z } = point.definition.at;
+    return [x.value, y.value, z.value] satisfies Vec3;
+  });
+  return { saved, link, points };
+}
+
+async function translateSource(bytes: Uint8Array): Promise<Uint8Array> {
+  const opened = await readDocumentBundle(bytes, 'assembly');
+  if (!opened.ok || opened.bundle.kind !== 'assembly') throw new Error('組立を開けません。');
+  const { bundle } = opened;
+  const components = bundle.document.components.map((component, index) =>
+    index === 1 ? { ...component, placement: placement(B_AT[0] + 12, B_AT[1] - 7, B_AT[2] + 5) } : component);
+  return writeDocumentBundle(createAssemblyDocumentBundle({ ...bundle.document, components }, partLibraryOfBundle(bundle)), { savedAt: SAVED_AT });
+}
+
+test('M-09 組立内で穴と輪郭を取り込み、保存した作図面を同じ参照から更新する', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await installGateway(page);
+  await openBytes(page, '組立内設計.pcada', await assemblyFile(bracketPart(), piercedBox()));
+  await selectComponent(page, 0);
+  await expect(contextForm(page)).toBeVisible();
+  await assemblyButton(page, 'begin').click();
+  await expect(assemblyButton(page, 'end')).toBeVisible();
+  await clickSourceTop(page, 'holes');
+  await assemblyButton(page, 'end').click();
+  let copied = await savedContext(await saveBytes(page));
+  const sketch = copied.part.sketches[0];
+  const [point] = sketch.features.filter(feature => feature.kind === 'point');
+  if (point?.at.mode !== 'absolute') throw new Error('穴中心が座標の点ではありません。');
+  expectPoint([point.at.x.value, point.at.y.value, point.at.z.value], [10, 15, 0], 1e-6);
+  expect(sketch.features).toHaveLength(1);
+  await openBytes(page, '穴中心.pcada', await saveBytes(page));
+  await selectComponent(page, 0);
+  await assemblyButton(page, 'begin').click();
+  await clickSourceTop(page, 'outline');
+  await assemblyButton(page, 'end').click();
+  copied = await savedContext(await saveBytes(page));
+  const [face] = copied.part.sketches[0].features.filter(feature => feature.kind === 'face');
+  expect(face?.boundary).toHaveLength(4);
+  expect(face?.holes).toHaveLength(1);
+  expect(copied.part.sketches[0].features.filter(feature => feature.kind === 'point')).toHaveLength(1);
+
+  await openBytes(page, '輪郭.pcada', await saveBytes(page));
+  await selectComponent(page, 0);
+  await assemblyButton(page, 'begin').click();
+  await assemblyButton(page, 'plane').click();
+  await page.keyboard.press('Escape');
+  await expect(assemblyButton(page, 'plane')).toHaveAttribute('aria-pressed', 'false');
+  expect((await savedContext(await saveBytes(page))).links).toHaveLength(0);
+  await clickSourceTop(page, 'plane');
+  await assemblyButton(page, 'end').click();
+  const initial = await planeCoordinates(page);
+  expect(initial.link.source.origin?.identity).toMatchObject({ kind: 'box-face', role: 'top' });
+  await openBytes(page, '移動した元部品.pcada', await translateSource(await saveBytes(page)));
+  expect((await planeCoordinates(page, initial.link.id)).points).toEqual(initial.points);
+  await selectComponent(page, 0);
+  const update = page.getByTestId('assembly-context-update');
+  await expect(update).toBeEnabled();
+  const token = await beginRecompute(page);
+  await update.click();
+  await waitForRecompute(page, token);
+  const updated = await planeCoordinates(page, initial.link.id);
+  expect(updated.link.plane?.pointIds).toEqual(initial.link.plane?.pointIds);
+  const delta = [12, -7, 5] as const;
+  updated.points.forEach((point, index) => expectPoint(point, initial.points[index].map((coordinate, axis) => coordinate + delta[axis]), 1e-6));
+  const undo = page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.undo'), exact: true });
+  const redo = page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.redo'), exact: true });
+  await undo.click();
+  await waitForSettledRecompute(page);
+  expect((await planeCoordinates(page, initial.link.id)).points).toEqual(initial.points);
+  await redo.click();
+  await waitForSettledRecompute(page);
+  expect((await planeCoordinates(page, initial.link.id)).points).toEqual(updated.points);
+  await openBytes(page, '更新後の親.pcada', await saveBytes(page));
+  expect((await planeCoordinates(page, initial.link.id)).points).toEqual(updated.points);
+  await selectComponent(page, 0);
+  await update.click();
+  expect(await undo.isEnabled()).toBe(false);
 });

@@ -11,11 +11,25 @@ function circle(id: string, x: number, radius = 5, z = 0): SketchFeature {
 }
 
 function resolveHoles(...inner: SketchFeature[]) {
+  return resolveFace(inner.map(feature => [feature]), 60, 40);
+}
+
+function resolveFace(loops: readonly (readonly SketchFeature[])[], width: number, height: number) {
   const outer: SketchFeature = { id: 'outer', name: 'outer', kind: 'rectangle', planeId: 'xy',
-    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(60, 40, 0), construction: false };
+    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(width, height, 0), construction: false };
   const face = { id: 'face', name: 'face', kind: 'face' as const, planeId: 'xy',
-    boundary: [{ featureId: 'outer' }], color: '#eeeeee', holes: inner.map(feature => [{ featureId: feature.id }]) };
-  return resolveSketch({ id: 'sketch', name: 'sketch', features: [outer, ...inner, face] });
+    boundary: [{ featureId: 'outer' }], color: '#eeeeee', holes: loops.map(loop => loop.map(feature => ({ featureId: feature.id }))) };
+  return resolveSketch({ id: 'sketch', name: 'sketch', features: [outer, ...loops.flat(), face] });
+}
+
+function diagonalHole(index: number): SketchFeature[] {
+  const y = 10 + 2 * index;
+  const points = [absoluteCoordinate(10, y, 0), absoluteCoordinate(210, y + 200, 0),
+    absoluteCoordinate(210, y + 201, 0), absoluteCoordinate(10, y + 1, 0)];
+  return points.map((from, edge) => {
+    const id = `diagonal-${String(index)}-${String(edge)}`;
+    return { id, name: id, kind: 'line', planeId: 'xy', from, to: points[(edge + 1) % points.length], construction: false };
+  });
 }
 
 describe('穴つきの面の解決', () => {
@@ -25,6 +39,35 @@ describe('穴つきの面の解決', () => {
     expect(result.faces).toHaveLength(1);
     expect(result.faces[0].curves).toHaveLength(4);
     expect(result.faces[0].holes).toMatchObject([[{ kind: 'arc', radius: 5 }]]);
+  });
+
+  it.each([181, 182])('離れた穴%d個を件数積の境界の両側で解決する', count => {
+    const holes = Array.from({ length: count }, (_, index) => [circle(`hole-${String(index)}`, 3 + index * 3, 1)]);
+    const result = resolveFace(holes, 550, 40);
+    expect(result.errors).toEqual([]);
+    expect(result.faces[0]?.holes).toHaveLength(count);
+  });
+
+  it('同じ円を重ねた穴を接触として拒否する', () => {
+    const result = resolveHoles(circle('first', 25), circle('second', 25));
+    expect(result.faces).toEqual([]);
+    expect(result.errors.find(error => error.featureId === 'face')?.text).toEqual({
+      key: 'partError.sketchFaceHole.touchesHole', parameters: { label: '穴2' },
+    });
+  });
+
+  it('斜めの細い穴は境界箱が重なっても少数では解決する', () => {
+    const result = resolveFace(Array.from({ length: 32 }, (_, index) => diagonalHole(index)), 230, 380);
+    expect(result.errors).toEqual([]);
+    expect(result.faces[0]?.holes).toHaveLength(32);
+  });
+
+  it('実際の候補が多い時は面を採用せず計算上限を伝える', () => {
+    const result = resolveFace(Array.from({ length: 80 }, (_, index) => diagonalHole(index)), 230, 380);
+    expect(result.faces).toEqual([]);
+    expect(result.errors.find(error => error.featureId === 'face')?.text).toEqual({
+      key: 'partError.sketchFaceHole.checkBudget', parameters: {},
+    });
   });
 
   it.each([

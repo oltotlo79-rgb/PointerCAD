@@ -15,7 +15,7 @@
 export { t } from './i18n/t.js';
 export { PointerCadApp } from './app/PointerCadApp.js';
 export { setFileGateway } from './file/installFileGateway.js';
-export type { FileGateway, PickedFile } from './file/fileGateway.js';
+export type { FileGateway, PickedFile, PickedNativeFile, PickedNativeSource } from './file/fileGateway.js';
 export { attachUnsavedChangesGuard } from './file/unsavedChangesGuard.js';
 // デスクトップ版の入口が preload の口を確かめて渡す形。
 export type { CloseRequestTarget } from './file/unsavedChangesGuard.js';

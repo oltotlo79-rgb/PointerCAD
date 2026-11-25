@@ -10,6 +10,16 @@ export interface SplineNumericData {
 const MAX_DEGREE = 3;
 export const SPLINE_MIN_SPAN_MM = 1e-9;
 const MIN_PIVOT = 1e-14;
+
+// Keep these two comparisons aligned with magnitude.ts while this module has zero imports.
+function belowMagnitude(value: number, bound: number): boolean {
+  return -bound < value && value < bound;
+}
+
+function exceedsMagnitude(value: number, bound: number): boolean {
+  return value > bound || value < -bound;
+}
+
 function distanceSplinePoint(a: SplineVector3, b: SplineVector3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
@@ -91,11 +101,11 @@ function solveLinearSystem(
   for (let column = 0; column < size; column += 1) {
     let pivot = column;
     for (let row = column + 1; row < size; row += 1) {
-      if (Math.abs(work[row][column]) > Math.abs(work[pivot][column])) {
+      if (exceedsMagnitude(work[row][column], Math.abs(work[pivot][column]))) {
         pivot = row;
       }
     }
-    if (Math.abs(work[pivot][column]) < MIN_PIVOT) {
+    if (belowMagnitude(work[pivot][column], MIN_PIVOT)) {
       return null;
     }
     if (pivot !== column) {
@@ -132,7 +142,7 @@ function compressKnots(fullKnots: readonly number[]): {
   const multiplicities: number[] = [];
   for (const value of fullKnots) {
     const last = knots.length - 1;
-    if (last >= 0 && Math.abs(knots[last] - value) < 1e-12) {
+    if (last >= 0 && belowMagnitude(knots[last] - value, 1e-12)) {
       multiplicities[last] += 1;
     } else {
       knots.push(value);

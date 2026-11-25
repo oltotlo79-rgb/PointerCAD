@@ -1,0 +1,17 @@
+
+EMSCRIPTEN_BINDINGS(IGESCAFControl_Reader) {
+  class_<IGESCAFControl_Reader, base<IGESControl_Reader>>("IGESCAFControl_Reader")
+    .function("Perform_1", select_overload<Standard_Boolean(const TCollection_AsciiString & theFileName, opencascade::handle<TDocStd_Document> & theDoc, const Message_ProgressRange & theProgress), IGESCAFControl_Reader>(&IGESCAFControl_Reader::Perform), allow_raw_pointers())
+    .function("SetColorMode", &IGESCAFControl_Reader::SetColorMode, allow_raw_pointers())
+    .function("SetNameMode", &IGESCAFControl_Reader::SetNameMode, allow_raw_pointers())
+    .function("SetLayerMode", &IGESCAFControl_Reader::SetLayerMode, allow_raw_pointers())
+  ;
+    struct IGESCAFControl_Reader_1 : public IGESCAFControl_Reader {
+      IGESCAFControl_Reader_1() : IGESCAFControl_Reader() {}
+    };
+    class_<IGESCAFControl_Reader_1, base<IGESCAFControl_Reader>>("IGESCAFControl_Reader_1")
+      .constructor<>()
+    ;
+}
+
+namespace emscripten { namespace internal { template<> void raw_destructor<IGESCAFControl_Reader>(IGESCAFControl_Reader* ptr) { /* do nothing */ } } }

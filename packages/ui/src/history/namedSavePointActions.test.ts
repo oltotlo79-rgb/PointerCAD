@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { emptyPcadAttachments, encodeSaveDocument, readPcadFile, writePcadFile, type PcadAttachments } from '@pointercad/io';
+import { emptyPcadAttachments, encodeSaveDocument, FIXED_ENTRY_MTIME, readArchive, readPcadFile,
+  writePcadFile, zipPcadEntries, type PcadAttachments, type PcadZipEntries } from '@pointercad/io';
 import {
-  addComponent, createAssemblyDocument, createComponentFor, createDrawingDocument, createEmptyPartDocument, embedDrawingSource,
+  addComponent, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor, createDrawingDocument, createEmptyPartDocument, embedDrawingSource,
   embedPart, emptyDrawingSourceLibrary, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments, type PartDocument,
 } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -387,17 +388,24 @@ async function assemblyFixture() {
   const attachments = { ...emptyEmbeddedPartAttachments(),
     shapes: new Map([['shape', Uint8Array.of(1, 2, 3)]]), canvases: new Map([['image', Uint8Array.of(4, 5, 6)]]) };
   const embedded = await embedPart(EMPTY_PART_LIBRARY, createEmptyPartDocument(), 'a.pcad', './a.pcad', { attachments });
+  const partSource = { kind: 'part', partRef: embedded.partRef } as const;
+  const emptyChild = createAssemblyDocument('子組立');
+  const child = addComponent(emptyChild, createComponentFor(emptyChild, partSource));
+  const assemblyRef = 'nested-assembly';
+  const library = { ...embedded.library, assemblies: new Map([[assemblyRef, child]]) };
   const empty = createAssemblyDocument('試作A組立');
-  const first = addComponent(empty, createComponentFor(empty, { kind: 'part', partRef: embedded.partRef }));
-  const second = { ...addComponent(first, createComponentFor(first, { kind: 'part', partRef: embedded.partRef })), name: '発注前組立' };
-  return { library: embedded.library, first, second };
+  const withPart = addComponent(empty, createComponentFor(empty, partSource));
+  const first = addComponent(withPart, createComponentFor(withPart, { kind: 'subAssembly', assemblyRef }));
+  const second = { ...addComponent(first, createComponentFor(first, partSource)), name: '発注前組立' };
+  return { library, first, second, child, assemblyRef };
 }
 
 describe('組立・図面の名前付き保存点', () => {
   it('組立の作成・複製・実比較・復元は、抱き込んだ部品と添付を保ち、復元のUndoは1回', async () => {
     const data = storage(), repository = createNamedSavePoints(data), actions = createNamedSavePointActions(repository);
-    const { library, first, second } = await assemblyFixture();
-    useAppStore.setState({ saveDocumentEncoder: input => encodeSaveDocument(input) });
+    const { library, first, second, child, assemblyRef } = await assemblyFixture();
+    const encode = vi.fn(encodeSaveDocument);
+    useAppStore.setState({ saveDocumentEncoder: encode });
     useAppStore.getState().openAssembly(first, library);
     const a = await actions.create('試作A');
     useAppStore.getState().applyAssembly(second, library);
@@ -417,12 +425,45 @@ describe('組立・図面の名前付き保存点', () => {
     await actions.restore(a.id);
     const restored = useAppStore.getState();
     expect(restored.assembly?.name).toBe('試作A組立');
-    expect(restored.assembly?.components).toHaveLength(1);
+    expect(restored.assembly?.components).toEqual(first.components);
+    expect(restored.assemblyLibrary.assemblies?.get(assemblyRef)).toEqual(child);
     expect(restored.assemblyLibrary.attachments.get('part-1')?.shapes.get('shape')).toEqual(Uint8Array.of(1, 2, 3));
+    expect(restored.assemblyLibrary.attachments.get('part-1')?.canvases.get('image')).toEqual(Uint8Array.of(4, 5, 6));
     expect(restored.assemblyUndoStack?.past).toHaveLength((before.assemblyUndoStack?.past.length ?? 0) + 1);
     useAppStore.getState().undo();
     expect(useAppStore.getState().assembly).toBe(before.assembly);
-    expect((await repository.read(a.id)).point.sourceSha256).toBe(a.sourceSha256);
+    const reopened = await repository.read(a.id);
+    expect(reopened.point.sourceSha256).toBe(createHash('sha256').update(reopened.bytes).digest('hex'));
+    expect(reopened.bytes).toEqual(pair.before.bytes);
+    expect(pair.before.bytes).toEqual(await encode.mock.results[0].value);
+    expect(pair.after.bytes).toEqual(await encode.mock.results[1].value);
+  });
+
+  it('旧組立ZIPの元byteを再読込でき、どちらの正規圧縮でもないZIPは拒否する', async () => {
+    const { library, first } = await assemblyFixture();
+    const current = await encodeSaveDocument({ kind: 'assembly', bundle: createAssemblyDocumentBundle(first, library),
+      options: { savedAt: '2026-10-05T00:00:00.000Z' } });
+    const extracted = readArchive(current, { shouldExtract: () => true });
+    if (!extracted.ok) throw new Error('Missing assembly archive');
+    expect([...extracted.entries.keys()]).toEqual([
+      'document.json', 'parts/part-1.json', 'parts/nested-assembly.json',
+      'parts/part-1/attachments.sha256', 'parts/part-1/canvases/image.png', 'parts/part-1/shapes/shape.brep',
+    ]);
+    const entries: PcadZipEntries = new Map([...extracted.entries].map(([name, bytes]) =>
+      [name, [bytes, { level: name === 'parts/part-1/canvases/image.png' ? 0 : 6, mtime: FIXED_ENTRY_MTIME }]]));
+    const legacy = zipPcadEntries(entries);
+    expect(legacy).not.toEqual(current);
+    const data = storage(), repository = createNamedSavePoints(data);
+    const point = await repository.create('旧組立', legacy, 'assembly');
+    const reopened = await createNamedSavePoints(data).read(point.id);
+    expect(reopened.bytes).toEqual(legacy);
+    expect(reopened.point.sourceSha256).toBe(createHash('sha256').update(legacy).digest('hex'));
+    const document = entries.get('document.json');
+    if (document === undefined) throw new Error('Missing assembly envelope');
+    entries.set('document.json', [document[0], { level: 0, mtime: FIXED_ENTRY_MTIME }]);
+    await expect(repository.create('非正規', zipPcadEntries(entries), 'assembly')).rejects.toMatchObject({ reason: 'invalid' });
+    await expect(repository.create('破損', current.subarray(0, current.byteLength - 1), 'assembly')).rejects.toMatchObject({ reason: 'invalid' });
+    expect(await repository.list()).toEqual([point]);
   });
 
   it('図面の作成・比較・復元は参照元一式を保ち、復元のUndoは1回', async () => {

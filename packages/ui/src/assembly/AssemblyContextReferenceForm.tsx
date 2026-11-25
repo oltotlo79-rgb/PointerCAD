@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type AssemblyDocument, type ContextReferenceLink, type ContextReferenceRejectionCode, createSubShapeReference, findComponent, type SubShapeRef } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentAssemblyContext } from './assemblyContextGeometry.js';
+import { nextContextLinkId } from './partEditPlaneCopy.js';
 import { contextBodiesOf, runContextReferenceCommit, type ContextReferenceCommandResult } from './contextReferenceCommand.js';
 
 /** Keep the model's specific refusal codes intact and require a distinct translated reason for every code. */
@@ -35,9 +37,7 @@ export function contextLinkToCommit(
   document: AssemblyDocument, componentId: string, pointId: string, sourceComponentId: string, source: SubShapeRef,
 ): ContextReferenceLink {
   const existing = contextLinkOfPoint(document, componentId, pointId);
-  let serial = 1;
-  while ((document.contextReferences ?? []).some(link => link.id === `context-${String(serial)}`)) serial += 1;
-  return { id: existing?.id ?? `context-${String(serial)}`, targetComponentId: componentId, targetReferenceId: pointId,
+  return { id: existing?.id ?? nextContextLinkId(document), targetComponentId: componentId, targetReferenceId: pointId,
     sourceComponentId, source };
 }
 
@@ -50,30 +50,55 @@ export function AssemblyContextReferenceForm(props: { readonly componentId: stri
   const library = useAppStore(state => state.assemblyLibrary);
   const view = useAppStore(state => state.assemblyView);
   const computing = useAppStore(state => state.isComputing);
+  const planeView = useAppStore(currentAssemblyContext);
   const target = document === null ? undefined : findComponent(document, props.componentId);
   const part = target?.source.kind === 'part' ? library.parts.get(target.source.partRef) : undefined;
-  const points = part?.references.filter(feature => feature.kind === 'referencePoint') ?? [];
+  const bindings = document?.contextReferences?.filter(link => link.targetComponentId === props.componentId && link.plane !== undefined) ?? [];
+  const driven = new Set(bindings.flatMap(link => link.plane?.pointIds ?? []));
+  const points = part?.references.filter(feature => (feature.kind === 'referencePoint' && !driven.has(feature.id))
+    || (feature.kind === 'referencePlane' && bindings.some(link => link.targetReferenceId === feature.id))) ?? [];
   const sources = document?.components.filter(component => component.id !== props.componentId && !component.suppressed) ?? [];
   const first = document?.contextReferences?.find(link => link.targetComponentId === props.componentId);
   const [pointId, setPointId] = useState(first?.targetReferenceId ?? points[0]?.id ?? '');
   const [sourceId, setSourceId] = useState(first?.sourceComponentId ?? sources[0]?.id ?? '');
   const [faceKey, setFaceKey] = useState('');
   const [result, setResult] = useState<ContextReferenceCommandResult | null>(null);
-  if (document === null || target === undefined || part === undefined || view === null) return null;
+  const formRevision = useRef(0);
+  useEffect(() => () => { formRevision.current += 1; }, [props.componentId]);
+  if (document === null || target === undefined || part === undefined || (view === null && bindings.length === 0)) return null;
   const existing = contextLinkOfPoint(document, target.id, pointId);
   const source = findComponent(document, sourceId);
-  const bodies = source === undefined ? [] : contextBodiesOf(view, source) ?? [];
+  const bodies = source === undefined || view === null ? [] : contextBodiesOf(view, source) ?? [];
   const faces = bodies.flatMap(body => body.isValid ? body.faces.map(face => ({ key: `${body.featureId}:${String(face.index)}`,
     body, index: face.index, label: `${body.featureId} ${t('assembly.context.face')} ${String(face.index + 1)}` })) : []);
-  const ready = view.sourceDocument === document && !computing;
-  const apply = (link: ContextReferenceLink): void => {
-    void runContextReferenceCommit(useAppStore.getState, link).then(setResult);
+  const ready = view?.sourceDocument === document && !computing && (existing?.plane === undefined || planeView === view);
+  const apply = (link: ContextReferenceLink, operation: 'commit' | 'detach' = 'commit'): void => {
+    const revision = ++formRevision.current;
+    const ownsForm = () => formRevision.current === revision;
+    void runContextReferenceCommit(useAppStore.getState, link, operation, ownsForm).then(outcome => {
+      if (!ownsForm() || (outcome.status === 'stale' && useAppStore.getState().assembly !== document)) return;
+      if (operation === 'detach' && outcome.status === 'committed') {
+        setPointId(part.references.find(point => point.kind === 'referencePoint')?.id ?? '');
+      }
+      setResult(outcome);
+    });
   };
   const create = (): void => {
     const face = faces.find(candidate => candidate.key === faceKey);
     const reference = face === undefined ? null : createSubShapeReference(face.body, 'face', face.index);
     if (!ready || reference === null || source === undefined || pointId === '') return;
-    apply(contextLinkToCommit(document, target.id, pointId, source.id, reference));
+    if (existing?.plane === undefined) {
+      if (points.some(point => point.id === pointId && point.kind === 'referencePoint')) {
+        apply(contextLinkToCommit(document, target.id, pointId, source.id, reference));
+      }
+      return;
+    }
+    if (source.source.kind !== 'part') return;
+    const sourcePartId = library.parts.get(source.source.partRef)?.id;
+    if (sourcePartId === undefined) return;
+    const { targetPartRef, targetPartId, pointIds } = existing.plane;
+    apply({ ...existing, sourceComponentId: source.id, source: reference,
+      plane: { targetPartRef, targetPartId, pointIds, sourcePartRef: source.source.partRef, sourcePartId } });
   };
   return (
     <form aria-label={t('assembly.context.title')} data-testid="assembly-context-form"
@@ -83,19 +108,20 @@ export function AssemblyContextReferenceForm(props: { readonly componentId: stri
       }}
       onSubmit={event => { event.preventDefault(); create(); }}>
       <h4>{t('assembly.context.title')}</h4>
-      <label className="pcad-field"><span>{t('assembly.context.point')}</span>
+      <label className="pcad-field"><span>{t(bindings.length === 0 ? 'assembly.context.point' : 'assembly.context.target')}</span>
         <select className="pcad-field__input" data-testid="assembly-context-point" value={pointId} disabled={!ready}
-          onChange={event => { setPointId(event.currentTarget.value); }} title={t('assembly.guide.contextPoint')}>
+          onChange={event => { formRevision.current += 1; setPointId(event.currentTarget.value); setResult(null); }}
+          title={t('assembly.guide.contextPoint')}>
           {points.map(point => <option key={point.id} value={point.id}>{point.name}</option>)}
         </select></label>
       <label className="pcad-field"><span>{t('assembly.context.source')}</span>
         <select className="pcad-field__input" data-testid="assembly-context-source" value={sourceId} disabled={!ready}
-          onChange={event => { setSourceId(event.currentTarget.value); setFaceKey(''); }} title={t('assembly.guide.contextSource')}>
+          onChange={event => { formRevision.current += 1; setSourceId(event.currentTarget.value); setFaceKey(''); }} title={t('assembly.guide.contextSource')}>
           {sources.map(component => <option key={component.id} value={component.id}>{component.name}</option>)}
         </select></label>
       <label className="pcad-field"><span>{t('assembly.context.face')}</span>
         <select className="pcad-field__input" data-testid="assembly-context-face" value={faceKey} disabled={!ready}
-          onChange={event => { setFaceKey(event.currentTarget.value); }} title={t('assembly.guide.contextFace')}>
+          onChange={event => { formRevision.current += 1; setFaceKey(event.currentTarget.value); }} title={t('assembly.guide.contextFace')}>
           <option value="">{t('assembly.context.chooseFace')}</option>
           {faces.map(face => <option key={face.key} value={face.key}>{face.label}</option>)}
         </select></label>
@@ -103,9 +129,11 @@ export function AssemblyContextReferenceForm(props: { readonly componentId: stri
         {t(existing === undefined ? 'assembly.context.create' : 'assembly.context.replace')}</button>
       {existing === undefined ? null : <button type="button" className="pcad-button" data-testid="assembly-context-update"
         disabled={!ready} onClick={() => { apply(existing); }} title={t('assembly.guide.contextUpdate')}>{t('assembly.context.update')}</button>}
-      {result === null || result.status === 'committed' ? null
-        : <p role="alert">{t(result.status === 'rejected'
-          ? CONTEXT_REFERENCE_REJECTION_MESSAGES[result.rejection.code] : 'assembly.context.stale')}</p>}
+      {existing?.plane === undefined ? null : <button type="button" className="pcad-button"
+        onClick={() => { apply(existing, 'detach'); }} title={t('assembly.guide.contextDetach')}>{t('assembly.context.detach')}</button>}
+      {result === null || result.status === 'committed' || result.status === 'unchanged' ? null
+        : <p role="alert">{t(result.status === 'rejected' ? CONTEXT_REFERENCE_REJECTION_MESSAGES[result.rejection.code]
+          : result.status === 'saveFailed' ? 'assembly.partEdit.commitFailed' : 'assembly.context.stale')}</p>}
     </form>
   );
 }

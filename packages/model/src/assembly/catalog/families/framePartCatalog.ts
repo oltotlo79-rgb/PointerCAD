@@ -12,7 +12,7 @@ import { buildProfileSection } from '../../standard/profileExtrusion.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSlotNutPart, slotNutVolume, type SlotNutDimensions } from '../profiles/frameParts.js';
 import {
-  adjusterVolume, angleBracketCatalogVolume, buildAdjusterPart, buildAngleBracketCatalogPart, buildFlatPlatePart, buildFootBasePart,
+  adjusterShaftCenter, adjusterVolume, angleBracketCatalogVolume, buildAdjusterPart, buildAngleBracketCatalogPart, buildFlatPlatePart, buildFootBasePart,
   buildFrameCapPart, buildRoundNutPart, buildShapedPlatePart, flatPlateProfile, footBaseBossVolume, footBaseProfile, frameCapProfile, roundNutVolume,
   shapedPlateProfile, tSlotNutBarBounds, tSlotNutBarProfile, type AdjusterDimensions, type AngleBracketCatalogDimensions,
   type FlatPlateDimensions, type FootBaseDimensions, type FrameCapDimensions, type RoundNutDimensions, type ShapedPlateDimensions,
@@ -234,8 +234,11 @@ export interface FootBaseRecord {
   readonly simplified: readonly string[];
 }
 
-/** アジャスター(皿の円柱と、おねじの呼びの径の円柱。ねじの山・首振り・敷き物は入れない)。 */
-export interface AdjusterRecord {
+/** 行の表では皿の指定を一方に限る。形の入口でも両方・未指定を断る。 */
+export type AdjusterRecord = AdjusterDimensions & (
+  | { readonly padDiameter: number; readonly platePad?: never }
+  | { readonly platePad: NonNullable<AdjusterDimensions['platePad']>; readonly padDiameter?: never }
+) & {
   readonly key: string;
   readonly size: string;
   readonly slot: number;
@@ -243,16 +246,9 @@ export interface AdjusterRecord {
   /** 部位ごとに材料の違う行('mixed')だけ: 資料の材質の文字(例: ねじと座の材料)。 */
   readonly materialText?: string;
   readonly page: number;
-  readonly thread: string;
-  readonly padDiameter: number;
-  readonly padThickness: number;
-  /** おねじの長さ(資料の記入のまま。六角部が有る行は六角部の上の面から先まで)。 */
-  readonly threadLength: number;
-  /** 皿とねじの間の六角部の高さ(寸法線の起点が六角部の上の行だけ。対辺の記入が無いので、ねじの径の円柱で表す)。 */
-  readonly hexHeight?: number;
   readonly massG: number;
   readonly simplified: readonly string[];
-}
+};
 
 const MATERIALS: Readonly<Record<DensityMaterial, string>> = { steel: '鋼', stainless: 'ステンレス', aluminum: 'アルミ', nylon: '樹脂(ナイロン)' };
 const GENERATOR_REVISION = 'frame-part-1';
@@ -424,8 +420,8 @@ export const FRAME_CAP_FAMILY: CatalogFamily = {
   options: [],
   stock: 'count',
   rows: CAP_RECORDS.map((record) => ({ ...baseRow(record, { slot: record.slot, width: record.width, height: record.height,
-    thickness: record.thickness, ...(record.armWidth === null ? {} : { armWidth: record.armWidth }), cornerRadius: record.cornerRadius,
-    ...(record.largeRadius === undefined ? {} : { largeRadius: record.largeRadius }), massG: record.massG }, '資料の 1 個の値'),
+    thickness: record.thickness, ...(record.armWidth === null ? {} : { armWidth: record.armWidth }),
+    ...(record.largeRadius === undefined ? { cornerRadius: record.cornerRadius } : { largeRadius: record.largeRadius }), massG: record.massG }, '資料の 1 個の値'),
     ...(record.fitsFrameKeys === undefined ? {} : { fitsFrameKeys: record.fitsFrameKeys }) })),
   build: (row) => {
     const dims = capDimensions(row);
@@ -582,27 +578,31 @@ export const FOOT_BASE_FAMILY: CatalogFamily = {
 const ADJUSTERS: readonly AdjusterRecord[] = [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS];
 const adjusterRecord = recordLookup(ADJUSTERS);
 
-function adjusterDimensions(row: CatalogItemRow): AdjusterDimensions | null {
-  const record = adjusterRecord(row);
-  return record === undefined ? null : { thread: record.thread, padDiameter: record.padDiameter, padThickness: record.padThickness,
-    threadLength: record.threadLength, ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }) };
+function adjusterPadDims(record: AdjusterRecord): Readonly<Record<string, number>> {
+  if (record.padDiameter !== undefined) return { padDiameter: record.padDiameter };
+  const plate = record.platePad;
+  const [shaftCenterX, shaftCenterY] = adjusterShaftCenter(plate);
+  return { padWidth: plate.width, padDepth: plate.depth, holeCount: plate.holes.length, shaftCenterX, shaftCenterY };
+}
+
+function adjusterRow(record: AdjusterRecord): CatalogItemRow {
+  return baseRow(record, { ...adjusterPadDims(record), padThickness: record.padThickness, threadLength: record.threadLength,
+    ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }), massG: record.massG }, '資料の 1 個の値');
 }
 
 export const ADJUSTER_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-adjuster', 'catalog.frame.kind.adjuster', 'adjuster'),
   options: [],
   stock: 'count',
-  rows: ADJUSTERS.map((record) => baseRow(record, { padDiameter: record.padDiameter, padThickness: record.padThickness,
-    threadLength: record.threadLength, ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }), massG: record.massG },
-  '資料の 1 個の値')),
+  rows: ADJUSTERS.map(adjusterRow),
   build: (row) => {
-    const dims = adjusterDimensions(row);
-    const part = dims === null ? null : buildAdjusterPart(dims);
+    const record = adjusterRecord(row);
+    const part = record === undefined ? null : buildAdjusterPart(record);
     return part === null ? null : withName(part, row.size);
   },
   nominalVolume: (row) => {
-    const dims = adjusterDimensions(row);
-    return dims === null ? null : adjusterVolume(dims);
+    const record = adjusterRecord(row);
+    return record === undefined ? null : adjusterVolume(record);
   },
   nominalMassG: pieceMass,
   partName: (row) => row.size,

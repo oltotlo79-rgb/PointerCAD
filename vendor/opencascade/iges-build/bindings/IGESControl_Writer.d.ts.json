@@ -1,0 +1,7 @@
+{
+  ".d.ts": "export declare class IGESControl_Writer {\n  static WriteUnit(): string;\n  static SetWriteUnit(unit: string): Standard_Boolean;\n  static WriteBRepMode(): Standard_Integer;\n  static SetWriteBRepMode(mode: Standard_Integer): Standard_Boolean;\n  delete(): void;\n}\n\n\n",
+  "kind": "class",
+  "exports": [
+    "IGESControl_Writer"
+  ]
+}

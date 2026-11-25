@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { t, type MessageKey } from '../i18n/t.js';
-import { activeDocumentKind } from '../store/documentKind.js';
+import { editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
 import { selectedPointsFace } from '../sketch/faceSelectedPoints.js';
@@ -31,7 +31,7 @@ function blocked(): boolean {
 
 /** One temporary overlay for the drawing surface; it owns no model or Undo state. */
 export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<HTMLDivElement | null> }): React.JSX.Element | null {
-  const kind = useAppStore(state => activeDocumentKind(state));
+  const kind = useAppStore(editingDocumentKind);
   const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const connectionReason = useAppStore(state => selectedPointsConnection(state).reasonKey);
   const faceReason = useAppStore(state => selectedPointsFace(state).reasonKey);
@@ -76,7 +76,7 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
           setShown(gesture === null ? null : { gesture, latched });
         },
         choose: (slot) => {
-          const currentKind = activeDocumentKind(useAppStore.getState());
+          const currentKind = editingDocumentKind(useAppStore.getState());
           if (currentKind !== kind) return;
           executeCommand(shownIds.current[slot]);
         },

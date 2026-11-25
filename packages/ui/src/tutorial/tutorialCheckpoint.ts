@@ -45,10 +45,12 @@ export interface TutorialCheckpointInput {
 /** Bytes must come from a successful ordinary save/open/restore; no second document store is created here. */
 export interface TutorialSavedEvidence {
   readonly part: { readonly document: PartDocument; readonly savedBytes?: Uint8Array };
+  /** Verified against the same selected file in the native-open Worker. */
+  readonly savedDigest?: string;
   readonly drawing?: {
     readonly document: DrawingDocument;
     readonly source: DrawingSourceInput;
-    readonly savedBytes: Uint8Array;
+    readonly savedBytes?: Uint8Array;
   };
 }
 
@@ -199,11 +201,13 @@ async function observed(evidence: TutorialSavedEvidence): Promise<TutorialCheckp
   try {
     const partSourceHash = await contentHashOf(part);
     const savedBytes = evidence.drawing === undefined ? evidence.part.savedBytes : evidence.drawing.savedBytes;
-    if (!(savedBytes instanceof Uint8Array) || savedBytes.byteLength === 0) return refusal('corrupt');
+    const savedSha256 = evidence.savedDigest ?? (savedBytes instanceof Uint8Array && savedBytes.byteLength !== 0
+      ? await sha256(savedBytes) : '');
+    if (!/^[a-f0-9]{64}$/u.test(savedSha256)) return refusal('corrupt');
     const result: TutorialCheckpoint = {
       version: 1, course: 'parameterToExport', ownerPartId: part.id,
       savedKind: evidence.drawing === undefined ? 'part' : 'drawing',
-      savedSha256: await sha256(savedBytes), partSourceHash,
+      savedSha256, partSourceHash,
       stageHint: 'pointCoordinates', owned: { sketchId: part.activeSketchId },
     };
     if (evidence.drawing === undefined) return { ok: true, checkpoint: result };

@@ -10,11 +10,23 @@ import { collectScriptRuntimeNotices } from './scriptRuntimeNotices.mjs';
 const rootFolder = fileURLToPath(new URL('../../', import.meta.url));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = value => String(value).replace(/[&<>"']/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-export function collectRuntimeNotices(root = rootFolder) {
-  const actual = installedRuntimeDependencies(root), folder = join(root, 'docs/standards/licenses');
-  const source = readFileSync(join(folder, 'runtime-notices.json'));
+export function readRuntimeNoticeManifest(path) {
+  const source = readFileSync(path);
   const manifest = JSON.parse(source.toString('utf8'));
   if (manifest.format !== 'pointercad-runtime-notices/1' || !Array.isArray(manifest.packages)) throw new Error('Invalid runtime notice manifest');
+  for (const item of manifest.additionalNotices ?? []) {
+    const { reason } = item;
+    if (typeof reason === 'string' && (/\?{2,}/u.test(reason) || reason.includes(String.fromCharCode(0xfffd)))) {
+      throw new Error('Runtime notice reason contains corrupted text: ' + item.file);
+    }
+  }
+  return { source, manifest };
+}
+
+export function collectRuntimeNotices(root = rootFolder) {
+  const folder = join(root, 'docs/standards/licenses');
+  const { source, manifest } = readRuntimeNoticeManifest(join(folder, 'runtime-notices.json'));
+  const actual = installedRuntimeDependencies(root);
   verifyRuntimeDependencyInventory(actual, manifest.packages);
   const assets = collectScriptRuntimeNotices(root), unresolved = readFemDistributionGaps(join(root, 'packages/fem/runtime')), links = [];
   for (const item of manifest.packages) {

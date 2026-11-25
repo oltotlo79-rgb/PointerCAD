@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomFillSync, randomUUID } from 'node:crypto';
 import { mkdir, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import process from 'node:process';
 import { inspect } from 'node:util';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { isTemplateKind, readPcadFile, type ImportedMeshBytes } from '../../packages/io/src/index.js';
@@ -98,6 +99,7 @@ interface LargeSaveFixture {
   readonly bytes: Uint8Array;
   readonly triangleCount: number;
   readonly rawBytes: number;
+  readonly archiveSha256: string;
   readonly originalHash: ReturnType<typeof meshHashes>;
   /** 保存したファイルに同じ原本(全バイト)と参照が1つだけ残っていることを確かめ、その原本を返す。 */
   readonly checkedMesh: (result: ReturnType<typeof readPcadFile>) => ImportedMeshBytes;
@@ -144,7 +146,7 @@ function buildLargeSaveFixture(mib: 32 | 128): LargeSaveFixture {
   const bytes = zipPcadEntries(new Map([...entries].map(([name, [data, options]]) => [name, [data, { ...options, level: 0 }] as const])));
   expect(bytes.byteLength).toBeLessThanOrEqual(IO_LIMITS.archiveCompressedBytes);
   checkedMesh(readPcadFile(bytes));
-  return { bytes, triangleCount, rawBytes, originalHash, checkedMesh };
+  return { bytes, triangleCount, rawBytes, archiveSha256: createHash('sha256').update(bytes).digest('hex'), originalHash, checkedMesh };
 }
 
 interface SaveWorkerEntry { readonly url: string; closed: boolean; closedAt: number | null }
@@ -512,11 +514,13 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
   await waitForStartupHealth(page, info);
   const fixture = largeSaveFixture(mib), fixturePath = info.outputPath(`input-${mib}-${repeat}.pcad`);
   const { triangleCount, rawBytes, originalHash, checkedMesh } = fixture, fixtureBytes = fixture.bytes;
-  await info.attach(`fixture-${mib}-${repeat}`, { contentType: 'application/json',
-    body: JSON.stringify({ mib, triangleCount, rawBytes, zippedBytes: fixtureBytes.byteLength, originalHash }) });
+  const input = { mib, triangleCount, rawBytes, zippedBytes: fixtureBytes.byteLength, archiveSha256: fixture.archiveSha256, originalHash };
+  await info.attach('fixture-' + String(mib) + '-' + String(repeat), { contentType: 'application/json', body: JSON.stringify(input) });
   await writeFile(fixturePath, fixtureBytes);
   await openSaveFlowFile(page, fixturePath, app);
   const target = app !== undefined ? 'disk' : options.target ?? 'download';
+  const engineVersion = app === undefined ? page.context().browser()?.version() ?? null
+    : await app.evaluate(() => process.versions.electron ?? null);
   const opfsName = `save-performance-${String(mib)}-${String(repeat)}-${randomUUID()}.pcad`;
   const saveClockBefore = target === 'opfs' ? await useOpfsSaveTarget(page, opfsName) : null;
   const workers = trackSaveWorkers(page);
@@ -609,7 +613,8 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     const responseObservation = observeSaveResponse({ pageLatencyMs: audit.latencies, roundTripMs: roundTrips, stages: audit.stages },
       `保存${String(mib)}MiB ${String(repeat + 1)}/3`);
     const { samples, activeSamples, p95, activeP95 } = responseObservation;
-    const result = readPcadFile(await readFile(savedPath));
+    const savedArchive = await readFile(savedPath);
+    const result = readPcadFile(savedArchive);
     const savedAttachment = checkedMesh(result);
     for (const worker of workers) {
       const url = new URL(worker.url), appUrl = new URL(page.url());
@@ -631,7 +636,8 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     const extraMemoryBudgetBytes = 512 * 1024 * 1024;
     const record = {
       environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown', target,
-      mib, repeat, rawBytes, triangleCount, savedBytes: (await readFile(savedPath)).byteLength,
+      mib, repeat, rawBytes, triangleCount, savedBytes: savedArchive.byteLength,
+      input, platform: process.platform, engineVersion,
       inputs: samples.length, p95, activeP95, activeInputs: activeSamples.length, samples, activeSamples, responseObservation,
       // Per input in input order: page stage, event time (page clock), page latency and Node key round trip.
       // Each sample above is the larger of the two; no criterion reads these fields, they only separate the sources.
@@ -653,6 +659,7 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     // 上限・判定の式・判定の順は変えない。出力の形は [性能記録](releasePerformance.ts)と同じ「印 + JSON」。
     // 段の時刻(saveMs・releaseMs・保存の段・OPFS の書込み)と、WS と private の山の時刻・段も出す(山がどの段かをログだけで決める)。
     console.log('[記憶量記録]', JSON.stringify({ label: responseObservation.label, environment: record.environment, target,
+      input, platform: record.platform, engineVersion, method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS,
       budgetBytes: extraMemoryBudgetBytes, complete: record.memory.complete, baseline, peak, released,
       extraPeak: record.memory.extraPeak, extraAfterRelease: record.memory.extraAfterRelease, counts: record.memory.counts,
       saveMs: Math.round(record.saveMs), releaseMs: Math.round(record.releaseMs), phases: phaseSummary,

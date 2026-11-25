@@ -116,7 +116,7 @@ import type {
   PrintabilityProgressCallback,
   PrintabilityOutcome,
 } from './kernelBridge/analysisContracts.js';
-import type { ShapeExportOutcome, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
+import type { ImportedBrepInspection, ShapeExportOutcome, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
 export type {
   MeasureTarget,
   MeasureOutcome,
@@ -140,6 +140,7 @@ export type {
   ShapeImportOptions,
   ImportedTriangles,
   ImportedBody,
+  ImportedBrepInspection,
   ShapeImportOutcome,
 } from './kernelBridge/exchangeContracts.js';
 import type {
@@ -964,25 +965,8 @@ export function readMeshLedgerDiagnostics() {
 }
 declare global { interface Window { pcadMeshLedgerDiagnostics?: typeof readMeshLedgerDiagnostics } }
 
-function createBridgeMeshLedger(sameRealm: boolean) {
-  const host = realmMeshHost;
-  if (!Number.isSafeInteger(nextMeshProvider + 1)) throw new RangeError('Mesh provider ID overflow');
-  const providerId = ++nextMeshProvider;
-  let connectionGeneration = 0;
-  const ownerCoverageReasons = new Set<string>();
-  const ownerCoverageReason = (): string | null => ownerCoverageReasons.values().next().value ?? null;
-  const logicalDisplayOwners = new Map<string, MeshLedgerOwner>();
-  const bodyOwners = new WeakMap<readonly TypeSolidBody[], MeshLedgerOwner>();
-  const issued = new WeakSet<MeshLedgerOwner>();
-  const backingInspections = new WeakMap<SourceMeshBackingInspection, CurrentMeshLedgerReceipt>();
-  const receipts = new WeakSet<CurrentMeshLedgerReceipt>();
-  let nextDispatch = 0;
-  function dispatch(partId: string, generation: number, kind: 'display' | 'hidden', steps: readonly ResolvedSolidStep[]): MeshLedgerOwner {
-    if (!Number.isSafeInteger(nextDispatch + 1)) throw new RangeError('Mesh dispatch ID overflow');
-    const owner: MeshLedgerOwner = Object.freeze({ dispatchId: `mesh-${providerId}-${connectionGeneration}-${++nextDispatch}`, partId, generation, kind,
-      steps: Object.freeze(steps.map(step => Object.freeze({ id: step.featureId, key: step.key }))) });
-    issued.add(owner); return owner;
-  }
+/** Reserve, validate and adopt cloned replies under the shared realm's backing budget. */
+function createMeshReplyAdmission(host: typeof realmMeshHost, providerId: number) {
   async function reserve(owner: MeshLedgerOwner, requested: number,
     shouldCancel: () => boolean | Promise<boolean>, alive: () => boolean) {
     return host.reserveReplyWhenReady(owner.dispatchId, requested, shouldCancel, alive);
@@ -1032,6 +1016,29 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     const reading = host.adoptReply(owner.dispatchId, owner.dispatchId, buffers);
     if (reading.status !== 'known') throw new RangeError(`Host mesh adoption unavailable: ${reading.reason}`);
   }
+  return { reserve, admitReply, adopt };
+}
+
+function createBridgeMeshLedger(sameRealm: boolean) {
+  const host = realmMeshHost;
+  if (!Number.isSafeInteger(nextMeshProvider + 1)) throw new RangeError('Mesh provider ID overflow');
+  const providerId = ++nextMeshProvider;
+  let connectionGeneration = 0;
+  const ownerCoverageReasons = new Set<string>();
+  const ownerCoverageReason = (): string | null => ownerCoverageReasons.values().next().value ?? null;
+  const logicalDisplayOwners = new Map<string, MeshLedgerOwner>();
+  const bodyOwners = new WeakMap<readonly TypeSolidBody[], MeshLedgerOwner>();
+  const issued = new WeakSet<MeshLedgerOwner>();
+  const backingInspections = new WeakMap<SourceMeshBackingInspection, CurrentMeshLedgerReceipt>();
+  const receipts = new WeakSet<CurrentMeshLedgerReceipt>();
+  let nextDispatch = 0;
+  function dispatch(partId: string, generation: number, kind: 'display' | 'hidden', steps: readonly ResolvedSolidStep[]): MeshLedgerOwner {
+    if (!Number.isSafeInteger(nextDispatch + 1)) throw new RangeError('Mesh dispatch ID overflow');
+    const owner: MeshLedgerOwner = Object.freeze({ dispatchId: `mesh-${providerId}-${connectionGeneration}-${++nextDispatch}`, partId, generation, kind,
+      steps: Object.freeze(steps.map(step => Object.freeze({ id: step.featureId, key: step.key }))) });
+    issued.add(owner); return owner;
+  }
+  const { reserve, admitReply, adopt } = createMeshReplyAdmission(host, providerId);
   function bind(owner: MeshLedgerOwner, result: SolidRecomputeOutcome): SolidRecomputeOutcome {
     bodyOwners.set(result.bodies, owner);
     if (owner.kind === 'display') {
@@ -1192,6 +1199,840 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     owner: (bodies: readonly TypeSolidBody[]) => bodyOwners.get(bodies) ?? null };
 }
 
+type BridgeWorkerOperations = MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge;
+type BridgeMeshLedger = ReturnType<typeof createBridgeMeshLedger>;
+type BridgePhaseObserver = ReturnType<typeof createMainPhaseObserver>;
+
+interface BridgeTransport {
+  readonly connection: KernelConnection;
+  readonly disposed: boolean;
+  readonly health: KernelHealth;
+  readonly restart: () => void;
+  readonly callbackScope: () => KernelCallbackScope;
+}
+
+interface BridgePhaseJournal {
+  readonly nonce: string;
+  readonly active: KernelConnection;
+  readonly epoch: number;
+}
+
+interface BridgePendingCleanup {
+  readonly owner: MeshLedgerOwner;
+  readonly active: KernelConnection;
+}
+
+interface BridgeMeshOwnership {
+  readonly ledger: BridgeMeshLedger;
+  readonly partClaims: WeakSet<PartReleaseClaim>;
+  readonly inFlightParts: Map<MeshLedgerOwner, KernelConnection>;
+  readonly displayConnections: WeakMap<MeshLedgerOwner, number>;
+  readonly closedThroughGeneration: () => number;
+  readonly hiddenCleanup: Map<string, BridgePendingCleanup>;
+  readonly failedHiddenCleanup: Set<string>;
+  readonly returnedHiddenOwners: WeakSet<MeshLedgerOwner>;
+  readonly closedHiddenOwners: WeakSet<MeshLedgerOwner>;
+  readonly pendingReplyCleanup: Map<string, BridgePendingCleanup>;
+  readonly acknowledgeReceived: (owner: MeshLedgerOwner, active: KernelConnection) => Promise<void>;
+}
+
+interface BridgeMeshPhases {
+  readonly phaseGenerations: WeakMap<MeshLedgerOwner, number>;
+  readonly observe: (phase: MainRuntimePhase, owner: MeshLedgerOwner, active: KernelConnection) => void;
+}
+
+function createBridgeRuntimeObservation(transport: BridgeTransport, ledger: BridgeMeshLedger, phases: BridgePhaseObserver,
+  journal: { current: BridgePhaseJournal | null }, ownership: BridgeMeshOwnership): Pick<BridgeWorkerOperations,
+  'readRuntimePhases' | 'beginRuntimePhaseCapture' | 'readRuntimePhaseCapture' | 'endRuntimePhaseCapture'> {
+  const { failedHiddenCleanup, pendingReplyCleanup } = ownership;
+  return {
+    readRuntimePhases(): Promise<RuntimePhaseObservation> {
+      const active = transport.connection, capturedGeneration = ledger.connectionEpoch();
+      const initial = phases.snapshot();
+      const observation = (worker: RuntimePhaseObservation['worker'], reason: string | null): RuntimePhaseObservation => ({
+        status: reason === null ? 'observed' : 'unknown', reason, connectionEpoch: capturedGeneration,
+        main: phases.snapshot(), worker,
+        coverage: 'runSolidRecompute-call-plus-admission-preclone-and-main-lifetime',
+        transport: 'preclone-to-resolved-main-reply-envelope',
+        unobserved: ['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident',
+          'continuous-highwater', 'assembly-source-library-mapping'],
+      });
+      if (transport.disposed || active.closed || active.interruption !== null) return Promise.resolve(observation(null, 'transport-unavailable'));
+      return raceWithBroken<RuntimePhaseObservation>(active, async () => {
+        try {
+          const read = active.remote.readRuntimePhases;
+          if (typeof read !== 'function') return observation(null, 'unsupported-provider');
+          const worker = await read();
+          const isArray = (value: unknown): boolean => Array.isArray(value);
+          if (worker === undefined || worker.capacity !== 256 || !isArray(worker.records)
+            || worker.records.length > 256 || worker.coverage !== 'runSolidRecompute-call-plus-admission-preclone'
+            || ![worker.lastSeq, worker.dropped, worker.clockDiscontinuities, worker.missingOwners, worker.ownerConflicts]
+              .every(value => Number.isSafeInteger(value) && value >= 0)) return observation(null, 'provider-reply-unavailable');
+          const workerKeys = ['capacity', 'lastSeq', 'dropped', 'clockDiscontinuities', 'missingOwners',
+            'ownerConflicts', 'records', 'coverage', 'unobserved'];
+          const recordKeys = ['seq', 'phase', 'dispatchId', 'partId', 'generation', 'kind', 'epochMs', 'monoMs'];
+          if (Object.keys(worker).length !== workerKeys.length || !Object.keys(worker).every(key => workerKeys.includes(key))
+            || !isArray(worker.unobserved) || !['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident']
+              .every(value => worker.unobserved.some(item => item === value))
+            || !worker.records.every(record => record !== null && typeof record === 'object'
+              && Object.keys(record).length === recordKeys.length && Object.keys(record).every(key => recordKeys.includes(key))))
+            return observation(null, 'non-metadata-worker-reply');
+          const current = phases.snapshot();
+          const allowedPhases = ['native-build-start', 'native-build-return', 'native-build-throw', 'native-build-cancelled',
+            'geometry-cancel-check', 'geometry-cancel-request', 'geometry-cancel-check-throw', 'reply-preclone',
+            'reply-admission-rejected', 'owner-rejected', 'occt-load-throw'];
+          if (!worker.records.every(record => Number.isSafeInteger(record.seq) && record.seq > 0
+            && record.seq <= worker.lastSeq && allowedPhases.includes(record.phase)
+            && (record.epochMs === null || Number.isFinite(record.epochMs) && record.epochMs >= 0)
+            && (record.monoMs === null || Number.isFinite(record.monoMs) && record.monoMs >= 0)))
+            return observation(null, 'invalid-worker-record');
+          if (!worker.records.every((record, index) => index === 0 || record.seq > (worker.records[index - 1]?.seq ?? Infinity)))
+            return observation(null, 'invalid-worker-sequence');
+          if (!worker.records.every(record => typeof record.dispatchId === 'string' && record.dispatchId.length > 0
+            && record.dispatchId.length <= 512 && typeof record.partId === 'string' && record.partId.length > 0
+            && record.partId.length <= 512 && typeof record.generation === 'number'
+            && Number.isSafeInteger(record.generation) && record.generation >= 0
+            && (record.kind === 'display' || record.kind === 'hidden')
+            && current.records.some(main => main.phase === 'dispatch'
+            && main.connectionEpoch === capturedGeneration && main.dispatchId === record.dispatchId && main.partId === record.partId
+            && main.generation === record.generation && main.kind === record.kind)))
+            return observation(worker, 'unmatched-worker-owner');
+          if (transport.disposed || transport.connection !== active || active.closed || active.interruption !== null || ledger.connectionEpoch() !== capturedGeneration)
+            return observation(worker, 'connection-changed');
+          if (current.lastSeq !== initial.lastSeq) return observation(worker, 'main-changed-during-read');
+          if (pendingReplyCleanup.size > 0) return observation(worker, 'receiver-ack-unsettled');
+          if (failedHiddenCleanup.size > 0) return observation(worker, 'hidden-cleanup-unsettled');
+          const incomplete = current.dropped + current.clockDiscontinuities + current.missingContexts
+            + worker.dropped + worker.clockDiscontinuities + worker.missingOwners + worker.ownerConflicts;
+          return observation(worker, incomplete > 0 ? 'metadata-incomplete' : worker.records.length === 0 ? 'no-worker-phases' : null);
+        } catch { return observation(null, 'provider-reply-unavailable'); }
+      }, () => observation(null, 'transport-unavailable'), undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async beginRuntimePhaseCapture(nonce): Promise<void> {
+      if (journal.current !== null || transport.disposed || transport.connection.closed || transport.connection.interruption !== null)
+        throw new Error('Runtime phase capture unavailable');
+      const active = transport.connection;
+      phases.beginCapture(nonce);
+      journal.current = { nonce, active, epoch: ledger.connectionEpoch() };
+      try {
+        await raceWithBroken(active, async () => {
+          const begin = active.remote.beginRuntimePhaseCapture;
+          if (typeof begin !== 'function') throw new Error('Runtime phase capture unsupported');
+          await begin(nonce);
+          if (transport.connection !== active || active.closed || active.interruption !== null)
+            throw new Error('Runtime phase capture connection changed');
+        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+        undefined, undefined, undefined, 'readonly-mesh-observation');
+      } catch (error) {
+        if (journal.current?.nonce === nonce) { phases.endCapture(nonce); journal.current = null; }
+        if (!active.closed && active.interruption === null) {
+          try {
+            await raceWithBroken(active, async () => {
+              const end = active.remote.endRuntimePhaseCapture;
+              if (typeof end !== 'function') throw new Error('Phase capture rollback unsupported');
+              await end(nonce);
+            }, () => { throw new Error('Phase capture rollback transport unavailable'); },
+            undefined, undefined, undefined, 'readonly-mesh-observation');
+          } catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'Runtime phase capture start and rollback failed', { cause: cleanupError });
+          }
+        }
+        throw new Error('Runtime phase capture start failed', { cause: error });
+      }
+    },
+    readRuntimePhaseCapture(nonce, mainAcknowledge, workerAcknowledge): Promise<RuntimePhaseCapture> {
+      const capture = journal.current;
+      if (capture === null || capture.nonce !== nonce || capture.active !== transport.connection
+        || transport.disposed || transport.connection.closed || transport.connection.interruption !== null || capture.epoch !== ledger.connectionEpoch())
+        return Promise.reject(new Error('Runtime phase capture owner/connection differs'));
+      return raceWithBroken(capture.active, async () => {
+        const read = capture.active.remote.readRuntimePhaseCapture;
+        if (typeof read !== 'function') throw new Error('Runtime phase journal unsupported');
+        const worker = await read(nonce, workerAcknowledge);
+        if (journal.current !== capture || transport.connection !== capture.active || capture.active.closed
+          || capture.active.interruption !== null || capture.epoch !== ledger.connectionEpoch())
+          throw new Error('Runtime phase capture changed during read');
+        return { nonce, connectionEpoch: capture.epoch, main: phases.readCapture(nonce, mainAcknowledge), worker };
+      }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+      undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async endRuntimePhaseCapture(nonce): Promise<void> {
+      const capture = journal.current;
+      if (capture === null || capture.nonce !== nonce) throw new Error('Runtime phase capture owner differs');
+      try {
+        await raceWithBroken(capture.active, async () => {
+          const end = capture.active.remote.endRuntimePhaseCapture;
+          if (typeof end !== 'function') throw new Error('Runtime phase journal unsupported');
+          await end(nonce);
+        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+        undefined, undefined, undefined, 'readonly-mesh-observation');
+      } finally {
+        if (journal.current === capture) { phases.endCapture(nonce); journal.current = null; }
+      }
+    },
+  };
+}
+
+function createBridgeMeshOwnershipOperations(transport: BridgeTransport, ownership: BridgeMeshOwnership): Pick<BridgeWorkerOperations,
+  'pendingWaiters' | 'meshLedgerRelease' | 'meshLedgerOwner' | 'awaitMeshReplySettlement' | 'inspectSourceMeshBackings' | 'currentSourceMeshBackingInspection' | 'capturePartReleaseClaim' | 'releasePartClaim' | 'currentMeshLedgerReceipt' | 'captureCurrentMeshLedger' | 'releaseReferenceMeshLease' | 'pendingReferenceMeshCleanup' | 'retryReferenceMeshCleanup'> {
+  const { ledger, partClaims, inFlightParts, displayConnections, closedThroughGeneration, hiddenCleanup,
+    failedHiddenCleanup, returnedHiddenOwners, closedHiddenOwners, pendingReplyCleanup, acknowledgeReceived } = ownership;
+  return {
+    pendingWaiters: () => transport.connection.waiters.size, meshLedgerRelease: since => ledger.host.releaseSince(since),
+    meshLedgerOwner: ledger.owner, awaitMeshReplySettlement: ({ alive }) => ledger.host.waitForNoPendingClone(alive),
+    inspectSourceMeshBackings: async (receipt, buffers) => {
+      const unknown = (): SourceMeshBackingInspection => ({ status: 'unknown', reason: 'transport-unavailable' });
+      const active = transport.connection;
+      if (transport.disposed || active.closed || active.interruption !== null) return unknown();
+      return raceWithBroken<SourceMeshBackingInspection>(active, async () => {
+        try { return await ledger.inspectSourceMeshBackings(receipt, buffers); }
+        catch { return { status: 'unknown', reason: 'membership-provider-unavailable' }; }
+      }, unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    currentSourceMeshBackingInspection: (inspection, receipt) => {
+      if (transport.disposed) return ledger.refuse('bridge-disposed');
+      if (transport.connection.interruption !== null) return ledger.refuse('transport-interrupted');
+      return ledger.currentSourceMeshBackingInspection(inspection, receipt);
+    },
+    capturePartReleaseClaim(bodies) {
+      const owner = ledger.owner(bodies);
+      if (owner === null || owner.kind !== 'display' || !ledger.issued.has(owner)) return null;
+      const capturedGeneration = displayConnections.get(owner);
+      if (capturedGeneration === undefined) return null;
+      const claim: PartReleaseClaim = Object.freeze({ owner, connectionEpoch: capturedGeneration });
+      partClaims.add(claim); return claim;
+    },
+    async releasePartClaim(claim): Promise<PartReleaseDisposition> {
+      if (!partClaims.has(claim) || claim.owner.kind !== 'display') return { status: 'unavailable', reason: 'unissued-claim' };
+      if (claim.connectionEpoch <= closedThroughGeneration()) { ledger.retire(claim.owner); return { status: 'closed' }; }
+      const active = transport.connection;
+      if (transport.disposed || claim.connectionEpoch !== ledger.connectionEpoch() || active.closed || active.interruption !== null)
+        return { status: 'unavailable', reason: 'transport-unavailable' };
+      if ([...inFlightParts].some(([owner, held]) => held === active && owner.partId === claim.owner.partId))
+        return { status: 'unavailable', reason: 'part-dispatch-pending' };
+      const unavailable = (): PartReleaseDisposition => ({ status: 'unavailable', reason: 'transport-unavailable' });
+      return raceWithBroken<PartReleaseDisposition>(active, async () => {
+        try {
+        const read = active.remote.readPartOwnership, release = active.remote.releaseOwnedPart;
+        if (typeof read !== 'function' || typeof release !== 'function') return { status: 'unavailable', reason: 'unsupported-part-provider' };
+        const current = await read(claim.owner);
+        if (transport.connection !== active || active.closed || active.interruption !== null) return unavailable();
+        if (current.status !== 'current') {
+          if (current.status === 'absent') ledger.retire(claim.owner);
+          return current;
+        }
+        const returned = await release(claim.owner, current.epoch);
+        // A received actual return remains proof even if the transport subsequently breaks;
+        // closure of an unreceived operation returns unavailable instead.
+        if (returned.status === 'released' || returned.status === 'absent') ledger.retire(claim.owner);
+        return returned;
+        } catch { return { status: 'unavailable', reason: 'part-release-reply-unavailable' }; }
+      }, unavailable);
+    },
+    currentMeshLedgerReceipt: receipt => {
+      if (transport.disposed) return ledger.refuse('bridge-disposed');
+      if (transport.connection.interruption !== null) return ledger.refuse('transport-interrupted');
+      return ledger.current(receipt);
+    },
+    async captureCurrentMeshLedger(input) {
+      const active = transport.connection;
+      const unknown = (): CurrentMeshLedgerReceipt => ({ status: 'unknown', observationId: input.observationId, reason: 'transport-unavailable' });
+      return raceWithBroken(active, () => ledger.capture(input, query => {
+        if (transport.connection !== active || active.closed || active.interruption !== null) return Promise.resolve({
+          status: 'unknown', observationId: query.observationId, reason: 'connection-changed' });
+        const read = active.remote.readCurrentMeshAccounting;
+        if (typeof read !== 'function') return Promise.resolve({ status: 'unknown', observationId: query.observationId, reason: 'unsupported-provider' });
+        return read(query).catch((): CurrentWorkerMeshObservation => ({
+          status: 'unknown', observationId: query.observationId, reason: 'provider-reply-unavailable' }));
+      }), unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async releaseReferenceMeshLease(owner) {
+      if (!ledger.issued.has(owner) || owner.kind !== 'hidden') return { released: false };
+      const held = hiddenCleanup.get(owner.dispatchId);
+      if (held === undefined) {
+        if (returnedHiddenOwners.has(owner)) return { released: false, absent: true };
+        if (closedHiddenOwners.has(owner)) return { released: false, closed: true };
+        return { released: false };
+      }
+      if (held.owner !== owner) return { released: false };
+      const active = held.active;
+      if (active.closed || active !== transport.connection) { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
+      const release = active.remote.releaseReferenceMeshLease;
+      if (typeof release !== 'function') { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
+      try {
+        const result = await raceWithBroken<ReferenceMeshLeaseDisposition>(active, () => release(owner), () => ({ released: false }));
+        if (result.released || result.absent === true) {
+          hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId); returnedHiddenOwners.add(owner);
+          ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${owner.dispatchId}`);
+          ledger.host.revokeOwner(owner.dispatchId);
+        } else failedHiddenCleanup.add(owner.dispatchId);
+        return result;
+      } catch (error) { failedHiddenCleanup.add(owner.dispatchId); throw error; }
+    },
+    pendingReferenceMeshCleanup: () => failedHiddenCleanup.size + pendingReplyCleanup.size,
+    async retryReferenceMeshCleanup() {
+      let released = 0;
+      for (const id of failedHiddenCleanup) {
+        const held = hiddenCleanup.get(id);
+        if (held === undefined) continue;
+        // A transport closure is not a measured native free or successful owner ACK.
+        if (held.active.closed || held.active !== transport.connection) continue;
+        try {
+          const release = held.active.remote.releaseReferenceMeshLease;
+          if (typeof release === 'function') {
+            const result = await release(held.owner);
+            if (result.released || result.absent === true) {
+              hiddenCleanup.delete(id); failedHiddenCleanup.delete(id); returnedHiddenOwners.add(held.owner); ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${id}`);
+              ledger.host.revokeOwner(id); released += 1;
+            }
+          }
+        } catch { /* Retain the real failed owner for the bridge/application lifetime. */ }
+      }
+      for (const [id, held] of pendingReplyCleanup) {
+        if (held.active.closed || held.active !== transport.connection) continue;
+        await acknowledgeReceived(held.owner, held.active);
+        if (!pendingReplyCleanup.has(id)) released += 1;
+      }
+      return { released, retained: failedHiddenCleanup.size + pendingReplyCleanup.size };
+    },
+  };
+}
+
+function createBridgeDrawingOperations(transport: BridgeTransport): Pick<BridgeWorkerOperations,
+  'compareMaterials' | 'hiddenLineViews' | 'sectionViews'> {
+  const { health, restart, callbackScope } = transport;
+  return {
+    async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
+      const active = transport.connection, callbacks = callbackScope();
+      const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
+        ? { kind: 'cancelled' } : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE };
+      return raceWithBroken(active, async () => {
+        try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
+          toCancelProxy(shouldCancel, callbacks))); }
+        catch (error) { return { kind: 'failed' as const, message: toFailureMessage(error) }; }
+      }, failed, callbacks);
+    },
+    async hiddenLineViews(request, options = {}) {
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      const failed = (): DrawingProjectionResult => ({ views: [], cancelled: false,
+        failures: [{ viewId: null, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
+      const callbacks = callbackScope();
+      const progress = options.onProgress;
+      return raceWithBroken(active, () => active.remote.hiddenLineViews(request,
+        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
+        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
+    },
+    async sectionViews(request, options = {}) {
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      const failed = (): DrawingSectionResult => ({ viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], cancelled: false,
+        failures: [{ viewId: request.view.id, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
+      const callbacks = callbackScope();
+      const progress = options.onProgress;
+      return raceWithBroken(active, () => active.remote.sectionViews(request,
+        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
+        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
+    },
+  };
+}
+
+function createBridgeShapeObservations(transport: BridgeTransport): Pick<BridgeWorkerOperations,
+  'checkInterference' | 'buildAnalysisSurfaceMesh' | 'releasePart' | 'checkShapeAvailability'> {
+  const { health, restart, callbackScope } = transport;
+  return {
+    async checkInterference(input, options = {}): Promise<AssemblyInterferenceResult> {
+      const request = toInterferenceRequest(input, options);
+      const active = transport.connection;
+      const callbacks = callbackScope();
+      const onProgress = options.onProgress;
+      // Mark the local cancel function with the existing scope, but transfer only the combined callback.
+      const cancel = toCancelProxy(options.shouldCancel ?? (() => false), callbacks);
+      const checkpoint = callbacks.proxy(async (value: InterferenceProgress): Promise<boolean> => {
+        if (!callbacks.active || await cancel?.()) return true;
+        if (!callbacks.active) return true;
+        if (onProgress !== undefined) onProgress(interferenceProgressOf(value));
+        if (!callbacks.active) return true;
+        const cancelled = await cancel?.();
+        return !callbacks.active || (cancelled ?? false);
+      });
+      return raceWithBroken(active, async () => {
+        try {
+          return toInterferenceResult(await active.remote.checkInterference(request, undefined, undefined, 'message', checkpoint));
+        } catch (error) {
+          return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) });
+        }
+      }, () => refusedInterference(request, { code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
+        active.interruption === 'cancelled'), callbacks);
+    },
+    async buildAnalysisSurfaceMesh(request): Promise<AnalysisBoundaryReply> {
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      const captured = structuredClone(request);
+      return raceWithBroken<AnalysisBoundaryReply>(active, async () => {
+        try {
+          return await active.remote.buildAnalysisSurfaceMesh(captured);
+        } catch (error) {
+          return { kind: 'failed', bodyKey: captured.bodyKey, code: 'rpc-failed',
+            message: toFailureMessage(error), faceIndex: null };
+        }
+      }, () => ({ kind: 'failed', bodyKey: captured.bodyKey, code: 'worker-broken',
+        message: KERNEL_BROKEN_MESSAGE, faceIndex: null }));
+    },
+    async releasePart(partId): Promise<void> {
+      const active = transport.connection;
+      return raceWithBroken(active, () => active.remote.releasePart(partId), () => undefined);
+    },
+    async checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote.checkShapeAvailability(partId, bodyKeys),
+        () => ({ partId, missingKeys: [...new Set(bodyKeys)] }),
+      );
+    },
+  };
+}
+
+function createBridgeDisplayRecompute(transport: BridgeTransport, ownership: BridgeMeshOwnership, meshPhases: BridgeMeshPhases): Pick<BridgeWorkerOperations,
+  'tessellateSketchFaces' | 'recomputeSolids'> {
+  const { health, restart, callbackScope } = transport;
+  const { ledger, displayConnections, inFlightParts, acknowledgeReceived } = ownership;
+  const { phaseGenerations, observe } = meshPhases;
+  return {
+    async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
+      if (faces.length === 0) {
+        return { mesh: { faces: [] }, failures: [] };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      // 線・円弧の折れ線は UI が自前で作るので、カーネルへは面だけを頼む
+      // (マウス操作のたびに Worker を往復させないため、NFR-PF-1)。
+      return raceWithBroken(
+        active,
+        () => active.remote
+          .tessellateSketch({
+            curves: [],
+            faces: faces.map((face) => toFaceRequest(face)),
+          })
+          .then((result) => toOutcome(faces, result.faces, result.failures)),
+        // 面は 1 枚も作れていないので、頼んだ全部を壊れた理由の失敗にする(FR-504)。
+        () => ({ mesh: { faces: [] }, failures: brokenFailures(faces) }),
+      );
+    },
+
+    async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
+      if (steps.length === 0 && options.localMesh === undefined) {
+        return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      let request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      const owner = ledger.dispatch(request.partId ?? 'part:current', request.generation ?? 0, 'display', steps);
+      displayConnections.set(owner, ledger.connectionEpoch());
+      phaseGenerations.set(owner, ledger.connectionEpoch());
+      const reservation = await ledger.reserve(owner, request.localMesh?.maximumLiveMeshBytes ?? MESH_LEDGER_LIMIT_BYTES,
+        options.shouldCancel ?? (() => false), () => transport.connection === active && !active.closed && active.interruption === null);
+      if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
+        return rememberOperation(active, 'workerBroken', { bodies: [], failures: brokenFailures(steps.filter(step => step.visible)),
+          cacheHits: 0, cancelled: false, appearanceMatches: [] });
+      if (reservation.status !== 'reserved') return rememberOperation(active,
+        reservation.status === 'cancelled' || reservation.status === 'stopped' ? 'cancelled' : 'failed', { bodies: [],
+        failures: reservation.status === 'cancelled' || reservation.status === 'stopped' ? []
+          : steps.filter(step => step.visible).map(step => ({ featureId: step.featureId,
+            message: reservation.status === 'timeout' ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。'
+              : '表示メッシュの空き容量を確認できません。' })),
+        cacheHits: 0, cancelled: reservation.status === 'cancelled' || reservation.status === 'stopped', appearanceMatches: [] });
+      // The await above can yield after this exact slot was reserved but before any RPC was sent.
+      // Only this definitely unsent slot may settle here; received/in-flight replies keep their own continuation.
+      if (transport.connection !== active || active.closed || active.interruption !== null) {
+        ledger.host.settleWithoutReply(owner.dispatchId);
+        return rememberOperation(active, active.interruption ?? 'cancelled', { bodies: [],
+          failures: active.interruption === 'workerBroken' ? brokenFailures(steps.filter(step => step.visible)) : [],
+          cacheHits: 0, cancelled: active.interruption !== 'workerBroken', appearanceMatches: [] });
+      }
+      const granted = reservation.bytes;
+      if (request.localMesh !== undefined) request = { ...request, localMesh: { ...request.localMesh, maximumLiveMeshBytes: granted } };
+      const context = captureSolidRecomputeContext(request);
+      const shouldCancel = options.shouldCancel;
+      const callbacks = callbackScope();
+      // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
+      // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
+      return raceWithBroken(
+        active,
+        async () => {
+          inFlightParts.set(owner, active);
+          try {
+          observe('dispatch', owner, active);
+          return await active.remote
+          .recomputeSolids(
+            request,
+            undefined,
+            toProgressProxy(options.onProgress, callbacks),
+            toCancelProxy(shouldCancel === undefined ? undefined : () => {
+              try {
+                const cancelled = shouldCancel();
+                if (cancelled) observe('geometry-cancel-request', owner, active);
+                return cancelled;
+              } catch (error) { observe('geometry-cancel-throw', owner, active); throw error; }
+            }, callbacks),
+            owner,
+            callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
+              () => transport.connection === active && !active.closed && active.interruption === null)),
+          )
+          .then(async (result) => {
+            observe('raw-received', owner, active);
+            ledger.adopt(owner, result);
+            observe('adopted', owner, active);
+            await acknowledgeReceived(owner, active);
+            return ledger.bind(owner, toSolidOutcome(steps, result, options.appearance ?? [], context));
+          }, async (error: unknown) => {
+            observe('reply-rejected', owner, active);
+            // Actual RPC rejection or closed endpoint: this call has delivered no raw result to this continuation.
+            try { if (!active.closed) await acknowledgeReceived(owner, active); }
+            finally { ledger.host.settleWithoutReply(owner.dispatchId); }
+            throw error;
+          });
+          } finally { inFlightParts.delete(owner); }
+        },
+        // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
+        // (recomputePart.ts が kernelFailed として拾う。「拒否しない」)。
+        // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
+        // 利用者には見えないので失敗に数えない(toSolidOutcome の扱いと揃える)。
+        () => ({
+          bodies: [],
+          failures: brokenFailures(steps.filter((step) => step.visible)),
+          cacheHits: 0,
+          cancelled: false,
+          // 照合そのものを行えていないので空で返す。ここで全件を「見つからない」にすると、
+          // 段の失敗の警告に「色を付けた面が見つかりません」を重ねてしまう(FR-504)。
+          appearanceMatches: [],
+        }),
+        callbacks,
+      );
+    },
+
+  };
+}
+
+function createBridgeSketchOperations(transport: BridgeTransport): Pick<BridgeWorkerOperations,
+  'offsetSketchCurves' | 'functionSketchCurves' | 'projectSketchCurves' | 'sectionSketchCurves' | 'recognizeSheetMetal'> {
+  const { health, restart } = transport;
+  return {
+    async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote
+          .offsetSketchCurves({ items: requests.map((request) => toOffsetItem(request)) })
+          .then((outcome) => toOffsetResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
+    },
+
+    async functionSketchCurves(input) {
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      return raceWithBroken(active,
+        () => active.remote.functionSketchCurves({ components: input.components, bounds: input.bounds,
+          ...(input.bezier === undefined ? {} : { bezier: input.bezier }),
+          // Certified smooth components must reach the kernel, or it would build the polyline instead.
+          ...(input.splines === undefined ? {} : { splines: input.splines }) })
+          .then((outcome) => readFunctionCurveGeometry(outcome, input)),
+        () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
+      );
+    },
+
+    async projectSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) return { results: [], failures: [] };
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote
+          .projectSketchCurves({ items: requests.map((request) => toProjectionItem(request)) })
+          .then((outcome) => toProjectionResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
+    },
+
+    async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) return { results: [], failures: [] };
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote
+          .sectionSketchCurves({ items: requests.map((request) => toSectionItem(request)) })
+          .then((outcome) => toProjectionResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
+    },
+
+    async recognizeSheetMetal(requests): Promise<readonly SheetRecognitionReply[]> {
+      if (requests.length === 0) return [];
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      return raceWithBroken(
+        active, () => askSheetRecognition(requests, (request) => active.remote.recognizeSheetMetal(request)),
+        () => unavailableSheetReplies(requests, 'workerBroken'));
+    },
+
+  };
+}
+
+function createBridgeReferenceMeshReader(transport: BridgeTransport, ownership: BridgeMeshOwnership, meshPhases: BridgeMeshPhases): Pick<BridgeWorkerOperations,
+  'readCachedBodies'> {
+  const { health, restart, callbackScope } = transport;
+  const { ledger, failedHiddenCleanup, hiddenCleanup, returnedHiddenOwners, acknowledgeReceived } = ownership;
+  const { phaseGenerations, observe } = meshPhases;
+  return {
+    async readCachedBodies(steps, ids, lease): Promise<SolidRecomputeOutcome> {
+      const selected = cachedBodySteps(steps, ids);
+      if (selected === null) return cachedBodyFailure(ids, MEASURE_MISSING_SHAPE_MESSAGE);
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      const uncertified = lease === undefined;
+      if (uncertified) ledger.markOwnerCoverageUnknown('uncertified-hidden-read');
+      const context: ReferenceMeshLeaseOptions = lease ?? { partId: 'reference:legacy', generation: 0, maximumLiveMeshBytes: MESH_LEDGER_LIMIT_BYTES };
+      const owner = ledger.dispatch(context.partId, context.generation, 'hidden', selected);
+      phaseGenerations.set(owner, ledger.connectionEpoch());
+      const reservation = await ledger.reserve(owner, context.maximumLiveMeshBytes,
+        context.shouldCancel ?? (() => false), () => transport.connection === active && !active.closed && active.interruption === null);
+      if (reservation.status !== 'reserved') {
+        if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
+          return rememberOperation(active, 'workerBroken', cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'));
+        if (reservation.status === 'cancelled' || reservation.status === 'stopped') return rememberOperation(active, 'cancelled', {
+          bodies: [], failures: [], cacheHits: 0, cancelled: true });
+        return rememberOperation(active, 'failed', cachedBodyFailure(ids, reservation.status === 'timeout'
+          ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。' : '表示メッシュの空き容量を確認できません。'));
+      }
+      // A hidden read has the same reserve-before-dispatch window; no Worker token exists yet.
+      if (transport.connection !== active || active.closed || active.interruption !== null) {
+        ledger.host.settleWithoutReply(owner.dispatchId);
+        return rememberOperation(active, active.interruption ?? 'cancelled', active.interruption === 'workerBroken'
+          ? cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken') : { bodies: [], failures: [], cacheHits: 0, cancelled: true });
+      }
+      const granted = reservation.bytes;
+      const callbacks = callbackScope();
+      hiddenCleanup.set(owner.dispatchId, { owner, active });
+      return raceWithBroken(active,
+        () => {
+          observe('dispatch', owner, active);
+          return active.remote.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key })),
+          { owner, limitBytes: granted, ...(context.localMesh === undefined ? {} : { localMesh: { ...context.localMesh, maximumLiveMeshBytes: granted } }) },
+          callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
+            () => transport.connection === active && !active.closed && active.interruption === null)))
+          .then(async result => {
+            observe('raw-received', owner, active);
+            ledger.adopt(owner, result);
+            observe('adopted', owner, active);
+            await acknowledgeReceived(owner, active);
+            if (uncertified && !active.closed) {
+              const reason = `uncertified-hidden-cleanup:${owner.dispatchId}`;
+              let returned = false;
+              try {
+                const release = active.remote.releaseReferenceMeshLease;
+                if (typeof release === 'function') {
+                  const disposition = await release(owner);
+                  returned = disposition.released || disposition.absent === true;
+                }
+              } catch { /* Real reply already adopted; preserve functional result plus failed owner. */ }
+              if (returned) {
+                hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
+                returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
+                ledger.clearOwnerCoverageReason(reason);
+              } else {
+                failedHiddenCleanup.add(owner.dispatchId); ledger.markOwnerCoverageUnknown(reason);
+              }
+            }
+            const converted = toSolidOutcome(selected, result);
+            return uncertified ? converted : ledger.bind(owner, converted);
+          }, async (error: unknown) => {
+            observe('reply-rejected', owner, active);
+            if (owner !== undefined) {
+              try { if (!active.closed) await acknowledgeReceived(owner, active); }
+              finally { ledger.host.settleWithoutReply(owner.dispatchId); }
+            }
+            throw error;
+          }).catch(async (error: unknown) => {
+            if (!active.closed) {
+              try {
+                const release = active.remote.releaseReferenceMeshLease;
+                if (typeof release === 'function') {
+                  const result = await release(owner);
+                  if (result.released || result.absent === true) {
+                    hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
+                    returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
+                  } else failedHiddenCleanup.add(owner.dispatchId);
+                } else failedHiddenCleanup.add(owner.dispatchId);
+              } catch { failedHiddenCleanup.add(owner.dispatchId); }
+            }
+            throw error;
+          });
+        },
+        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'), callbacks);
+    },
+
+  };
+}
+
+function createBridgeExchangeOperations(transport: BridgeTransport, ledger: BridgeMeshLedger): Pick<BridgeWorkerOperations,
+  'measure' | 'exportShapes' | 'supportsIges' | 'importShape' | 'inspectImportedBrep' | 'inspectPrintability'> {
+  const { health, restart, callbackScope } = transport;
+  return {
+    async measure(steps, targets, kind): Promise<MeasureOutcome> {
+      const request = toMeasureRequest(steps, targets, kind);
+      if (request === null) {
+        // 鍵が引けない対象があるので、Worker を起こさずここで断る。
+        return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote.measure(request).then((result) => toMeasureOutcome(result)),
+        // 測定の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。止まった事は符号 workerBroken で運ぶ(0b-1c)。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
+        undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+
+    async exportShapes(steps, options): Promise<ShapeExportOutcome> {
+      if (options.signal?.aborted) return { kind: 'cancelled' };
+      const items = toShapeExportItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote.exportShapes(toShapeExportRequest(items, options)).then(
+          (result) => toShapeExportOutcome(result, options),
+          // カーネルが断ったとき(鍵が消えていた・書けなかった)は理由をそのまま持ち回る。
+          // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
+          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+        ),
+        // 書き出しの結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        undefined,
+        {
+          milliseconds: EXPORT_TIMEOUT_MS,
+          refuse: () => ({ kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE }),
+          terminateAndRestart: () => { if (!transport.disposed && transport.connection === active) restart(); },
+        },
+        options.signal === undefined ? undefined : {
+          signal: options.signal,
+          refuse: (): ShapeExportOutcome => ({ kind: 'cancelled' }),
+          preservesCurrentShapes: () => {
+            const owner = ledger.displayOwner(options.partId ?? 'part:current');
+            return transport.connection === active && !active.closed && owner !== undefined && items.length > 0
+              && items.every((item, index) => owner.steps.some(step => step.key === item.bodyKey
+                && step.id === options.bodies[index]?.featureId));
+          },
+        },
+      );
+    },
+
+    async supportsIges() {
+      if (transport.disposed) return false;
+      if (health.broken) restart();
+      const active = transport.connection;
+      return raceWithBroken(active, async () => {
+        try {
+          return typeof active.remote.supportsIges === 'function'
+            && (await active.remote.supportsIges()) === true;
+        } catch { return false; }
+      }, () => false);
+    },
+
+    async importShape(options): Promise<ShapeImportOutcome> {
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      return raceWithBroken(
+        active,
+        () => active.remote.importShape(toShapeImportRequest(options)).then(
+          (result) => toShapeImportOutcome(result),
+          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+        ),
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+      );
+    },
+
+    async inspectImportedBrep(bytes): Promise<ImportedBrepInspection> {
+      if (health.broken && !transport.disposed) restart();
+      const active = transport.connection;
+      const failed = (): ImportedBrepInspection => ({ kind: 'failed' });
+      return raceWithBroken(active,
+        () => active.remote.inspectImportedBrep(bytes).catch(failed),
+        failed, undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+
+    async inspectPrintability(steps, options): Promise<PrintabilityOutcome> {
+      if (options.bodies.length === 0) {
+        // 点検する形が 1 つも無いので Worker を起こさない。
+        return { kind: 'failed', message: PRINTABILITY_NO_BODY_MESSAGE };
+      }
+      const items = toShapeInspectItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、Worker を起こさずここで断る(測定と同じ)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken && !transport.disposed) {
+        restart();
+      }
+      const active = transport.connection;
+      const callbacks = callbackScope();
+      return raceWithBroken(
+        active,
+        () => active.remote
+          .inspectPrintability(
+            toShapeInspectRequest(items, options, DISPLAY_MESH_QUALITY),
+            toPrintabilityProgressProxy(options.onProgress, callbacks),
+            toCancelProxy(options.shouldCancel, callbacks),
+          )
+          .then(
+            (result) => toPrintabilityOutcome(result),
+            // カーネルが断ったとき(鍵が消えていた・三角形が 0 枚)は理由をそのまま持ち回る。
+            // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
+            (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+          ),
+        // 点検の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        callbacks,
+      );
+    },
+
+  };
+}
+
 /** Metadata only. Recording never owns a mesh, callback proxy, document or native resource. */
 export function createMainPhaseObserver(readUi?: () => RuntimeUiContext) {
   const records: MainRuntimePhaseRecord[] = [];
@@ -1254,7 +2095,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   const phases = createMainPhaseObserver(readUi);
   const phaseGenerations = new WeakMap<MeshLedgerOwner, number>();
   const connectionGenerations = new WeakMap<KernelConnection, number>();
-  let phaseCapture: { readonly nonce: string; readonly active: KernelConnection; readonly epoch: number } | null = null;
+  const journal: { current: BridgePhaseJournal | null } = { current: null };
   const observe = (phase: MainRuntimePhase, owner: MeshLedgerOwner, active: KernelConnection): void =>
     phases.record(phase, phaseGenerations.get(owner) ?? connectionGenerations.get(active) ?? 0, owner);
   const partClaims = new WeakSet<PartReleaseClaim>();
@@ -1352,724 +2193,32 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     connectionGenerations.set(connection, ledger.connectionEpoch());
   }
 
+  const transport: BridgeTransport = {
+    get connection() { return connection; },
+    get disposed() { return disposed; },
+    health, restart, callbackScope,
+  };
+  const ownership: BridgeMeshOwnership = { ledger, partClaims, inFlightParts, displayConnections,
+    closedThroughGeneration: () => closedThroughGeneration, hiddenCleanup, failedHiddenCleanup, returnedHiddenOwners,
+    closedHiddenOwners, pendingReplyCleanup, acknowledgeReceived };
+  const meshPhases = { phaseGenerations, observe };
   return {
-    readRuntimePhases(): Promise<RuntimePhaseObservation> {
-      const active = connection, capturedGeneration = ledger.connectionEpoch();
-      const initial = phases.snapshot();
-      const observation = (worker: RuntimePhaseObservation['worker'], reason: string | null): RuntimePhaseObservation => ({
-        status: reason === null ? 'observed' : 'unknown', reason, connectionEpoch: capturedGeneration,
-        main: phases.snapshot(), worker,
-        coverage: 'runSolidRecompute-call-plus-admission-preclone-and-main-lifetime',
-        transport: 'preclone-to-resolved-main-reply-envelope',
-        unobserved: ['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident',
-          'continuous-highwater', 'assembly-source-library-mapping'],
-      });
-      if (disposed || active.closed || active.interruption !== null) return Promise.resolve(observation(null, 'transport-unavailable'));
-      return raceWithBroken<RuntimePhaseObservation>(active, async () => {
-        try {
-          const read = active.remote.readRuntimePhases;
-          if (typeof read !== 'function') return observation(null, 'unsupported-provider');
-          const worker = await read();
-          const isArray = (value: unknown): boolean => Array.isArray(value);
-          if (worker === undefined || worker.capacity !== 256 || !isArray(worker.records)
-            || worker.records.length > 256 || worker.coverage !== 'runSolidRecompute-call-plus-admission-preclone'
-            || ![worker.lastSeq, worker.dropped, worker.clockDiscontinuities, worker.missingOwners, worker.ownerConflicts]
-              .every(value => Number.isSafeInteger(value) && value >= 0)) return observation(null, 'provider-reply-unavailable');
-          const workerKeys = ['capacity', 'lastSeq', 'dropped', 'clockDiscontinuities', 'missingOwners',
-            'ownerConflicts', 'records', 'coverage', 'unobserved'];
-          const recordKeys = ['seq', 'phase', 'dispatchId', 'partId', 'generation', 'kind', 'epochMs', 'monoMs'];
-          if (Object.keys(worker).length !== workerKeys.length || !Object.keys(worker).every(key => workerKeys.includes(key))
-            || !isArray(worker.unobserved) || !['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident']
-              .every(value => worker.unobserved.some(item => item === value))
-            || !worker.records.every(record => record !== null && typeof record === 'object'
-              && Object.keys(record).length === recordKeys.length && Object.keys(record).every(key => recordKeys.includes(key))))
-            return observation(null, 'non-metadata-worker-reply');
-          const current = phases.snapshot();
-          const allowedPhases = ['native-build-start', 'native-build-return', 'native-build-throw', 'native-build-cancelled',
-            'geometry-cancel-check', 'geometry-cancel-request', 'geometry-cancel-check-throw', 'reply-preclone',
-            'reply-admission-rejected', 'owner-rejected', 'occt-load-throw'];
-          if (!worker.records.every(record => Number.isSafeInteger(record.seq) && record.seq > 0
-            && record.seq <= worker.lastSeq && allowedPhases.includes(record.phase)
-            && (record.epochMs === null || Number.isFinite(record.epochMs) && record.epochMs >= 0)
-            && (record.monoMs === null || Number.isFinite(record.monoMs) && record.monoMs >= 0)))
-            return observation(null, 'invalid-worker-record');
-          if (!worker.records.every((record, index) => index === 0 || record.seq > (worker.records[index - 1]?.seq ?? Infinity)))
-            return observation(null, 'invalid-worker-sequence');
-          if (!worker.records.every(record => typeof record.dispatchId === 'string' && record.dispatchId.length > 0
-            && record.dispatchId.length <= 512 && typeof record.partId === 'string' && record.partId.length > 0
-            && record.partId.length <= 512 && typeof record.generation === 'number'
-            && Number.isSafeInteger(record.generation) && record.generation >= 0
-            && (record.kind === 'display' || record.kind === 'hidden')
-            && current.records.some(main => main.phase === 'dispatch'
-            && main.connectionEpoch === capturedGeneration && main.dispatchId === record.dispatchId && main.partId === record.partId
-            && main.generation === record.generation && main.kind === record.kind)))
-            return observation(worker, 'unmatched-worker-owner');
-          if (disposed || connection !== active || active.closed || active.interruption !== null || ledger.connectionEpoch() !== capturedGeneration)
-            return observation(worker, 'connection-changed');
-          if (current.lastSeq !== initial.lastSeq) return observation(worker, 'main-changed-during-read');
-          if (pendingReplyCleanup.size > 0) return observation(worker, 'receiver-ack-unsettled');
-          if (failedHiddenCleanup.size > 0) return observation(worker, 'hidden-cleanup-unsettled');
-          const incomplete = current.dropped + current.clockDiscontinuities + current.missingContexts
-            + worker.dropped + worker.clockDiscontinuities + worker.missingOwners + worker.ownerConflicts;
-          return observation(worker, incomplete > 0 ? 'metadata-incomplete' : worker.records.length === 0 ? 'no-worker-phases' : null);
-        } catch { return observation(null, 'provider-reply-unavailable'); }
-      }, () => observation(null, 'transport-unavailable'), undefined, undefined, undefined, 'readonly-mesh-observation');
-    },
-    async beginRuntimePhaseCapture(nonce): Promise<void> {
-      if (phaseCapture !== null || disposed || connection.closed || connection.interruption !== null)
-        throw new Error('Runtime phase capture unavailable');
-      const active = connection;
-      phases.beginCapture(nonce);
-      phaseCapture = { nonce, active, epoch: ledger.connectionEpoch() };
-      try {
-        await raceWithBroken(active, async () => {
-          const begin = active.remote.beginRuntimePhaseCapture;
-          if (typeof begin !== 'function') throw new Error('Runtime phase capture unsupported');
-          await begin(nonce);
-          if (connection !== active || active.closed || active.interruption !== null)
-            throw new Error('Runtime phase capture connection changed');
-        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
-        undefined, undefined, undefined, 'readonly-mesh-observation');
-      } catch (error) {
-        if (phaseCapture?.nonce === nonce) { phases.endCapture(nonce); phaseCapture = null; }
-        if (!active.closed && active.interruption === null) {
-          try {
-            await raceWithBroken(active, async () => {
-              const end = active.remote.endRuntimePhaseCapture;
-              if (typeof end !== 'function') throw new Error('Phase capture rollback unsupported');
-              await end(nonce);
-            }, () => { throw new Error('Phase capture rollback transport unavailable'); },
-            undefined, undefined, undefined, 'readonly-mesh-observation');
-          } catch (cleanupError) {
-            throw new AggregateError([error, cleanupError], 'Runtime phase capture start and rollback failed', { cause: cleanupError });
-          }
-        }
-        throw new Error('Runtime phase capture start failed', { cause: error });
-      }
-    },
-    readRuntimePhaseCapture(nonce, mainAcknowledge, workerAcknowledge): Promise<RuntimePhaseCapture> {
-      const capture = phaseCapture;
-      if (capture === null || capture.nonce !== nonce || capture.active !== connection
-        || disposed || connection.closed || connection.interruption !== null || capture.epoch !== ledger.connectionEpoch())
-        return Promise.reject(new Error('Runtime phase capture owner/connection differs'));
-      return raceWithBroken(capture.active, async () => {
-        const read = capture.active.remote.readRuntimePhaseCapture;
-        if (typeof read !== 'function') throw new Error('Runtime phase journal unsupported');
-        const worker = await read(nonce, workerAcknowledge);
-        if (phaseCapture !== capture || connection !== capture.active || capture.active.closed
-          || capture.active.interruption !== null || capture.epoch !== ledger.connectionEpoch())
-          throw new Error('Runtime phase capture changed during read');
-        return { nonce, connectionEpoch: capture.epoch, main: phases.readCapture(nonce, mainAcknowledge), worker };
-      }, () => { throw new Error('Runtime phase capture transport unavailable'); },
-      undefined, undefined, undefined, 'readonly-mesh-observation');
-    },
-    async endRuntimePhaseCapture(nonce): Promise<void> {
-      const capture = phaseCapture;
-      if (capture === null || capture.nonce !== nonce) throw new Error('Runtime phase capture owner differs');
-      try {
-        await raceWithBroken(capture.active, async () => {
-          const end = capture.active.remote.endRuntimePhaseCapture;
-          if (typeof end !== 'function') throw new Error('Runtime phase journal unsupported');
-          await end(nonce);
-        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
-        undefined, undefined, undefined, 'readonly-mesh-observation');
-      } finally {
-        if (phaseCapture === capture) { phases.endCapture(nonce); phaseCapture = null; }
-      }
-    },
-    pendingWaiters: () => connection.waiters.size, meshLedgerRelease: since => ledger.host.releaseSince(since),
-    meshLedgerOwner: ledger.owner, awaitMeshReplySettlement: ({ alive }) => ledger.host.waitForNoPendingClone(alive),
-    inspectSourceMeshBackings: async (receipt, buffers) => {
-      const unknown = (): SourceMeshBackingInspection => ({ status: 'unknown', reason: 'transport-unavailable' });
-      const active = connection;
-      if (disposed || active.closed || active.interruption !== null) return unknown();
-      return raceWithBroken<SourceMeshBackingInspection>(active, async () => {
-        try { return await ledger.inspectSourceMeshBackings(receipt, buffers); }
-        catch { return { status: 'unknown', reason: 'membership-provider-unavailable' }; }
-      }, unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
-    },
-    currentSourceMeshBackingInspection: (inspection, receipt) => {
-      if (disposed) return ledger.refuse('bridge-disposed');
-      if (connection.interruption !== null) return ledger.refuse('transport-interrupted');
-      return ledger.currentSourceMeshBackingInspection(inspection, receipt);
-    },
-    capturePartReleaseClaim(bodies) {
-      const owner = ledger.owner(bodies);
-      if (owner === null || owner.kind !== 'display' || !ledger.issued.has(owner)) return null;
-      const capturedGeneration = displayConnections.get(owner);
-      if (capturedGeneration === undefined) return null;
-      const claim: PartReleaseClaim = Object.freeze({ owner, connectionEpoch: capturedGeneration });
-      partClaims.add(claim); return claim;
-    },
-    async releasePartClaim(claim): Promise<PartReleaseDisposition> {
-      if (!partClaims.has(claim) || claim.owner.kind !== 'display') return { status: 'unavailable', reason: 'unissued-claim' };
-      if (claim.connectionEpoch <= closedThroughGeneration) { ledger.retire(claim.owner); return { status: 'closed' }; }
-      const active = connection;
-      if (disposed || claim.connectionEpoch !== ledger.connectionEpoch() || active.closed || active.interruption !== null)
-        return { status: 'unavailable', reason: 'transport-unavailable' };
-      if ([...inFlightParts].some(([owner, held]) => held === active && owner.partId === claim.owner.partId))
-        return { status: 'unavailable', reason: 'part-dispatch-pending' };
-      const unavailable = (): PartReleaseDisposition => ({ status: 'unavailable', reason: 'transport-unavailable' });
-      return raceWithBroken<PartReleaseDisposition>(active, async () => {
-        try {
-        const read = active.remote.readPartOwnership, release = active.remote.releaseOwnedPart;
-        if (typeof read !== 'function' || typeof release !== 'function') return { status: 'unavailable', reason: 'unsupported-part-provider' };
-        const current = await read(claim.owner);
-        if (connection !== active || active.closed || active.interruption !== null) return unavailable();
-        if (current.status !== 'current') {
-          if (current.status === 'absent') ledger.retire(claim.owner);
-          return current;
-        }
-        const returned = await release(claim.owner, current.epoch);
-        // A received actual return remains proof even if the transport subsequently breaks;
-        // closure of an unreceived operation returns unavailable instead.
-        if (returned.status === 'released' || returned.status === 'absent') ledger.retire(claim.owner);
-        return returned;
-        } catch { return { status: 'unavailable', reason: 'part-release-reply-unavailable' }; }
-      }, unavailable);
-    },
-    currentMeshLedgerReceipt: receipt => {
-      if (disposed) return ledger.refuse('bridge-disposed');
-      if (connection.interruption !== null) return ledger.refuse('transport-interrupted');
-      return ledger.current(receipt);
-    },
-    async captureCurrentMeshLedger(input) {
-      const active = connection;
-      const unknown = (): CurrentMeshLedgerReceipt => ({ status: 'unknown', observationId: input.observationId, reason: 'transport-unavailable' });
-      return raceWithBroken(active, () => ledger.capture(input, query => {
-        if (connection !== active || active.closed || active.interruption !== null) return Promise.resolve({
-          status: 'unknown', observationId: query.observationId, reason: 'connection-changed' });
-        const read = active.remote.readCurrentMeshAccounting;
-        if (typeof read !== 'function') return Promise.resolve({ status: 'unknown', observationId: query.observationId, reason: 'unsupported-provider' });
-        return read(query).catch((): CurrentWorkerMeshObservation => ({
-          status: 'unknown', observationId: query.observationId, reason: 'provider-reply-unavailable' }));
-      }), unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
-    },
-    async releaseReferenceMeshLease(owner) {
-      if (!ledger.issued.has(owner) || owner.kind !== 'hidden') return { released: false };
-      const held = hiddenCleanup.get(owner.dispatchId);
-      if (held === undefined) {
-        if (returnedHiddenOwners.has(owner)) return { released: false, absent: true };
-        if (closedHiddenOwners.has(owner)) return { released: false, closed: true };
-        return { released: false };
-      }
-      if (held.owner !== owner) return { released: false };
-      const active = held.active;
-      if (active.closed || active !== connection) { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
-      const release = active.remote.releaseReferenceMeshLease;
-      if (typeof release !== 'function') { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
-      try {
-        const result = await raceWithBroken<ReferenceMeshLeaseDisposition>(active, () => release(owner), () => ({ released: false }));
-        if (result.released || result.absent === true) {
-          hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId); returnedHiddenOwners.add(owner);
-          ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${owner.dispatchId}`);
-          ledger.host.revokeOwner(owner.dispatchId);
-        } else failedHiddenCleanup.add(owner.dispatchId);
-        return result;
-      } catch (error) { failedHiddenCleanup.add(owner.dispatchId); throw error; }
-    },
-    pendingReferenceMeshCleanup: () => failedHiddenCleanup.size + pendingReplyCleanup.size,
-    async retryReferenceMeshCleanup() {
-      let released = 0;
-      for (const id of failedHiddenCleanup) {
-        const held = hiddenCleanup.get(id);
-        if (held === undefined) continue;
-        // A transport closure is not a measured native free or successful owner ACK.
-        if (held.active.closed || held.active !== connection) continue;
-        try {
-          const release = held.active.remote.releaseReferenceMeshLease;
-          if (typeof release === 'function') {
-            const result = await release(held.owner);
-            if (result.released || result.absent === true) {
-              hiddenCleanup.delete(id); failedHiddenCleanup.delete(id); returnedHiddenOwners.add(held.owner); ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${id}`);
-              ledger.host.revokeOwner(id); released += 1;
-            }
-          }
-        } catch { /* Retain the real failed owner for the bridge/application lifetime. */ }
-      }
-      for (const [id, held] of pendingReplyCleanup) {
-        if (held.active.closed || held.active !== connection) continue;
-        await acknowledgeReceived(held.owner, held.active);
-        if (!pendingReplyCleanup.has(id)) released += 1;
-      }
-      return { released, retained: failedHiddenCleanup.size + pendingReplyCleanup.size };
-    },
-    async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
-      const active = connection, callbacks = callbackScope();
-      const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
-        ? { kind: 'cancelled' } : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE };
-      return raceWithBroken(active, async () => {
-        try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
-          toCancelProxy(shouldCancel, callbacks))); }
-        catch (error) { return { kind: 'failed' as const, message: toFailureMessage(error) }; }
-      }, failed, callbacks);
-    },
-    async hiddenLineViews(request, options = {}) {
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      const failed = (): DrawingProjectionResult => ({ views: [], cancelled: false,
-        failures: [{ viewId: null, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
-      const callbacks = callbackScope();
-      const progress = options.onProgress;
-      return raceWithBroken(active, () => active.remote.hiddenLineViews(request,
-        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
-        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
-    },
-    async sectionViews(request, options = {}) {
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      const failed = (): DrawingSectionResult => ({ viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], cancelled: false,
-        failures: [{ viewId: request.view.id, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
-      const callbacks = callbackScope();
-      const progress = options.onProgress;
-      return raceWithBroken(active, () => active.remote.sectionViews(request,
-        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
-        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
-    },
+    ...createBridgeRuntimeObservation(transport, ledger, phases, journal, ownership),
+    ...createBridgeMeshOwnershipOperations(transport, ownership),
+    ...createBridgeDrawingOperations(transport),
     operationCounts: () => ({ ...counts }),
     operationStatus: (result) =>
       (typeof result === 'object' && result !== null) || typeof result === 'function'
         ? results.get(result) : undefined,
     pendingCallbacks: () => [...callbackScopes].reduce((sum, scope) => sum + scope.size(), 0),
-    async checkInterference(input, options = {}): Promise<AssemblyInterferenceResult> {
-      const request = toInterferenceRequest(input, options);
-      const active = connection;
-      const callbacks = callbackScope();
-      const onProgress = options.onProgress;
-      // Mark the local cancel function with the existing scope, but transfer only the combined callback.
-      const cancel = toCancelProxy(options.shouldCancel ?? (() => false), callbacks);
-      const checkpoint = callbacks.proxy(async (value: InterferenceProgress): Promise<boolean> => {
-        if (!callbacks.active || await cancel?.()) return true;
-        if (!callbacks.active) return true;
-        if (onProgress !== undefined) onProgress(interferenceProgressOf(value));
-        if (!callbacks.active) return true;
-        const cancelled = await cancel?.();
-        return !callbacks.active || (cancelled ?? false);
-      });
-      return raceWithBroken(active, async () => {
-        try {
-          return toInterferenceResult(await active.remote.checkInterference(request, undefined, undefined, 'message', checkpoint));
-        } catch (error) {
-          return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) });
-        }
-      }, () => refusedInterference(request, { code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
-        active.interruption === 'cancelled'), callbacks);
-    },
-    async buildAnalysisSurfaceMesh(request): Promise<AnalysisBoundaryReply> {
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      const captured = structuredClone(request);
-      return raceWithBroken<AnalysisBoundaryReply>(active, async () => {
-        try {
-          return await active.remote.buildAnalysisSurfaceMesh(captured);
-        } catch (error) {
-          return { kind: 'failed', bodyKey: captured.bodyKey, code: 'rpc-failed',
-            message: toFailureMessage(error), faceIndex: null };
-        }
-      }, () => ({ kind: 'failed', bodyKey: captured.bodyKey, code: 'worker-broken',
-        message: KERNEL_BROKEN_MESSAGE, faceIndex: null }));
-    },
-    async releasePart(partId): Promise<void> {
-      const active = connection;
-      return raceWithBroken(active, () => active.remote.releasePart(partId), () => undefined);
-    },
-    async checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote.checkShapeAvailability(partId, bodyKeys),
-        () => ({ partId, missingKeys: [...new Set(bodyKeys)] }),
-      );
-    },
-    async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
-      if (faces.length === 0) {
-        return { mesh: { faces: [] }, failures: [] };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      // 線・円弧の折れ線は UI が自前で作るので、カーネルへは面だけを頼む
-      // (マウス操作のたびに Worker を往復させないため、NFR-PF-1)。
-      return raceWithBroken(
-        active,
-        () => active.remote
-          .tessellateSketch({
-            curves: [],
-            faces: faces.map((face) => toFaceRequest(face)),
-          })
-          .then((result) => toOutcome(faces, result.faces, result.failures)),
-        // 面は 1 枚も作れていないので、頼んだ全部を壊れた理由の失敗にする(FR-504)。
-        () => ({ mesh: { faces: [] }, failures: brokenFailures(faces) }),
-      );
-    },
-
-    async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
-      if (steps.length === 0 && options.localMesh === undefined) {
-        return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      let request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
-      const owner = ledger.dispatch(request.partId ?? 'part:current', request.generation ?? 0, 'display', steps);
-      displayConnections.set(owner, ledger.connectionEpoch());
-      phaseGenerations.set(owner, ledger.connectionEpoch());
-      const reservation = await ledger.reserve(owner, request.localMesh?.maximumLiveMeshBytes ?? MESH_LEDGER_LIMIT_BYTES,
-        options.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
-      if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
-        return rememberOperation(active, 'workerBroken', { bodies: [], failures: brokenFailures(steps.filter(step => step.visible)),
-          cacheHits: 0, cancelled: false, appearanceMatches: [] });
-      if (reservation.status !== 'reserved') return rememberOperation(active,
-        reservation.status === 'cancelled' || reservation.status === 'stopped' ? 'cancelled' : 'failed', { bodies: [],
-        failures: reservation.status === 'cancelled' || reservation.status === 'stopped' ? []
-          : steps.filter(step => step.visible).map(step => ({ featureId: step.featureId,
-            message: reservation.status === 'timeout' ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。'
-              : '表示メッシュの空き容量を確認できません。' })),
-        cacheHits: 0, cancelled: reservation.status === 'cancelled' || reservation.status === 'stopped', appearanceMatches: [] });
-      // The await above can yield after this exact slot was reserved but before any RPC was sent.
-      // Only this definitely unsent slot may settle here; received/in-flight replies keep their own continuation.
-      if (connection !== active || active.closed || active.interruption !== null) {
-        ledger.host.settleWithoutReply(owner.dispatchId);
-        return rememberOperation(active, active.interruption ?? 'cancelled', { bodies: [],
-          failures: active.interruption === 'workerBroken' ? brokenFailures(steps.filter(step => step.visible)) : [],
-          cacheHits: 0, cancelled: active.interruption !== 'workerBroken', appearanceMatches: [] });
-      }
-      const granted = reservation.bytes;
-      if (request.localMesh !== undefined) request = { ...request, localMesh: { ...request.localMesh, maximumLiveMeshBytes: granted } };
-      const context = captureSolidRecomputeContext(request);
-      const shouldCancel = options.shouldCancel;
-      const callbacks = callbackScope();
-      // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
-      // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
-      return raceWithBroken(
-        active,
-        async () => {
-          inFlightParts.set(owner, active);
-          try {
-          observe('dispatch', owner, active);
-          return await active.remote
-          .recomputeSolids(
-            request,
-            undefined,
-            toProgressProxy(options.onProgress, callbacks),
-            toCancelProxy(shouldCancel === undefined ? undefined : () => {
-              try {
-                const cancelled = shouldCancel();
-                if (cancelled) observe('geometry-cancel-request', owner, active);
-                return cancelled;
-              } catch (error) { observe('geometry-cancel-throw', owner, active); throw error; }
-            }, callbacks),
-            owner,
-            callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
-              () => connection === active && !active.closed && active.interruption === null)),
-          )
-          .then(async (result) => {
-            observe('raw-received', owner, active);
-            ledger.adopt(owner, result);
-            observe('adopted', owner, active);
-            await acknowledgeReceived(owner, active);
-            return ledger.bind(owner, toSolidOutcome(steps, result, options.appearance ?? [], context));
-          }, async (error: unknown) => {
-            observe('reply-rejected', owner, active);
-            // Actual RPC rejection or closed endpoint: this call has delivered no raw result to this continuation.
-            try { if (!active.closed) await acknowledgeReceived(owner, active); }
-            finally { ledger.host.settleWithoutReply(owner.dispatchId); }
-            throw error;
-          });
-          } finally { inFlightParts.delete(owner); }
-        },
-        // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
-        // (recomputePart.ts が kernelFailed として拾う。「拒否しない」)。
-        // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
-        // 利用者には見えないので失敗に数えない(toSolidOutcome の扱いと揃える)。
-        () => ({
-          bodies: [],
-          failures: brokenFailures(steps.filter((step) => step.visible)),
-          cacheHits: 0,
-          cancelled: false,
-          // 照合そのものを行えていないので空で返す。ここで全件を「見つからない」にすると、
-          // 段の失敗の警告に「色を付けた面が見つかりません」を重ねてしまう(FR-504)。
-          appearanceMatches: [],
-        }),
-        callbacks,
-      );
-    },
-
-    async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
-      if (requests.length === 0) {
-        return { results: [], failures: [] };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote
-          .offsetSketchCurves({ items: requests.map((request) => toOffsetItem(request)) })
-          .then((outcome) => toOffsetResult(requests, outcome)),
-        () => ({ results: [], failures: brokenFailures(requests) }),
-      );
-    },
-
-    async functionSketchCurves(input) {
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      return raceWithBroken(active,
-        () => active.remote.functionSketchCurves({ components: input.components, bounds: input.bounds,
-          ...(input.bezier === undefined ? {} : { bezier: input.bezier }),
-          // Certified smooth components must reach the kernel, or it would build the polyline instead.
-          ...(input.splines === undefined ? {} : { splines: input.splines }) })
-          .then((outcome) => readFunctionCurveGeometry(outcome, input)),
-        () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
-      );
-    },
-
-    async projectSketchCurves(requests): Promise<SketchProjectionResult> {
-      if (requests.length === 0) return { results: [], failures: [] };
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote
-          .projectSketchCurves({ items: requests.map((request) => toProjectionItem(request)) })
-          .then((outcome) => toProjectionResult(requests, outcome)),
-        () => ({ results: [], failures: brokenFailures(requests) }),
-      );
-    },
-
-    async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
-      if (requests.length === 0) return { results: [], failures: [] };
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote
-          .sectionSketchCurves({ items: requests.map((request) => toSectionItem(request)) })
-          .then((outcome) => toProjectionResult(requests, outcome)),
-        () => ({ results: [], failures: brokenFailures(requests) }),
-      );
-    },
-
-    async recognizeSheetMetal(requests): Promise<readonly SheetRecognitionReply[]> {
-      if (requests.length === 0) return [];
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      return raceWithBroken(
-        active, () => askSheetRecognition(requests, (request) => active.remote.recognizeSheetMetal(request)),
-        () => unavailableSheetReplies(requests, 'workerBroken'));
-    },
-
-    async readCachedBodies(steps, ids, lease): Promise<SolidRecomputeOutcome> {
-      const selected = cachedBodySteps(steps, ids);
-      if (selected === null) return cachedBodyFailure(ids, MEASURE_MISSING_SHAPE_MESSAGE);
-      if (health.broken && !disposed) restart();
-      const active = connection;
-      const uncertified = lease === undefined;
-      if (uncertified) ledger.markOwnerCoverageUnknown('uncertified-hidden-read');
-      const context: ReferenceMeshLeaseOptions = lease ?? { partId: 'reference:legacy', generation: 0, maximumLiveMeshBytes: MESH_LEDGER_LIMIT_BYTES };
-      const owner = ledger.dispatch(context.partId, context.generation, 'hidden', selected);
-      phaseGenerations.set(owner, ledger.connectionEpoch());
-      const reservation = await ledger.reserve(owner, context.maximumLiveMeshBytes,
-        context.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
-      if (reservation.status !== 'reserved') {
-        if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
-          return rememberOperation(active, 'workerBroken', cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'));
-        if (reservation.status === 'cancelled' || reservation.status === 'stopped') return rememberOperation(active, 'cancelled', {
-          bodies: [], failures: [], cacheHits: 0, cancelled: true });
-        return rememberOperation(active, 'failed', cachedBodyFailure(ids, reservation.status === 'timeout'
-          ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。' : '表示メッシュの空き容量を確認できません。'));
-      }
-      // A hidden read has the same reserve-before-dispatch window; no Worker token exists yet.
-      if (connection !== active || active.closed || active.interruption !== null) {
-        ledger.host.settleWithoutReply(owner.dispatchId);
-        return rememberOperation(active, active.interruption ?? 'cancelled', active.interruption === 'workerBroken'
-          ? cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken') : { bodies: [], failures: [], cacheHits: 0, cancelled: true });
-      }
-      const granted = reservation.bytes;
-      const callbacks = callbackScope();
-      hiddenCleanup.set(owner.dispatchId, { owner, active });
-      return raceWithBroken(active,
-        () => {
-          observe('dispatch', owner, active);
-          return active.remote.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key })),
-          { owner, limitBytes: granted, ...(context.localMesh === undefined ? {} : { localMesh: { ...context.localMesh, maximumLiveMeshBytes: granted } }) },
-          callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
-            () => connection === active && !active.closed && active.interruption === null)))
-          .then(async result => {
-            observe('raw-received', owner, active);
-            ledger.adopt(owner, result);
-            observe('adopted', owner, active);
-            await acknowledgeReceived(owner, active);
-            if (uncertified && !active.closed) {
-              const reason = `uncertified-hidden-cleanup:${owner.dispatchId}`;
-              let returned = false;
-              try {
-                const release = active.remote.releaseReferenceMeshLease;
-                if (typeof release === 'function') {
-                  const disposition = await release(owner);
-                  returned = disposition.released || disposition.absent === true;
-                }
-              } catch { /* Real reply already adopted; preserve functional result plus failed owner. */ }
-              if (returned) {
-                hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
-                returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
-                ledger.clearOwnerCoverageReason(reason);
-              } else {
-                failedHiddenCleanup.add(owner.dispatchId); ledger.markOwnerCoverageUnknown(reason);
-              }
-            }
-            const converted = toSolidOutcome(selected, result);
-            return uncertified ? converted : ledger.bind(owner, converted);
-          }, async (error: unknown) => {
-            observe('reply-rejected', owner, active);
-            if (owner !== undefined) {
-              try { if (!active.closed) await acknowledgeReceived(owner, active); }
-              finally { ledger.host.settleWithoutReply(owner.dispatchId); }
-            }
-            throw error;
-          }).catch(async (error: unknown) => {
-            if (!active.closed) {
-              try {
-                const release = active.remote.releaseReferenceMeshLease;
-                if (typeof release === 'function') {
-                  const result = await release(owner);
-                  if (result.released || result.absent === true) {
-                    hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
-                    returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
-                  } else failedHiddenCleanup.add(owner.dispatchId);
-                } else failedHiddenCleanup.add(owner.dispatchId);
-              } catch { failedHiddenCleanup.add(owner.dispatchId); }
-            }
-            throw error;
-          });
-        },
-        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'), callbacks);
-    },
-
-    async measure(steps, targets, kind): Promise<MeasureOutcome> {
-      const request = toMeasureRequest(steps, targets, kind);
-      if (request === null) {
-        // 鍵が引けない対象があるので、Worker を起こさずここで断る。
-        return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote.measure(request).then((result) => toMeasureOutcome(result)),
-        // 測定の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
-        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。止まった事は符号 workerBroken で運ぶ(0b-1c)。
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
-        undefined, undefined, undefined, 'readonly-mesh-observation');
-    },
-
-    async exportShapes(steps, options): Promise<ShapeExportOutcome> {
-      if (options.signal?.aborted) return { kind: 'cancelled' };
-      const items = toShapeExportItems(steps, options.bodies);
-      if (items === null) {
-        // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
-        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote.exportShapes(toShapeExportRequest(items, options)).then(
-          (result) => toShapeExportOutcome(result, options),
-          // カーネルが断ったとき(鍵が消えていた・書けなかった)は理由をそのまま持ち回る。
-          // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
-          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
-        ),
-        // 書き出しの結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
-        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
-        undefined,
-        {
-          milliseconds: EXPORT_TIMEOUT_MS,
-          refuse: () => ({ kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE }),
-          terminateAndRestart: () => { if (!disposed && connection === active) restart(); },
-        },
-        options.signal === undefined ? undefined : {
-          signal: options.signal,
-          refuse: (): ShapeExportOutcome => ({ kind: 'cancelled' }),
-          preservesCurrentShapes: () => {
-            const owner = ledger.displayOwner(options.partId ?? 'part:current');
-            return connection === active && !active.closed && owner !== undefined && items.length > 0
-              && items.every((item, index) => owner.steps.some(step => step.key === item.bodyKey
-                && step.id === options.bodies[index]?.featureId));
-          },
-        },
-      );
-    },
-
-    async importShape(options): Promise<ShapeImportOutcome> {
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      return raceWithBroken(
-        active,
-        () => active.remote.importShape(toShapeImportRequest(options)).then(
-          (result) => toShapeImportOutcome(result),
-          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
-        ),
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
-      );
-    },
-
-    async inspectPrintability(steps, options): Promise<PrintabilityOutcome> {
-      if (options.bodies.length === 0) {
-        // 点検する形が 1 つも無いので Worker を起こさない。
-        return { kind: 'failed', message: PRINTABILITY_NO_BODY_MESSAGE };
-      }
-      const items = toShapeInspectItems(steps, options.bodies);
-      if (items === null) {
-        // 鍵が引けない立体があるので、Worker を起こさずここで断る(測定と同じ)。
-        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
-      }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken && !disposed) {
-        restart();
-      }
-      const active = connection;
-      const callbacks = callbackScope();
-      return raceWithBroken(
-        active,
-        () => active.remote
-          .inspectPrintability(
-            toShapeInspectRequest(items, options, DISPLAY_MESH_QUALITY),
-            toPrintabilityProgressProxy(options.onProgress, callbacks),
-            toCancelProxy(options.shouldCancel, callbacks),
-          )
-          .then(
-            (result) => toPrintabilityOutcome(result),
-            // カーネルが断ったとき(鍵が消えていた・三角形が 0 枚)は理由をそのまま持ち回る。
-            // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
-            (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
-          ),
-        // 点検の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
-        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
-        callbacks,
-      );
-    },
-
+    ...createBridgeShapeObservations(transport),
+    ...createBridgeDisplayRecompute(transport, ownership, meshPhases),
+    ...createBridgeSketchOperations(transport),
+    ...createBridgeReferenceMeshReader(transport, ownership, meshPhases),
+    ...createBridgeExchangeOperations(transport, ledger),
     dispose(): void {
       disposed = true;
-      if (phaseCapture !== null) { phases.endCapture(phaseCapture.nonce); phaseCapture = null; }
+      if (journal.current !== null) { phases.endCapture(journal.current.nonce); journal.current = null; }
       closeObservedConnection(connection);
       retireTerminatedOwnerMetadata(connection);
       ledger.attachWorker(null);
@@ -2246,11 +2395,23 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
       }
     },
 
+    async supportsIges() {
+      return (await api.supportsIges?.()) === true;
+    },
+
     async importShape(options): Promise<ShapeImportOutcome> {
       try {
         return toShapeImportOutcome(await api.importShape(toShapeImportRequest(options)));
       } catch (error) {
         return { kind: 'failed', message: toFailureMessage(error) };
+      }
+    },
+
+    async inspectImportedBrep(bytes): Promise<ImportedBrepInspection> {
+      try {
+        return await api.inspectImportedBrep(bytes);
+      } catch {
+        return { kind: 'failed' };
       }
     },
 

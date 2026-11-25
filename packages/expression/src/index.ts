@@ -28,7 +28,7 @@ export type AngleUnit = 'degree' | 'radian';
 export const DEFAULT_ANGLE_UNIT: AngleUnit = 'degree';
 
 export { collectMathCoefficients } from './math/mathExpressionReferences.js';
-export { mathScalarExpression } from './math/mathScalarExpression.js';
+export { inspectMathScalarExpression, mathScalarExpression, type MathScalarIssue } from './math/mathScalarExpression.js';
 export { originalCoefficientExpression, exactCoefficientScalar, type MathCoefficientValue } from './math/mathCoefficientExpression.js';
 export { decodeMathExpressionStorage } from './math/mathExpressionStorage.js';
 export { bindMathCompositionNames, type MathCompositionCoefficient } from './math/mathComposition.js';

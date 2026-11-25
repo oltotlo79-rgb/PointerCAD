@@ -13,9 +13,28 @@ export interface PcadReadRequest {
   readonly kind: PcadReadKind;
   readonly bytes: Uint8Array;
 }
+export interface PcadRangeReadRequest {
+  readonly id: string;
+  readonly kind: PcadReadKind;
+  readonly size: number;
+  readonly port: MessagePort;
+  readonly digest: boolean;
+}
+
+export function isPcadRangeReadRequest(value: unknown): value is PcadRangeReadRequest {
+  return record(value) && typeof value.id === 'string' && value.id.length > 0 && readKind(value.kind)
+    && typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size >= 0
+    && typeof value.digest === 'boolean' && value.port instanceof MessagePort;
+}
+
 export type PcadReadReply = {
-  [K in PcadReadKind]: { readonly id: string; readonly kind: K; readonly result: PcadReadResults[K] }
-}[PcadReadKind] | { readonly id: string; readonly kind: 'failure'; readonly message: string };
+  [K in PcadReadKind]: { readonly id: string; readonly kind: K; readonly result: PcadReadResults[K]; readonly savedSha256?: string }
+}[PcadReadKind] | {
+  readonly id: string;
+  readonly kind: 'failure';
+  readonly reason: 'range' | 'rejected';
+  readonly message: string;
+};
 
 function readKind(value: unknown): value is PcadReadKind {
   return value === 'part' || value === 'assembly' || value === 'drawing';
@@ -27,7 +46,7 @@ export function isPcadReadRequest(value: unknown): value is PcadReadRequest {
 }
 
 const ERROR_CODES = {
-  notZip: true, missingDocument: true, invalidJson: true, notPcad: true, unsupportedKind: true,
+  archiveExpansionLimit: true, notZip: true, missingDocument: true, invalidJson: true, notPcad: true, unsupportedKind: true,
   unsupportedOldVersion: true, unsupportedNewVersion: true, versionMismatch: true, missingField: true, invalidField: true,
   subAssemblyCycle: true, subAssemblyDepth: true,
 } satisfies Readonly<Record<ReadPcadFileErrorCode, true>>;
@@ -39,8 +58,10 @@ function attachments(value: unknown): boolean {
 /** The strict IO reader owns document validation; the host checks the transport envelope, never parses ZIP/JSON again. */
 export function isPcadReadReplyFor<K extends PcadReadKind>(
   value: unknown, kind: K,
-): value is { readonly id: string; readonly kind: K; readonly result: PcadReadResults[K] } {
+): value is { readonly id: string; readonly kind: K; readonly result: PcadReadResults[K]; readonly savedSha256?: string } {
   if (!record(value) || typeof value.id !== 'string' || value.kind !== kind || !record(value.result)) return false;
+  if (value.savedSha256 !== undefined && (typeof value.savedSha256 !== 'string'
+    || !/^[a-f0-9]{64}$/u.test(value.savedSha256))) return false;
   const result = value.result;
   if (result.ok === false) return record(result.error) && typeof result.error.code === 'string'
     && Object.hasOwn(ERROR_CODES, result.error.code) && typeof result.error.message === 'string';

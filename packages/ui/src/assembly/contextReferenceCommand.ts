@@ -7,24 +7,20 @@
  * 形の計算中、または表示の形が今の組立のものでない時は、始めない。
  */
 
+import { canPersistAssemblyPartEdit } from '@pointercad/io';
 import {
-  type AssemblyComponent, commitContextReference, contextPointResolverFromBodies, type ContextReferenceLink,
+  type AssemblyComponent, createAssemblyDocumentBundle, commitContextReference, contextPointResolverFromBodies, type ContextReferenceLink,
   type ContextReferenceRejection, resolveSubShapeReference,
 } from '@pointercad/model';
-import type { AssemblySlice, AssemblyView } from '../store/assemblySlice.js';
+import type { AppState } from '../store/appState.js';
+import type { AssemblyView } from '../store/assemblySlice.js';
 import { beginDocumentRequest } from '../store/documentRequest.js';
 
-interface ContextReferenceStore {
-  readonly assembly: AssemblySlice['assembly'];
-  readonly assemblyLibrary: AssemblySlice['assemblyLibrary'];
-  readonly assemblyView: AssemblySlice['assemblyView'];
-  readonly assemblyUndoStack: AssemblySlice['assemblyUndoStack'];
-  readonly isComputing: boolean;
-  readonly applyAssembly: AssemblySlice['applyAssembly'];
-}
+import { contextPlanePoints, contextSource, currentAssemblyContext } from './assemblyContextGeometry.js';
+import { sharedPartOccurrenceCount } from './partOccurrenceCount.js';
 
 export type ContextReferenceCommandResult =
-  | { readonly status: 'committed' }
+  | { readonly status: 'committed' | 'unchanged' | 'saveFailed' }
   | { readonly status: 'rejected'; readonly rejection: ContextReferenceRejection }
   /** 始めた時と組立・一式・表示の形・履歴のどれかが違う。何も書いていない。 */
   | { readonly status: 'stale' }
@@ -38,20 +34,50 @@ export function contextBodiesOf(view: AssemblyView, component: AssemblyComponent
 }
 
 export async function runContextReferenceCommit(
-  get: () => ContextReferenceStore, link: ContextReferenceLink,
+  get: () => AppState, link: ContextReferenceLink, operation: 'commit' | 'detach' = 'commit',
+  ownsForm: () => boolean = () => true,
 ): Promise<ContextReferenceCommandResult> {
   const before = get();
   const { assembly: document, assemblyLibrary: library, assemblyView: view, assemblyUndoStack: history } = before;
-  if (document === null || view === null || view.sourceDocument !== document || before.isComputing) {
-    return { status: 'notReady' };
+  if (document === null) return { status: 'notReady' };
+  const request = beginDocumentRequest('assembly.contextReferenceCommit', before);
+  const binding = link.plane;
+  if (operation === 'detach') {
+    const links = document.contextReferences;
+    if (!ownsForm() || binding === undefined || links === undefined || !links.includes(link)) return { status: 'stale' };
+    before.applyAssembly({ ...document, contextReferences: links.filter(other => other !== link) }, library);
+    return { status: 'committed' };
   }
-  const request = beginDocumentRequest('assembly.contextReferenceCommit');
-  const resolvePoint = contextPointResolverFromBodies((component) => contextBodiesOf(view, component), resolveSubShapeReference);
-  const result = await commitContextReference(document, library, link, resolvePoint);
-  if ('code' in result) return { status: 'rejected', rejection: result };
-  const now = get();
-  if (!request.isCurrent() || now.assembly !== document || now.assemblyLibrary !== library || now.assemblyView !== view
-    || now.assemblyUndoStack !== history || now.isComputing) return { status: 'stale' };
-  now.applyAssembly(result.document, result.library);
-  return { status: 'committed' };
+  if (view === null || view.sourceDocument !== document || before.isComputing) return { status: 'notReady' };
+  if (binding !== undefined) {
+    if (currentAssemblyContext(before) !== view) return { status: 'notReady' };
+    const occurrences = sharedPartOccurrenceCount(document, library, binding.targetPartRef);
+    if (!occurrences.complete || occurrences.count !== 1) {
+      return { status: 'rejected', rejection: { code: 'targetPartShared', linkId: link.id } };
+    }
+  }
+  const current = (state: AppState): boolean => ownsForm() && request.isCurrent() && state.assembly === document
+    && state.assemblyLibrary === library && state.assemblyView === view && state.assemblyUndoStack === history && !state.isComputing
+    && (binding === undefined || (currentAssemblyContext(state) === view
+      && state.partEdit?.id === before.partEdit?.id && state.selection === before.selection
+      && state.cancelRequestCount === before.cancelRequestCount && state.numericInputRevision === before.numericInputRevision));
+  const resolvePoint = contextPointResolverFromBodies(component => contextBodiesOf(view, component), resolveSubShapeReference);
+  try {
+    const result = await commitContextReference(document, library, link, resolvePoint, candidate => {
+      const source = contextSource(before, candidate.targetComponentId, candidate.sourceComponentId, candidate.source.bodyFeatureId);
+      return source === null ? null : contextPlanePoints(source, candidate.source, true);
+    });
+    if (!current(get())) return { status: 'stale' };
+    if ('code' in result) return { status: 'rejected', rejection: result };
+    if (result.document === document && result.library === library) return { status: 'unchanged' };
+    if (binding !== undefined) {
+      const fits = await canPersistAssemblyPartEdit(createAssemblyDocumentBundle(result.document, result.library));
+      if (!current(get())) return { status: 'stale' };
+      if (!fits) return { status: 'saveFailed' };
+    }
+    get().applyAssembly(result.document, result.library);
+    return { status: 'committed' };
+  } catch {
+    return { status: current(get()) ? 'saveFailed' : 'stale' };
+  }
 }

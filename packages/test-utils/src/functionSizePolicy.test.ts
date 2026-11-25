@@ -90,6 +90,17 @@ function largest(row: BaselineRow): number {
   return Math.max(...row.functions.map(([, lines]) => lines));
 }
 
+function expectSmallerFunctionsProtected(row: BaselineRow, source: string,
+  measured: ReturnType<typeof measureFunctions>, max: number): void {
+  const recorded = new Map(row.functions);
+  for (const target of measured.functions) {
+    if (target.bodyStart === undefined || target.lines >= max || target.lines !== recorded.get(target.id)) continue;
+    const grown = `${source.slice(0, target.bodyStart)}\nvoid 0;${source.slice(target.bodyStart)}`;
+    const result = compareBaseline(row, measureFunctions(new Linter(), parser, row.file, grown, cap), cap);
+    expect(result.grown, `${row.file} ${target.id}`).toContain(target.id);
+  }
+}
+
 // The existing narrower caps in eslint.config.js, copied from its literals (not computed from the config).
 const strictCaps: [path: string, max: number][] = [
   ['packages/model/src/kernelBridge/subShapeMatching.ts', 100], ['packages/model/src/kernelBridge/subShapeMatchCandidates.ts', 100],
@@ -112,10 +123,9 @@ const capped = [
   'packages/model/src/part/solidPlanKeyGeometry.ts',
 ];
 
-describe('関数ごとの上限の表は実在する製品の超過関数だけを持つ', () => {
+describe('製品の関数ごとの上限の表と実測値', () => {
   it('上限は200で、行は重複せず、検査用・厳しい上限のファイルを含まない', () => {
     expect(cap).toBe(200);
-    expect(rows.length).toBeGreaterThan(0);
     const files = rows.map(row => row.file);
     expect(new Set(files).size).toBe(files.length);
     for (const row of rows) {
@@ -126,20 +136,21 @@ describe('関数ごとの上限の表は実在する製品の超過関数だけ�
     const strictFiles = new Set(strictCaps.map(([path]) => path));
     expect(files.filter(file => strictFiles.has(file) || capped.includes(file))).toEqual([]);
   });
-});
 
-describe('既存の長い関数はそれぞれ自身の実測値を超えられない', () => {
-  it.each(rows.map((row): [string, BaselineRow] => [row.file, row]))('%s', async (file, row) => {
-    const source = readFileSync(new URL(file, new URL('../../../', import.meta.url)), 'utf8');
-    const measured = measureFunctions(new Linter(), parser, file, source, cap);
-    // Grown, new over-cap, ambiguous, duplicated and within-cap rows fail. A shrunk or vanished function does not fail;
-    // the delivery tool lowers its row to the measured value.
-    expect(failing(compareBaseline(row, measured, cap))).toEqual(NO_FAILURE);
-    const max = largest(row);
-    expect(await effectiveMax(file)).toBe(max);
-    expect(sizeReports(file, max, syntheticFunction('atLimit', max))).toEqual([]);
-    expect(sizeReports(file, max, syntheticFunction('overLimit', max + 1))).toHaveLength(1);
-  });
+  for (const row of rows) {
+    const { file } = row;
+    it(`${file}: 既存の長い関数はそれぞれ自身の実測値を超えられない`, async () => {
+      const source = readFileSync(new URL(file, new URL('../../../', import.meta.url)), 'utf8');
+      const measured = measureFunctions(new Linter(), parser, file, source, cap);
+      // Shrunk or vanished functions are reported for the delivery tool to lower the table.
+      expect(failing(compareBaseline(row, measured, cap))).toEqual(NO_FAILURE);
+      const max = largest(row);
+      expect(await effectiveMax(file)).toBe(max);
+      expect(sizeReports(file, max, syntheticFunction('atLimit', max))).toEqual([]);
+      expect(sizeReports(file, max, syntheticFunction('overLimit', max + 1))).toHaveLength(1);
+      expectSmallerFunctionsProtected(row, source, measured, max);
+    });
+  }
 });
 
 describe('同じファイルの最大でない長い関数が1行増えても拒否する', () => {
@@ -175,21 +186,11 @@ describe('同じファイルの最大でない長い関数が1行増えても拒
       .toEqual({ ...NO_DRIFT, obsolete: ['small'], withinCap: ['small'] });
   });
 
-  it('実物のファイルでも最大でない関数への1行の追加を拒否する', () => {
-    const passedPerFileLint: string[] = [];
-    for (const real of rows.filter(entry => entry.functions.length > 1)) {
-      const text = readFileSync(new URL(real.file, new URL('../../../', import.meta.url)), 'utf8');
-      const measured = measureFunctions(new Linter(), parser, real.file, text, cap);
-      for (const target of measured.functions.filter(entry => entry.lines < largest(real))) {
-        if (target.bodyStart === undefined) continue;
-        const grown = `${text.slice(0, target.bodyStart)}\nvoid 0;${text.slice(target.bodyStart)}`;
-        const result = compareBaseline(real, measureFunctions(new Linter(), parser, real.file, grown, cap), cap);
-        expect(result.grown, `${real.file} ${target.id}`).toContain(target.id);
-        if (sizeReports(real.file, largest(real), grown).length === 0) passedPerFileLint.push(target.id);
-      }
-    }
-    // At least one real smaller function grows unnoticed by the per-file maximum alone.
-    expect(passedPerFileLint.length).toBeGreaterThan(0);
+  it('例外がない場合は200行を許可し、一覧外の201行を拒否する', () => {
+    const noExceptions: BaselineRow = { file, functions: [] };
+    expect(failing(drift(syntheticFunction('atCap', 200), noExceptions))).toEqual(NO_FAILURE);
+    expect(failing(drift(syntheticFunction('overCap', 201), noExceptions)))
+      .toEqual({ ...NO_FAILURE, unlisted: ['overCap'] });
   });
 });
 

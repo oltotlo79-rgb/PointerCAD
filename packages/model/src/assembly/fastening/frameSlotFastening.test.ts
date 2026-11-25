@@ -230,7 +230,12 @@ describe('フレームの締結の計画', () => {
     const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [frame.component, plate] };
     const outcome = (rowWidth: number | null, slotWidth?: number | null): unknown => {
       const candidate: FrameSlotCandidate = { ...frame.candidate, slotWidth: rowWidth,
-        lines: frame.candidate.lines.map((line) => (slotWidth === undefined ? line : { ...line, nominalWidth: slotWidth })) };
+        lines: frame.candidate.lines.map((sectionLine) => {
+          const line = { ...sectionLine };
+          if (slotWidth === undefined) delete line.nominalWidth;
+          else line.nominalWidth = slotWidth;
+          return line;
+        }) };
       const result = planFrameSlotFastening(document, request([plateHole(plate, [100, 0, frame.halfHeight], 6, 4)], [candidate], item.nominal,
         item.pitch));
       if (!result.ok) return result.failures.map((failure) => [failure.code, failure.detail]);

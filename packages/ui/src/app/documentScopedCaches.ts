@@ -23,8 +23,9 @@ interface ClearableCache { clear(): void }
 /** 見張りを始める。返す関数で見張りを止める。 */
 export function clearCachesOnDocumentChange(caches: readonly ClearableCache[], sheetRecognition: ClearableCache): () => void {
   return useAppStore.subscribe((next, previous) => {
-    if (next.documentVersion === previous.documentVersion) return;
+    const editChanged = next.partEdit?.id !== previous.partEdit?.id;
+    if (!editChanged && next.documentVersion === previous.documentVersion) return;
     for (const cache of caches) cache.clear();
-    if (next.activeDocumentId !== previous.activeDocumentId || affectsShape(previous.document, next.document)) sheetRecognition.clear();
+    if (editChanged || next.activeDocumentId !== previous.activeDocumentId || affectsShape(previous.document, next.document)) sheetRecognition.clear();
   });
 }

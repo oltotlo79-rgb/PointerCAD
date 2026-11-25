@@ -13,7 +13,7 @@ import {functionDirectionSource} from './functionDirectionSource.js';
 import { FailureTextError, plainText, type FailureText } from '../failureText.js';
 
 /** Shown on the point's owner when its calculation did not finish in time (not a wrong choice, range or accuracy). */
-const POINT_DEADLINE_MESSAGE='関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
+const POINT_DEADLINE_MESSAGE: FailureText = { key: 'partError.functionPoint.recomputeDeadline', parameters: {} };
 
 export async function recomputeFunctionPoints(document:PartDocument,analysis:ParameterAnalysis|undefined,
   math:DocumentMathContext|undefined,context:FunctionRecomputeContext|undefined,
@@ -59,9 +59,15 @@ export async function recomputeFunctionPoints(document:PartDocument,analysis:Par
       if(!current() || completion.status==='cancelled') return result(true);
       // A stop by the time limit says nothing about the saved choice: the next recomputation calculates it again.
       if(completion.status==='deadline' || completion.status==='result'
-        && completion.result.status==='stopped' && completion.result.reason==='deadline') throw new Error(POINT_DEADLINE_MESSAGE);
-      if(completion.status!=='result') throw new Error('関数上の点を計算しきれませんでした。範囲と指定座標を確認してください。');
-      if(completion.result.status!=='ready') throw new Error(completion.result.status==='invalid'?completion.result.message:'選択した関数上の点の追従を確認できません。候補を選び直してください。');
+        && completion.result.status==='stopped' && completion.result.reason==='deadline') throw new FailureTextError(POINT_DEADLINE_MESSAGE);
+      if (completion.status !== 'result') {
+        throw new FailureTextError({ key: 'partError.functionPoint.recomputeIncomplete', parameters: {} });
+      }
+      if (completion.result.status !== 'ready') {
+        throw new FailureTextError(completion.result.status === 'invalid'
+          ? plainText(completion.result.message)
+          : { key: 'partError.functionPoint.recomputeUnconfirmed', parameters: {} });
+      }
       if(direction&&!completion.result.endpoint)throw new Error('接線・法線の終点を確認できません。');
       points.set(key(reference,ownerId),completion.result.endpoint?.point??completion.result.candidate.point);
     } catch(error) {

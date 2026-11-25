@@ -9,12 +9,12 @@
  *   (左の腕と下の腕)。取付けの脚と穴は入れない(簡略)。原点は外形の中心。
  * - 平板のブラケット(長方形と通し穴の格子)・平板の L・T・十字(直角の輪と通し穴)・フットベースの板(長方形と穴ごとの径の通し穴): 板の押し出しと穴。
  * - L 形のブラケット: L の断面(寝た脚と立つ脚は同じ厚さ)を幅だけ押し出し、各脚に軸が脚に垂直な円柱の穴の格子を引く。
- * - アジャスター: 皿の円柱と、おねじの呼びの径の円柱の和(ねじの山は入れない)。
+ * - アジャスター: 丸い皿か通し穴のある板の皿と、おねじの呼びの径の円柱の和(ねじの山は入れない)。
  */
 import { expressionValueFromNumber } from '@pointercad/expression';
 
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../../part/createPartDocument.js';
-import type { PartDocument, PrimitiveFeature } from '../../../part/types.js';
+import type { PartDocument, PrimitiveFeature, SolidOrigin } from '../../../part/types.js';
 import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import type { FrameSectionBounds } from '../../frame/frameMembers.js';
 import { buildProfileSection, type ProfileLoops } from '../../standard/profileExtrusion.js';
@@ -397,18 +397,35 @@ function outlineValid(points: readonly (readonly [number, number])[], w: number,
     && polygonArea(points) > 0;
 }
 
+function footBaseOutline(dims: FootBaseDimensions): readonly SteelProfilePoint[] {
+  return dims.outline ?? [[0, 0], [dims.width, 0], [dims.width, dims.depth], [0, dims.depth]];
+}
+
+function circleInsideOutline(outline: readonly SteelProfilePoint[], x: number, y: number, diameter: number): boolean {
+  return insidePolygon(x, y, outline) && outline.every((point, index) =>
+    distanceToSegment(x, y, point, outline[(index + 1) % outline.length] ?? point) > diameter / 2);
+}
+
 /** フットベース・アジャスターベースの板の輪(外形の外接の長方形の中心が原点)と面積。穴が板からはみ出す時・外形が成り立たない時は null。 */
 export function footBaseProfile(dims: FootBaseDimensions): (ProfileLoops & { readonly areaMm2: number }) | null {
   const { width: w, depth: d } = dims;
-  const outline = dims.outline ?? [[0, 0], [w, 0], [w, d], [0, d]];
+  const outline = footBaseOutline(dims);
   if (!positive([w, d, dims.thickness]) || !outlineValid(outline, w, d)) return null;
   // 穴は外形の内にあり、どの辺からも半径より離れる(長方形の時は今までの判定と同じ)。
-  const fits = dims.holes.every(([x, y, size]) => size > 0 && insidePolygon(x, y, outline) && outline.every((point, index) =>
-    distanceToSegment(x, y, point, outline[(index + 1) % outline.length] ?? point) > size / 2));
+  const fits = dims.holes.every(([x, y, size]) => size > 0 && circleInsideOutline(outline, x, y, size));
   if (!fits) return null;
   return { segments: polygonLoop(outline.map(([x, y]): SteelProfilePoint => [x - w / 2, y - d / 2])),
     holes: dims.holes.map(([x, y, size]) => circleAt(x - w / 2, y - d / 2, size)),
     areaMm2: polygonArea(outline) - dims.holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0) };
+}
+
+/** 板の押し出し・穴の減算・円柱の和の直後に、その最後のソリッドに円柱を足す。 */
+function joinCylinder(document: PartDocument, base: SolidOrigin, diameter: number, height: number): PartDocument {
+  const target = document.solids[document.solids.length - 1].id;
+  const created = createPrimitiveFeature(document, 'cylinder', base);
+  const cylinder: PrimitiveFeature = { ...created, shape: { kind: 'cylinder', radius: expressionValueFromNumber(diameter / 2),
+    height: expressionValueFromNumber(height) } };
+  return appendBoolean(appendSolid(document, cylinder), 'union', target, cylinder.id).document;
 }
 
 /** フットベース・アジャスターベースの板の形(厚さ t を Z へ押し出し、穴を引く)。 */
@@ -416,15 +433,9 @@ export function buildFootBasePart(dims: FootBaseDimensions): PartDocument | null
   const profile = footBaseProfile(dims);
   if (profile === null || !bossesValid(dims)) return null;
   let document = buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
-  let target = document.solids[document.solids.length - 1]?.id ?? '';
   for (const boss of dims.bosses ?? []) {
-    // ボスは板を通る円柱(板の下の面から下へ、上の面から上へ出る)。原点は板の外接の長方形の中心(輪と同じ)。
-    const created = createPrimitiveFeature(document, 'cylinder', origin(boss.x - dims.width / 2, boss.y - dims.depth / 2, boss.bottom));
-    const cylinder: PrimitiveFeature = { ...created, shape: { kind: 'cylinder', radius: expressionValueFromNumber(boss.diameter / 2),
-      height: expressionValueFromNumber(boss.top - boss.bottom) } };
-    const joined = appendBoolean(appendSolid(document, cylinder), 'union', target, cylinder.id);
-    document = joined.document;
-    target = joined.feature.id;
+    const base = origin(boss.x - dims.width / 2, boss.y - dims.depth / 2, boss.bottom);
+    document = joinCylinder(document, base, boss.diameter, boss.top - boss.bottom);
   }
   return document;
 }
@@ -439,17 +450,29 @@ export function footBaseBossVolume(dims: FootBaseDimensions): number {
  */
 function bossesValid(dims: FootBaseDimensions): boolean {
   const bosses = dims.bosses ?? [];
-  const outline = dims.outline ?? [[0, 0], [dims.width, 0], [dims.width, dims.depth], [0, dims.depth]];
+  const outline = footBaseOutline(dims);
   return bosses.every((boss, index) => positive([boss.diameter]) && boss.bottom <= 0 && boss.top >= dims.thickness
-    && (boss.bottom < 0 || boss.top > dims.thickness) && insidePolygon(boss.x, boss.y, outline)
-    && outline.every((point, at) => distanceToSegment(boss.x, boss.y, point, outline[(at + 1) % outline.length] ?? point) > boss.diameter / 2)
+    && (boss.bottom < 0 || boss.top > dims.thickness) && circleInsideOutline(outline, boss.x, boss.y, boss.diameter)
     && bosses.every((other, at) => at === index || Math.hypot(other.x - boss.x, other.y - boss.y) > (other.diameter + boss.diameter) / 2)
     && dims.holes.every(([x, y, size]) => Math.hypot(x - boss.x, y - boss.y) > (size + boss.diameter) / 2));
 }
 
+interface AdjusterPlatePad extends Pick<FootBaseDimensions, 'width' | 'depth' | 'holes' | 'outline'> {
+  /** 軸中心は外接長方形の左下からの x・y。省略は外接長方形の中心。 */
+  readonly shaftCenter?: readonly [number, number];
+}
+
+/** 形と寸法表で共通の、台座の左下から測った軸中心。 */
+export function adjusterShaftCenter(plate: AdjusterPlatePad): SteelProfilePoint {
+  return plate.shaftCenter ?? [plate.width / 2, plate.depth / 2];
+}
+
 export interface AdjusterDimensions {
   readonly thread: string;
-  readonly padDiameter: number;
+  /** 丸い皿の径。platePad とどちらか一方を指定する。 */
+  readonly padDiameter?: number;
+  /** 板の皿。厚さはどちらの皿も padThickness。穴・外形・軸中心は外接長方形の左下から測る。 */
+  readonly platePad?: AdjusterPlatePad;
   readonly padThickness: number;
   /** おねじの長さ(資料の記入のまま。六角部が有る行は六角部の上の面から先まで)。 */
   readonly threadLength: number;
@@ -457,27 +480,45 @@ export interface AdjusterDimensions {
   readonly hexHeight?: number;
 }
 
-function adjusterValid(dims: AdjusterDimensions): boolean {
+/** 形と体積に共通の皿の断面と軸。面積は通し穴を引いた後の値。 */
+function adjusterGeometry(dims: AdjusterDimensions) {
   const size = findMetricThread(dims.thread);
   const hex = dims.hexHeight ?? 0;
-  return size !== undefined && positive([dims.padDiameter, dims.padThickness, dims.threadLength]) && Number.isFinite(hex) && hex >= 0
-    && size.diameter < dims.padDiameter;
+  if (size === undefined || !positive([dims.padThickness, dims.threadLength]) || !Number.isFinite(hex) || hex < 0) return null;
+  const shaft = { diameter: size.diameter, height: hex + dims.threadLength };
+  if (!Number.isFinite(shaft.height)) return null;
+  const plate = dims.platePad;
+  if (plate === undefined) {
+    const diameter = dims.padDiameter;
+    if (diameter === undefined || !Number.isFinite(diameter) || diameter <= shaft.diameter) return null;
+    const radius = diameter / 2;
+    return { kind: 'round' as const, radius, areaMm2: Math.PI * radius ** 2, x: 0, y: 0, shaft };
+  }
+  if (dims.padDiameter !== undefined) return null;
+  const base = { ...plate, thickness: dims.padThickness };
+  const profile = footBaseProfile(base);
+  if (profile === null || !positive([profile.areaMm2])) return null;
+  const [x, y] = adjusterShaftCenter(plate);
+  if (!circleInsideOutline(footBaseOutline(base), x, y, shaft.diameter)) return null;
+  // 軸と穴、穴どうしの接触も除く。各穴の面積を一度ずつ引ける配置だけを使う。
+  const clear = plate.holes.every(([hx, hy, hd], index) => Math.hypot(hx - x, hy - y) > (hd + shaft.diameter) / 2
+    && plate.holes.every(([ox, oy, od], other) => other <= index || Math.hypot(hx - ox, hy - oy) > (hd + od) / 2));
+  if (!clear) return null;
+  return { kind: 'plate' as const, profile, areaMm2: profile.areaMm2, x: x - plate.width / 2, y: y - plate.depth / 2, shaft };
 }
 
-/** アジャスターの形: 皿の円柱(z 0〜t)と、その上の六角部とおねじを合わせた呼びの径の円柱(ねじの山は入れない)の和。 */
+/** 丸い皿または穴を引いた板の上面に、呼び径の軸を立てて和を取る。 */
 export function buildAdjusterPart(dims: AdjusterDimensions): PartDocument | null {
-  const size = findMetricThread(dims.thread);
-  if (size === undefined || !adjusterValid(dims)) return null;
-  const pad = appendCylinder(createEmptyPartDocument(), dims.padDiameter / 2, expressionValueFromNumber(dims.padThickness));
-  const rod = appendCylinder(pad.document, size.diameter / 2, expressionValueFromNumber((dims.hexHeight ?? 0) + dims.threadLength),
-    dims.padThickness);
-  return appendBoolean(rod.document, 'union', pad.feature.id, rod.feature.id).document;
+  const shape = adjusterGeometry(dims);
+  if (shape === null) return null;
+  const thickness = expressionValueFromNumber(dims.padThickness);
+  const pad = shape.kind === 'round' ? appendCylinder(createEmptyPartDocument(), shape.radius, thickness).document
+    : buildProfileSection(shape.profile, thickness);
+  return joinCylinder(pad, origin(shape.x, shape.y, dims.padThickness), shape.shaft.diameter, shape.shaft.height);
 }
 
-/** アジャスターの体積(皿 + 六角部とおねじを合わせた呼びの径の円柱)。形が成り立たない時は null。 */
+/** アジャスターの体積(皿の正味面積 × 厚さ + 六角部とおねじを合わせた円柱)。 */
 export function adjusterVolume(dims: AdjusterDimensions): number | null {
-  const size = findMetricThread(dims.thread);
-  if (size === undefined || !adjusterValid(dims)) return null;
-  return Math.PI * (dims.padDiameter / 2) ** 2 * dims.padThickness
-    + Math.PI * (size.diameter / 2) ** 2 * ((dims.hexHeight ?? 0) + dims.threadLength);
+  const shape = adjusterGeometry(dims);
+  return shape === null ? null : shape.areaMm2 * dims.padThickness + Math.PI * (shape.shaft.diameter / 2) ** 2 * shape.shaft.height;
 }

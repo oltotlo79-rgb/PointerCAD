@@ -74,63 +74,37 @@ const DRAG_SOLVE_WORK_QUANTUM = 4096;
 /** Leave most of a nominal 16.7 ms frame for input, rendering and other application work. */
 const DRAG_SOLVE_SLICE_MS = 4;
 
-export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDragSession {
-  const { scene, project, getOrbit, indicators } = deps;
-  let dragOwner: SketchDrag | null = null;
-  let dragDocument: object | null = null;
-  /**
-   * The work plane while dragging. Decided once at the grab and kept until the release; the rule
-   * is the same as the model's (`constraintContextOfStore`).
-   */
-  let dragPlane: WorkPlane | null = null;
-  /** One solve per animation frame (NFR-PF-1). 0 means no frame is reserved. */
-  let dragFrameId = 0;
-  /** The last pointer position of the frame; only that one is solved. */
-  let dragPointer: readonly [number, number] | null = null;
-  /** The last solved coordinates, written back to the document on release. */
-  let dragSolution: ReadonlyMap<string, Vec3> | null = null;
-  /**
-   * A constraint mark under the grab point . Releasing without moving selects that mark,
-   * so neither the end point under a distance mark nor the mark itself becomes unreachable.
-   */
-  let dragMarkId: string | null = null;
-  /** The solve job of the latest pointer target; replaced by every newer target, dropped by `stop`. */
-  let dragJob: ConstrainedSketchJob | null = null;
-  /** A release arrived while the final target was pending or solving: commit once its job finishes. */
-  let releasePending = false;
-  let latestPointer: readonly [number, number] | null = null;
-  let dragHasMoved = false;
-  let generation = 0;
-  let jobGeneration = -1;
-  let solutionGeneration = -1;
-  let timingTarget: number | null = null, timingJobTarget: number | null = null;
-  /** Observation only (never read by the drag logic): grab ordinal and the latest recorded ends. */
-  let session = 0;
-  let committing = false;
-  let lastCancelled: SketchDragEndRecord | null = null;
-  let lastCommitted: SketchDragEndRecord | null = null;
+interface SketchDragWork {
+  dragOwner: SketchDrag | null;
+  dragDocument: object | null;
+  dragPlane: WorkPlane | null;
+  dragPointer: readonly [number, number] | null;
+  dragSolution: ReadonlyMap<string, Vec3> | null;
+  dragJob: ConstrainedSketchJob | null;
+  releasePending: boolean;
+  generation: number;
+  jobGeneration: number;
+  solutionGeneration: number;
+  timingTarget: number | null;
+  timingJobTarget: number | null;
+}
 
-  function invalidateTarget(): void {
-    generation += 1;
-    if (dragFrameId !== 0) globalThis.cancelAnimationFrame(dragFrameId);
-    dragFrameId = 0;
-    dragJob?.cancel();
-    dragJob = null;
-    dragSolution = null;
-    jobGeneration = -1;
-    solutionGeneration = -1;
-    const state = useAppStore.getState();
-    if (dragOwner !== null && state.sketchDrag === dragOwner && state.document === dragDocument) {
-      state.beginSketchDrag(dragOwner);
-    }
-  }
+interface SketchDragFrameControls extends Pick<SketchDragSessionDeps, 'scene' | 'project' | 'getOrbit' | 'indicators'> {
+  readonly stop: SketchDragSession['stop'];
+  readonly reserveFrame: () => void;
+  readonly commit: () => void;
+}
 
+/** Advance a single drag target and expose its result only while its document and generation still match. */
+function createSketchDragFrame(deps: SketchDragSessionDeps, work: SketchDragWork,
+  controls: SketchDragFrameControls): () => void {
+  const { scene, project, getOrbit, indicators, stop, reserveFrame, commit } = controls;
   function dragPointerUv(pointer: readonly [number, number]): readonly [number, number] | null {
-    if (dragPlane === null) {
+    if (work.dragPlane === null) {
       return null;
     }
-    const world = scene.screenToPlanePoint(pointer[0], pointer[1], dragPlane);
-    return world === null ? null : worldToPlane(dragPlane, world);
+    const world = scene.screenToPlanePoint(pointer[0], pointer[1], work.dragPlane);
+    return world === null ? null : worldToPlane(work.dragPlane, world);
   }
 
   /**
@@ -139,66 +113,34 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
    */
   function dragSnapAt(pointer: readonly [number, number], featureId: string): SnapCandidate | null {
     const state = useAppStore.getState();
-    if (!state.snapEnabled || dragPlane === null) {
+    if (!state.snapEnabled || work.dragPlane === null) {
       return null;
     }
-    const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], dragPlane);
+    const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], work.dragPlane);
     const candidates = collectSnapCandidates(
       state.resolvedSketch,
-      dragPlane,
+      work.dragPlane,
       gridLayoutFor(currentGridSetting(state.displaySettings), getOrbit().distance).spacing,
       onPlane,
     ).filter((candidate) => candidate.featureId !== featureId);
     return chooseSnap(candidates, project, pointer, pointSnapRadiusPixels(state.displaySettings), new Set(state.snapKinds));
   }
 
-  function stop(keepShape: boolean, eventAtMs?: number, kind?: 'escape' | 'pointercancel'): void {
-    if (dragOwner !== null && !committing) deps.timing?.cancel(eventAtMs, kind);
-    const cancelledSession = dragOwner !== null && !committing ? session : null;
-    generation += 1;
-    if (dragFrameId !== 0) {
-      globalThis.cancelAnimationFrame(dragFrameId);
-      dragFrameId = 0;
-    }
-    dragPointer = null;
-    dragPlane = null;
-    dragSolution = null;
-    dragMarkId = null;
-    dragJob?.cancel();
-    dragJob = null;
-    jobGeneration = -1;
-    solutionGeneration = -1;
-    releasePending = false;
-    latestPointer = null;
-    dragHasMoved = false;
-    deps.releaseCapture();
-    const state = useAppStore.getState();
-    if (dragOwner !== null && state.sketchDrag === dragOwner) state.endSketchDrag(keepShape && state.document === dragDocument);
-    dragOwner = null;
-    dragDocument = null;
-    indicators.clearOwnedIndicators();
-    deps.timing?.end(committing);
-    // 中断の完了時刻。job/capture/store/表示の所有を手放す前の時刻で完了を装わない。
-    if (cancelledSession !== null) {
-      lastCancelled = Object.freeze({ session: cancelledSession, atMs: globalThis.performance.now() });
-    }
-  }
-
   /** Starts the job for one pointer target (replacing the previous job). Snapping is decided here. */
   function startJob(pointer: readonly [number, number], drag: SketchDrag, state: AppState): void {
     deps.timing?.solving();
-    timingJobTarget = timingTarget;
+    work.timingJobTarget = work.timingTarget;
     // Invalidate both a pending job and a completed preview before resolving a newer target.
-    dragJob?.cancel();
-    dragJob = null;
-    dragSolution = null;
+    work.dragJob?.cancel();
+    work.dragJob = null;
+    work.dragSolution = null;
     state.beginSketchDrag(drag); // Same owner; the existing API clears the display-only preview.
     indicators.clearOwnedIndicators();
     const snap = dragSnapAt(pointer, drag.featureId);
     const pointerUv = dragPointerUv(pointer);
     const target =
-      snap !== null && dragPlane !== null
-        ? worldToPlane(dragPlane, snap.position)
+      snap !== null && work.dragPlane !== null
+        ? worldToPlane(work.dragPlane, snap.position)
         : pointerUv === null
           ? null
           : dragTargetUv(drag, pointerUv);
@@ -211,31 +153,8 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
         ? null
         : { screen: project(snap.position) ?? pointer, kind: snap.kind, elementId: snap.elementId };
     indicators.showSnap(nextIndicator);
-    dragJob = createDragSolveJob(state.sketch, drag, target, constraintResolveOptions(state));
-    jobGeneration = generation;
-  }
-
-  /** Commits the finished solve of the final target once, as one Undo step, if still current. */
-  function commit(): void {
-    const state = useAppStore.getState();
-    const drag = state.sketchDrag;
-    const solution = dragSolution;
-    if (drag === null || drag !== dragOwner || state.document !== dragDocument || solution === null
-      || state.dragResolved === null || solutionGeneration !== generation) {
-      stop(false);
-      return;
-    }
-    // Written back in the stored way of specifying the point (decision 2026-09-05, plan A).
-    const next = commitDrag(state.sketch, drag, solution, state.dragResolved, dragPlane);
-    // The released shape stays until the next recompute arrives (no flicker back).
-    const committedSession = session;
-    committing = true;
-    stop(true);
-    committing = false;
-    if (next !== state.sketch) {
-      useAppStore.getState().setSketch(next);
-      lastCommitted = Object.freeze({ session: committedSession, atMs: globalThis.performance.now() });
-    }
+    work.dragJob = createDragSolveJob(state.sketch, drag, target, constraintResolveOptions(state));
+    work.jobGeneration = work.generation;
   }
 
   /**
@@ -246,29 +165,29 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
   function runFrame(): void {
     const state = useAppStore.getState();
     const drag = state.sketchDrag;
-    if (drag === null || drag !== dragOwner || state.document !== dragDocument) {
-      if (dragOwner !== null) stop(false);
+    if (drag === null || drag !== work.dragOwner || state.document !== work.dragDocument) {
+      if (work.dragOwner !== null) stop(false);
       return;
     }
-    const at = dragPointer;
-    dragPointer = null;
+    const at = work.dragPointer;
+    work.dragPointer = null;
     if (at !== null) startJob(at, drag, state);
-    if (dragJob !== null) {
-      const job = dragJob, ownerGeneration = jobGeneration;
-      const deadline = globalThis.performance.now() + DRAG_SOLVE_SLICE_MS;
+    if (work.dragJob !== null) {
+      const job = work.dragJob, ownerGeneration = work.jobGeneration;
+      const deadline = performance.now() + DRAG_SOLVE_SLICE_MS;
       let progress = job.stepWork(DRAG_SOLVE_WORK_QUANTUM);
       while (progress.status === 'pending' && progress.phase === 'solve'
-        && progress.work === DRAG_SOLVE_WORK_QUANTUM && globalThis.performance.now() < deadline) {
+        && progress.work === DRAG_SOLVE_WORK_QUANTUM && performance.now() < deadline) {
         const current = useAppStore.getState();
-        if (ownerGeneration !== generation || dragJob !== job || current.document !== dragDocument
-          || current.sketchDrag !== dragOwner || deps.disposed()) break;
+        if (ownerGeneration !== work.generation || work.dragJob !== job || current.document !== work.dragDocument
+          || current.sketchDrag !== work.dragOwner || deps.disposed()) break;
         progress = job.stepWork(DRAG_SOLVE_WORK_QUANTUM);
       }
       const latest = useAppStore.getState();
-      if (ownerGeneration !== generation || dragJob !== job || latest.document !== dragDocument
-        || latest.sketchDrag !== dragOwner || deps.disposed()) {
+      if (ownerGeneration !== work.generation || work.dragJob !== job || latest.document !== work.dragDocument
+        || latest.sketchDrag !== work.dragOwner || deps.disposed()) {
         job.cancel();
-        if (ownerGeneration === generation) stop(false);
+        if (ownerGeneration === work.generation) stop(false);
         return;
       }
       if (progress.status !== 'completed') {
@@ -286,13 +205,109 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
         useAppStore.getState().setDragRefusal('drag.error.solveFailed');
         return;
       }
-      dragJob = null;
-      dragSolution = solved.solution;
-      solutionGeneration = ownerGeneration;
-      if (timingJobTarget !== null) deps.timing?.adopt(solved.resolved, timingJobTarget);
+      work.dragJob = null;
+      work.dragSolution = solved.solution;
+      work.solutionGeneration = ownerGeneration;
+      if (work.timingJobTarget !== null) deps.timing?.adopt(solved.resolved, work.timingJobTarget);
       useAppStore.getState().setDragResolved(solved.resolved);
     }
-    if (releasePending) commit();
+    if (work.releasePending) commit();
+  }
+
+  return runFrame;
+}
+
+export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDragSession {
+  const { scene, project, getOrbit, indicators } = deps;
+  const work: SketchDragWork = {
+    dragOwner: null, dragDocument: null, dragPlane: null, dragPointer: null,
+    dragSolution: null, dragJob: null, releasePending: false, generation: 0,
+    jobGeneration: -1, solutionGeneration: -1, timingTarget: null, timingJobTarget: null,
+  };
+  const runFrame = createSketchDragFrame(deps, work, { scene, project, getOrbit, indicators, stop, reserveFrame, commit });
+  /** One solve per animation frame (NFR-PF-1). 0 means no frame is reserved. */
+  let dragFrameId = 0;
+  /**
+   * A constraint mark under the grab point . Releasing without moving selects that mark,
+   * so neither the end point under a distance mark nor the mark itself becomes unreachable.
+   */
+  let dragMarkId: string | null = null;
+  let latestPointer: readonly [number, number] | null = null;
+  let dragHasMoved = false;
+  /** Observation only (never read by the drag logic): grab ordinal and the latest recorded ends. */
+  let session = 0;
+  let committing = false;
+  let lastCancelled: SketchDragEndRecord | null = null;
+  let lastCommitted: SketchDragEndRecord | null = null;
+
+  function invalidateTarget(): void {
+    work.generation += 1;
+    if (dragFrameId !== 0) globalThis.cancelAnimationFrame(dragFrameId);
+    dragFrameId = 0;
+    work.dragJob?.cancel();
+    work.dragJob = null;
+    work.dragSolution = null;
+    work.jobGeneration = -1;
+    work.solutionGeneration = -1;
+    const state = useAppStore.getState();
+    if (work.dragOwner !== null && state.sketchDrag === work.dragOwner && state.document === work.dragDocument) {
+      state.beginSketchDrag(work.dragOwner);
+    }
+  }
+
+  function stop(keepShape: boolean, eventAtMs?: number, kind?: 'escape' | 'pointercancel'): void {
+    if (work.dragOwner !== null && !committing) deps.timing?.cancel(eventAtMs, kind);
+    const cancelledSession = work.dragOwner !== null && !committing ? session : null;
+    work.generation += 1;
+    if (dragFrameId !== 0) {
+      globalThis.cancelAnimationFrame(dragFrameId);
+      dragFrameId = 0;
+    }
+    work.dragPointer = null;
+    work.dragPlane = null;
+    work.dragSolution = null;
+    dragMarkId = null;
+    work.dragJob?.cancel();
+    work.dragJob = null;
+    work.jobGeneration = -1;
+    work.solutionGeneration = -1;
+    work.releasePending = false;
+    latestPointer = null;
+    dragHasMoved = false;
+    deps.releaseCapture();
+    const state = useAppStore.getState();
+    if (work.dragOwner !== null && state.sketchDrag === work.dragOwner) state.endSketchDrag(keepShape && state.document === work.dragDocument);
+    work.dragOwner = null;
+    work.dragDocument = null;
+    indicators.clearOwnedIndicators();
+    deps.timing?.end(committing);
+    // 中断の完了時刻。job/capture/store/表示の所有を手放す前の時刻で完了を装わない。
+    if (cancelledSession !== null) {
+      lastCancelled = Object.freeze({ session: cancelledSession, atMs: performance.now() });
+    }
+  }
+
+  /** Commits the finished solve of the final target once, as one Undo step, if still current. */
+  function commit(): void {
+    const state = useAppStore.getState();
+    const drag = state.sketchDrag;
+    const solution = work.dragSolution;
+    if (drag === null || drag !== work.dragOwner || state.document !== work.dragDocument || solution === null
+      || state.dragResolved === null || work.solutionGeneration !== work.generation) {
+      stop(false);
+      return;
+    }
+    // Written back in the stored way of specifying the point (decision 2026-09-05, plan A).
+    const next = commitDrag(state.sketch, drag, solution, state.dragResolved, work.dragPlane);
+    // The released shape stays until the next recompute arrives (no flicker back).
+    const committedSession = session;
+    committing = true;
+    stop(true);
+    committing = false;
+    if (next !== state.sketch) {
+      useAppStore.getState().setSketch(next);
+      lastCommitted = Object.freeze({ session: committedSession, atMs: performance.now() });
+    }
   }
 
   /** At most one frame is reserved at a time (NFR-PF-1). */
@@ -300,10 +315,10 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     if (dragFrameId !== 0) {
       return;
     }
-    const frameGeneration = generation;
+    const frameGeneration = work.generation;
     const id = globalThis.requestAnimationFrame(() => {
       // A dequeued callback cannot steal the id or work of a newer target/frame.
-      if (frameGeneration !== generation || dragFrameId !== id) return;
+      if (frameGeneration !== work.generation || dragFrameId !== id) return;
       dragFrameId = 0;
       if (deps.disposed()) { stop(false); return; }
       runFrame();
@@ -312,9 +327,9 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
   }
 
   return {
-    active: () => dragOwner !== null,
-    isCurrent: (state) => state.sketchDrag === dragOwner && state.document === dragDocument,
-    ownsDocument: (document) => document === dragDocument,
+    active: () => work.dragOwner !== null,
+    isCurrent: (state) => state.sketchDrag === work.dragOwner && state.document === work.dragDocument,
+    ownsDocument: (document) => document === work.dragDocument,
     /**
      * Grabs end points, centres (12 px) and point features with the same target rule as the
      * constraint tool. A point that cannot be dragged (expression, fixed, derived) is not grabbed;
@@ -322,7 +337,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
      */
     begin: (pointer) => {
       // A new grab never inherits an unfinished job or pending release.
-      if (dragOwner !== null) stop(false);
+      if (work.dragOwner !== null) stop(false);
       const state = useAppStore.getState();
       const context = constraintContextOfStore(state);
       const target = pickSketchDragTarget(state.resolvedSketch, project, pointer);
@@ -334,26 +349,26 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
         state.setDragRefusal(dragRefusalMessageKey('freeSketch'));
         return false;
       }
-      dragPlane = context.plane;
+      work.dragPlane = context.plane;
       const grabWorld = scene.screenToPlanePoint(pointer[0], pointer[1], context.plane);
       if (grabWorld === null) {
-        dragPlane = null;
+        work.dragPlane = null;
         return false;
       }
       const outcome = draggableAt(state.sketch, context.variableSet, target, worldToPlane(context.plane, grabWorld));
       if (outcome === null) {
-        dragPlane = null;
+        work.dragPlane = null;
         return false;
       }
       if (!isDraggable(outcome)) {
-        dragPlane = null;
+        work.dragPlane = null;
         state.setDragRefusal(dragRefusalMessageKey(outcome.reason));
         return false;
       }
       state.beginSketchDrag(outcome);
-      dragOwner = outcome;
+      work.dragOwner = outcome;
       session += 1;
-      dragDocument = state.document;
+      work.dragDocument = state.document;
       deps.timing?.begin(outcome, state.document, state.documentVersion, session, state.resolvedSketch, outcome.pointKey);
       latestPointer = pointer;
       dragHasMoved = false;
@@ -365,12 +380,12 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     },
     schedule: (pointer, eventAtMs) => {
       // After the release the final target is fixed; later moves do not change what is committed.
-      if (releasePending) return;
+      if (work.releasePending) return;
       invalidateTarget();
-      timingTarget = deps.timing?.target(pointer, eventAtMs) ?? null;
+      work.timingTarget = deps.timing?.target(pointer, eventAtMs) ?? null;
       latestPointer = pointer;
       dragHasMoved = true;
-      dragPointer = pointer;
+      work.dragPointer = pointer;
       reserveFrame();
     },
     /**
@@ -380,19 +395,19 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     finish: (pointer, eventAtMs) => {
       const state = useAppStore.getState();
       const drag = state.sketchDrag;
-      if (drag === null || drag !== dragOwner || state.document !== dragDocument) {
-        if (dragOwner !== null) stop(false);
+      if (drag === null || drag !== work.dragOwner || state.document !== work.dragDocument) {
+        if (work.dragOwner !== null) stop(false);
         return;
       }
-      if (releasePending) return;
+      if (work.releasePending) return;
       // A pointerup may carry a newer position than the last pointermove. An unchanged grab is a click.
       if (pointer !== undefined && (latestPointer === null
         || pointer[0] !== latestPointer[0] || pointer[1] !== latestPointer[1])) {
         invalidateTarget();
-        timingTarget = deps.timing?.target(pointer, eventAtMs, 'pointerup') ?? null;
+        work.timingTarget = deps.timing?.target(pointer, eventAtMs, 'pointerup') ?? null;
         latestPointer = pointer;
         dragHasMoved = true;
-        dragPointer = pointer;
+        work.dragPointer = pointer;
       }
       if (!dragHasMoved) {
         // Grabbed without moving: no history step. Over a constraint mark this was a click on the mark.
@@ -405,8 +420,8 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       }
       // The pointer is released now; the commit waits for the final target's job, never an earlier frame.
       deps.releaseCapture();
-      releasePending = true;
-      if (dragJob === null && dragPointer === null) {
+      work.releasePending = true;
+      if (work.dragJob === null && work.dragPointer === null) {
         commit();
         return;
       }
@@ -415,10 +430,10 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     stop,
     observe: () => Object.freeze({
       session,
-      active: dragOwner !== null,
-      solvePending: dragOwner !== null && (dragJob !== null || dragPointer !== null),
+      active: work.dragOwner !== null,
+      solvePending: work.dragOwner !== null && (work.dragJob !== null || work.dragPointer !== null),
       frameReserved: dragFrameId !== 0,
-      releasePending,
+      releasePending: work.releasePending,
       lastCancelled,
       lastCommitted,
       ...(deps.timing === undefined ? {} : { timing: deps.timing.snapshot() }),

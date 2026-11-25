@@ -1,9 +1,11 @@
 import { dxfFlattenedCurveMessage, DXF_WRITE_ACAD_VERSION } from '@pointercad/io';
 import {
+  appearanceOf,
   createEmptyPartDocument,
   createEmptySketchDocument,
   createExportRequest,
   dxfToSketch,
+  EXPORT_FORMATS,
   DXF_NOT_PLANAR_MESSAGE,
   resolveSketch,
   WORK_PLANES,
@@ -54,7 +56,7 @@ import type { MessageKey } from '../i18n/t.js';
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
 const DEFAULT_EXPORT_BASE_NAME = 'model';
 const DXF_IS_NOT_A_BODY_MESSAGE = 'DXF は図形として取り込みます。';
-const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
+const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'iges', 'stl', '3mf', 'obj', 'glb'];
 const NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
 
 /**
@@ -70,7 +72,7 @@ function exportWarningKeys(
   request: ExportRequest,
 ): readonly MessageKey[] {
   const outcome = selectExportBodies(bodies, request);
-  return outcome.ok ? outcome.selection.warnings.map(exportNoticeMessageKey) : [];
+  return outcome.ok ? outcome.selection.warnings.map((warning) => exportNoticeMessageKey(warning, request.format)) : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -219,24 +221,27 @@ function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value
 // ---------------------------------------------------------------------------
 
 describe('形式の一覧と対応(FR-802、FR-803)', () => {
-  it('書き出しは 5 形式(STEP / STL / 3MF / OBJ / glTF)', () => {
-    expect([...EXPORT_FORMAT_ORDER]).toEqual(['step', 'stl', '3mf', 'obj', 'glb']);
+  it('立体の書き出しは STEP / IGES / STL / 3MF / OBJ / glTF', () => {
+    expect(EXPORT_FORMATS).toEqual(EXPORT_FORMAT_ORDER);
+    expect(EXPORT_PANEL_FORMAT_ORDER.filter(format => format !== 'dxf')).toEqual(EXPORT_FORMAT_ORDER);
   });
 
-  it('直接読める6形式とDWGの変換案内を並べる', () => {
-    expect([...IMPORT_FILE_KINDS]).toEqual(['step', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg']);
+  it('読み込める7形式とDWGの変換案内を並べる', () => {
+    expect([...IMPORT_FILE_KINDS]).toEqual(['step', 'iges', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg']);
   });
 
   it('カーネルの言葉では glTF が gltf、3MF が mesh になる(§0.a-0.19)', () => {
     expect(kernelExportFormatOf('step')).toBe('step');
+    expect(kernelExportFormatOf('iges')).toBe('iges');
     expect(kernelExportFormatOf('stl')).toBe('stl');
     expect(kernelExportFormatOf('obj')).toBe('obj');
     expect(kernelExportFormatOf('glb')).toBe('gltf');
     expect(kernelExportFormatOf('3mf')).toBe('mesh');
   });
 
-  it('文書に残す形式は 5 つで、`.pcad` / ひな形 / DXF は形にならない', () => {
+  it('文書に残す形式は 6 つで、`.pcad` / ひな形 / DXF は形にならない', () => {
     expect(importedSourceFormatOf('step')).toBe('step');
+    expect(importedSourceFormatOf('iges')).toBe('iges');
     expect(importedSourceFormatOf('glb')).toBe('gltf');
     expect(importedSourceFormatOf('3mf')).toBe('3mf');
     expect(importedSourceFormatOf('pcad')).toBeNull();
@@ -260,9 +265,9 @@ describe('書き出しのパネルの見せ方(§0.a-0.20)', () => {
     expect([...withAscii]).toEqual(['stl']);
   });
 
-  it('色を書き出すの切替は STEP / 3MF / OBJ / glTF のときだけ出る(§0.a-0.22)', () => {
+  it('色を書き出すの切替は STEP / IGES / 3MF / OBJ / glTF のときに出る(§0.a-0.22)', () => {
     const withColor = EXPORT_FORMAT_ORDER.filter((f) => exportPanelShape(f).showsColor);
-    expect([...withColor]).toEqual(['step', '3mf', 'obj', 'glb']);
+    expect([...withColor]).toEqual(['step', 'iges', '3mf', 'obj', 'glb']);
   });
 
   it('「STL には色が付きません」は STL のときだけ出る(§0.a-0.15)', () => {
@@ -1080,11 +1085,13 @@ describe('DXF の読み込み(FR-813、§0.a-0.33)', () => {
   });
 });
 
-/** 形式の一覧が model の型と食い違っていないことを、型のうえでも確かめる。 */
-const EVERY_EXPORT_FORMAT: readonly ExportFormat[] = EXPORT_FORMAT_ORDER;
+/** 型の全項目に対応していることを、一覧の並びとは独立に照合する。 */
+const EVERY_EXPORT_FORMAT = {
+  step: true, iges: true, stl: true, '3mf': true, obj: true, glb: true,
+} satisfies Readonly<Record<ExportFormat, true>>;
 describe('型の見張り', () => {
-  it('書き出しの並びは 5 件そろっている', () => {
-    expect(EVERY_EXPORT_FORMAT).toHaveLength(5);
+  it('書き出しに対応する立体の形式が各1件そろっている', () => {
+    expect([...EXPORT_FORMATS].sort()).toEqual(Object.keys(EVERY_EXPORT_FORMAT).sort());
   });
 });
 
@@ -1288,9 +1295,53 @@ function createForbiddenKernel(): ExchangeKernel {
   };
 }
 
+describe('IGES のファイル選択と文書への取込', () => {
+  it('利用できない環境ではファイル選択を開かない', async () => {
+    const fake = createFakeGateway();
+    const result = await runImport(createDeps(fake, createForbiddenKernel()),
+      createEmptyPartDocument(), createEmptySketchDocument(), XY_PLANE, 'iges');
+    expect(result).toEqual({ ok: false, message: '[exchangeError.igesUnavailable]' });
+    expect(fake.openedKinds).toEqual([]);
+  });
+
+  it('文書が切り替わった後に届いた IGES の失敗を表示しない', async () => {
+    const fake = createFakeGateway({ picked: { kind: 'iges', fileName: 'shape.igs', bytes: Uint8Array.of(1) } });
+    let current = true;
+    const kernel: ExchangeKernel = {
+      ...createForbiddenKernel(),
+      importShape: () => {
+        current = false;
+        return Promise.reject(new Error('old failure'));
+      },
+    };
+    const result = await runImport({ ...createDeps(fake, kernel), igesAvailable: true, importIsCurrent: () => current },
+      createEmptyPartDocument(), createEmptySketchDocument(), XY_PLANE);
+    expect(result).toEqual({ ok: false, cancelled: true });
+    expect(fake.openedKinds[0]).toContain('iges');
+  });
+
+  it('IGES の本体名・インチの記録・本体色と B-rep を同じ変更へ積む', async () => {
+    const attached = Uint8Array.of(2, 4, 8);
+    const fake = createFakeGateway({ picked: { kind: 'iges', fileName: 'shape.igs', bytes: Uint8Array.of(1) } });
+    const { kernel } = createFakeKernel(new Error('unexpected export'), { unit: 'inch', bodies: [
+      { bodyKind: 'shell', name: 'FACE25', volume: 0, triangleCount: 2, brepBytes: attached, color: [1, 0.5, 0] },
+    ] });
+    const result = await runImport({ ...createDeps(fake, kernel), igesAvailable: true },
+      createEmptyPartDocument(), createEmptySketchDocument(), XY_PLANE, 'iges');
+    if (!result.ok || result.kind !== 'body') throw new Error('IGES route did not append a body');
+    const feature = result.document.solids[0];
+    if (feature?.kind !== 'importedSolid') throw new Error('IGES route did not append a B-rep feature');
+    expect(feature).toMatchObject({ name: 'FACE25', bodyKind: 'shell', source: { format: 'iges', unit: 'inch' } });
+    expect(result.shapes.get(feature.shapeRef)).toBe(attached);
+    expect(appearanceOf(result.document).entries).toMatchObject([{
+      target: { kind: 'body', bodyFeatureId: feature.id }, appearance: { color: '#ff8000' },
+    }]);
+  });
+});
+
 describe('DXF の書き出しのパネルの見せ方(§0.a-0.34、タスク53)', () => {
-  it('書き出しの一覧は 6 形式で、6 つ目が DXF', () => {
-    expect([...EXPORT_PANEL_FORMAT_ORDER]).toEqual(['step', 'stl', '3mf', 'obj', 'glb', 'dxf']);
+  it('書き出しの一覧は 7 形式で、最後が DXF', () => {
+    expect([...EXPORT_PANEL_FORMAT_ORDER]).toEqual(['step', 'iges', 'stl', '3mf', 'obj', 'glb', 'dxf']);
   });
 
   it('DXF ではなめらかさ・文字で書く・色の欄をどれも出さない', () => {

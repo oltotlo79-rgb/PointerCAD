@@ -48,7 +48,7 @@ export interface ShapeExportBody {
  * 書き出しの形式(幾何カーネルの言葉)。**3MF だけ `'mesh'`** で、三角形までを受け取って
  * ZIP と XML は `packages/io` が組む(io は幾何カーネルを呼べない)。
  */
-type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
+type ShapeExportFormat = 'step' | 'iges' | 'stl' | 'obj' | 'gltf' | 'mesh';
 
 /** 書き出しの依頼(model の言葉)。 */
 export interface ShapeExportOptions {
@@ -56,6 +56,8 @@ export interface ShapeExportOptions {
   /** Caller-owned cancellation only; omitted from the serializable kernel request. */
   readonly signal?: AbortSignal;
   readonly format: ShapeExportFormat;
+  /** Optional IGES output unit. The standard export panel uses mm. */
+  readonly igesUnit?: 'mm' | 'inch';
   /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
   readonly bodies: readonly ShapeExportBody[];
   /** 三角形の細かさの対。三角形を使わない形式(STEP)では `null`。 */
@@ -127,9 +129,14 @@ export type ShapeExportOutcome =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'failed'; readonly message: string };
 
+/** Read-only result for one saved B-rep attachment. */
+export type ImportedBrepInspection =
+  | { readonly kind: 'checked'; readonly bodyKind: 'solid' | 'shell' | 'mixed'; readonly valid: boolean }
+  | { readonly kind: 'empty' | 'unreadable' | 'failed' };
+
 /** 読み込みの依頼(model の言葉)。3MF は `packages/io` が読むのでここには入らない。 */
 export interface ShapeImportOptions {
-  readonly format: 'step' | 'stl' | 'obj' | 'gltf';
+  readonly format: 'step' | 'iges' | 'stl' | 'obj' | 'gltf';
   /** 仮想ファイルに付ける名前。中身の判別には使われない。 */
   readonly fileName: string;
   readonly bytes: Uint8Array;

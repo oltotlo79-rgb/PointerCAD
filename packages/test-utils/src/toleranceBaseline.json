@@ -1,5 +1,0 @@
-{
-  "packages/kernel/src/math/splineInterpolation.ts": {
-    "Math.abs(knots[last] - value) < 1e-12": 1
-  }
-}

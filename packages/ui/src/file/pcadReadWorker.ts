@@ -1,11 +1,12 @@
-import { isPcadReadReplyFor, type PcadReadKind, type PcadReadRequest, type PcadReadResults } from './pcadReadProtocol.js';
+import { serveReadRanges, type ArchiveReadSource } from './pcadReadRanges.js';
+import { isPcadReadReplyFor, type PcadRangeReadRequest, type PcadReadKind, type PcadReadRequest, type PcadReadResults } from './pcadReadProtocol.js';
 
 /** 実IOを持つ相手をheadless検査で明示注入する小さな境界。 */
-export interface PcadReadWorkerPort {
+export interface PcadReadWorkerPort<Request = PcadReadRequest> {
   onmessage: ((event: MessageEvent<unknown>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
   onmessageerror: ((event: MessageEvent<unknown>) => void) | null;
-  postMessage(request: PcadReadRequest, transfer: Transferable[]): void;
+  postMessage(request: Request, transfer: Transferable[]): void;
   terminate(): void;
 }
 export interface PcadReadControl {
@@ -22,12 +23,12 @@ export interface PcadFileReader {
   <K extends PcadReadKind>(kind: K, bytes: Uint8Array, control?: PcadReadControl): Promise<PcadReadResults[K]>;
 }
 export class PcadReadWorkerError extends Error {
-  constructor(readonly reason: 'unavailable' | 'crashed' | 'rejected', message: string) {
+  constructor(readonly reason: 'unavailable' | 'crashed' | 'rejected' | 'range', message: string) {
     super(message);
     this.name = 'PcadReadWorkerError';
   }
 }
-function browserWorker(): PcadReadWorkerPort {
+function browserWorker<Request>(): PcadReadWorkerPort<Request> {
   try { return new Worker(new URL('./pcadRead.worker.ts', import.meta.url), { type: 'module' }); }
   catch (error) { throw new PcadReadWorkerError('unavailable', error instanceof Error ? error.message : String(error)); }
 }
@@ -55,53 +56,85 @@ async function ownedBytes(bytes: Uint8Array, control: PcadReadControl): Promise<
   return copy;
 }
 
+interface WorkerReadResult<K extends PcadReadKind> {
+  readonly result: PcadReadResults[K];
+  readonly savedSha256?: string;
+}
+
 /** A request owns exactly one short-lived Worker. There is no renderer-side reader fallback. */
+function awaitRead<K extends PcadReadKind, Request>(worker: PcadReadWorkerPort<Request>,
+  id: string, kind: K, control: PcadReadControl, start: () => void, release = (): void => undefined,
+): Promise<WorkerReadResult<K>> {
+  return new Promise<WorkerReadResult<K>>((resolve, reject) => {
+    let finished = false;
+    const finish = (outcome: { readonly ok: true; readonly reply: WorkerReadResult<K> }
+      | { readonly ok: false; readonly error: unknown }): void => {
+      if (finished) return;
+      finished = true;
+      if (freshness !== null) clearInterval(freshness);
+      worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
+      control.signal?.removeEventListener('abort', cancel);
+      // Even a throwing transport must settle the owner exactly once. Never retry termination.
+      try {
+        try { release(); } finally { worker.terminate(); }
+      } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); return; }
+      if (outcome.ok) resolve(outcome.reply);
+      else reject(outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error)));
+    };
+    const fail = (error: unknown): void => finish({ ok: false, error });
+    const cancel = (): void => fail(control.signal?.reason ?? new DOMException('Read cancelled', 'AbortError'));
+    const freshness = control.isCurrent === undefined ? null : setInterval(() => {
+      try { assertCurrent(control); } catch (error) { fail(error); }
+    }, 50);
+    worker.onmessage = event => {
+      if (finished) return;
+      const reply = event.data;
+      if (typeof reply === 'object' && reply !== null && 'id' in reply && typeof reply.id === 'string' && reply.id !== id) return;
+      try { assertCurrent(control); } catch (error) { fail(error); return; }
+      if (typeof reply === 'object' && reply !== null && 'kind' in reply && reply.kind === 'failure'
+        && 'message' in reply && typeof reply.message === 'string') {
+        const reason = 'reason' in reply && reply.reason === 'range' ? 'range' : 'rejected';
+        fail(new PcadReadWorkerError(reason, reply.message)); return;
+      }
+      if (!isPcadReadReplyFor(reply, kind) || reply.id !== id) {
+        fail(new PcadReadWorkerError('rejected', 'Invalid read reply')); return;
+      }
+      finish({ ok: true, reply });
+    };
+    worker.onerror = event => fail(new PcadReadWorkerError('crashed', event.message));
+    worker.onmessageerror = () => fail(new PcadReadWorkerError('crashed', 'Read reply could not be read'));
+    control.signal?.addEventListener('abort', cancel, { once: true });
+    try { assertCurrent(control); start(); }
+    catch (error) { fail(error); }
+  });
+}
+
 export function createPcadFileReader(createWorker: () => PcadReadWorkerPort = browserWorker): PcadFileReader {
   return async <K extends PcadReadKind>(kind: K, bytes: Uint8Array, control: PcadReadControl = {}): Promise<PcadReadResults[K]> => {
     const owned = control.transferInput === true && wholeOwnedBuffer(bytes) ? bytes : await ownedBytes(bytes, control);
     assertCurrent(control);
     const id = crypto.randomUUID(), worker = createWorker();
-    return new Promise<PcadReadResults[K]>((resolve, reject) => {
-      let finished = false;
-      const finish = (outcome: { readonly ok: true; readonly result: PcadReadResults[K] }
-        | { readonly ok: false; readonly error: unknown }): void => {
-        if (finished) return;
-        finished = true;
-        if (freshness !== null) clearInterval(freshness);
-        worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
-        control.signal?.removeEventListener('abort', cancel);
-        // Even a throwing transport must settle the owner exactly once. Never retry termination.
-        try { worker.terminate(); }
-        catch (error) { reject(error instanceof Error ? error : new Error(String(error))); return; }
-        if (outcome.ok) resolve(outcome.result);
-        else reject(outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error)));
-      };
-      const fail = (error: unknown): void => finish({ ok: false, error });
-      const cancel = (): void => fail(control.signal?.reason ?? new DOMException('Read cancelled', 'AbortError'));
-      const freshness = control.isCurrent === undefined ? null : setInterval(() => {
-        try { assertCurrent(control); } catch (error) { fail(error); }
-      }, 50);
-      worker.onmessage = event => {
-        if (finished) return;
-        const reply = event.data;
-        if (typeof reply === 'object' && reply !== null && 'id' in reply && typeof reply.id === 'string' && reply.id !== id) return;
-        try { assertCurrent(control); } catch (error) { fail(error); return; }
-        if (typeof reply === 'object' && reply !== null && 'kind' in reply && reply.kind === 'failure'
-          && 'message' in reply && typeof reply.message === 'string') {
-          fail(new PcadReadWorkerError('rejected', reply.message)); return;
-        }
-        if (!isPcadReadReplyFor(reply, kind) || reply.id !== id) {
-          fail(new PcadReadWorkerError('rejected', 'Invalid read reply')); return;
-        }
-        finish({ ok: true, result: reply.result });
-      };
-      worker.onerror = event => fail(new PcadReadWorkerError('crashed', event.message));
-      worker.onmessageerror = () => fail(new PcadReadWorkerError('crashed', 'Read reply could not be read'));
-      control.signal?.addEventListener('abort', cancel, { once: true });
-      try { assertCurrent(control); worker.postMessage({ id, kind, bytes: owned }, [owned.buffer]); }
-      catch (error) { fail(error); }
-    });
+    const reply = await awaitRead(worker, id, kind, control, () => worker.postMessage({ id, kind, bytes: owned }, [owned.buffer]));
+    return reply.result;
   };
+}
+
+export async function readPcadRangesInWorker<K extends PcadReadKind>(kind: K, source: ArchiveReadSource,
+  digest: boolean, control: PcadReadControl): Promise<WorkerReadResult<K>> {
+  assertCurrent(control);
+  const id = crypto.randomUUID();
+  const { port1, port2 } = new MessageChannel();
+  const closePorts = (): void => { port1.close(); port2.close(); };
+  try {
+    serveReadRanges(port1, source, control.signal);
+    const worker = browserWorker<PcadRangeReadRequest>();
+    return awaitRead(worker, id, kind, control, () => {
+      worker.postMessage({ id, kind, port: port2, size: source.size, digest }, [port2]);
+    }, closePorts);
+  } catch (error) {
+    closePorts();
+    throw error;
+  }
 }
 
 export const readPcadInWorker: PcadFileReader = createPcadFileReader();

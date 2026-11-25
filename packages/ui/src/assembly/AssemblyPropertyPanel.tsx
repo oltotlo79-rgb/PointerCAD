@@ -240,7 +240,8 @@ export function AssemblyPropertyPanel(): React.JSX.Element {
             : library.assemblies?.get(component.source.assemblyRef)?.name ?? component.source.assemblyRef}</dd>
       </dl>
       {component.source.kind === 'part'
-        ? <AssemblyContextReferenceForm key={`context:${component.id}`} componentId={component.id} /> : null}
+        ? <><BeginPartEditButton componentId={component.id} />
+          <AssemblyContextReferenceForm key={`context:${component.id}`} componentId={component.id} /></> : null}
       {component.source.kind === 'subAssembly'
         ? <SubAssemblyJointControls key={`subJoints:${component.id}`} path={[component.id]} /> : null}
     </section>
@@ -273,4 +274,16 @@ export function AssemblyPropertyPanel(): React.JSX.Element {
       </div>
     </section>
   );
+}
+
+function BeginPartEditButton({ componentId }: { readonly componentId: string }): React.JSX.Element {
+  const ready = useAppStore(state => {
+    const view = state.assemblyView;
+    return !state.isComputing && view !== null && view.sourceDocument === state.assembly
+      && view.resolved.placements.has(componentId) && view.meshOwnership?.publicationCurrent() !== false;
+  });
+  return <button type="button" className="pcad-button" disabled={!ready} title={t('assembly.guide.partEditBegin')} onClick={() => {
+    const state = useAppStore.getState();
+    if (!state.beginAssemblyPartEdit(componentId)) state.setFileMessage({ key: 'assembly.partEdit.unavailable', failed: true });
+  }}>{t('assembly.partEdit.begin')}</button>;
 }

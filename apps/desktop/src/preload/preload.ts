@@ -30,9 +30,12 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
    * 答えは `{ readId, name, size, chunkBytes }` か null(取り消し)。readId は一時的な識別子で、実パスは含めない。
    * 本文は `readPcadOpenChunk` で区切りごとに受け取る(全体をここで受けると、世界の境目で全体が写される)。
    */
-  beginPcadOpen: (kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:openBegin', kind),
+  beginPcadOpen: (kind?: 'part' | 'assembly' | 'drawing' | 'all', allowRanges?: true): Promise<unknown> =>
+    allowRanges === true ? ipcRenderer.invoke('pcad:openBegin', kind, true) : ipcRenderer.invoke('pcad:openBegin', kind),
   /** 区切りの 1 回分。通し番号は 0 から。答えはその回のバイト列。 */
-  readPcadOpenChunk: (readId: string, index: number): Promise<unknown> => ipcRenderer.invoke('pcad:openChunk', readId, index),
+  readPcadOpenChunk: (readId: string, index: number, offset?: number, length?: number): Promise<unknown> =>
+    offset === undefined && length === undefined ? ipcRenderer.invoke('pcad:openChunk', readId, index)
+      : ipcRenderer.invoke('pcad:openChunk', readId, index, offset, length),
   /** 全部受け取った後の終わり。本体が読む途中の変化が無いことを確かめて閉じる。答えは上書き先の候補の token(実パスは含めない)。 */
   finishPcadOpen: (readId: string): Promise<unknown> => ipcRenderer.invoke('pcad:openFinish', readId),
   /** 途中の「開く」をやめる(本体が開いたままのファイルを閉じる)。 */

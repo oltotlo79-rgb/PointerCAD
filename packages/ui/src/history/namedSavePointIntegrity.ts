@@ -1,5 +1,6 @@
 import { sha256Hex } from '../sha256.js';
-import { FIXED_ENTRY_MTIME, IO_LIMITS, zipPcadEntries, type PcadZipEntries } from '@pointercad/io';
+import { assemblyEnvelopeStoredPrefixLength, FIXED_ENTRY_MTIME, IO_LIMITS,
+  zipPcadEntries, type PcadZipEntries } from '@pointercad/io';
 import type {
   NamedSavePoint, SavePointBlob, SavePointEntry, SavePointErrorCode, SavePointStorage,
 } from './namedSavePoints.js';
@@ -93,15 +94,21 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
   if (!globalThis.crypto?.subtle) refuse('unavailable', 'この端末ではSHA-256を利用できません。');
   return sha256Hex(globalThis.crypto.subtle, buffer);
 }
-export function archiveOf(entriesToWrite: readonly SavePointEntry[], blobs: ReadonlyMap<string, Uint8Array>): Uint8Array {
+export function archiveOf(entriesToWrite: readonly SavePointEntry[], blobs: ReadonlyMap<string, Uint8Array>,
+  storedAssemblyTimestamp = false): Uint8Array {
   const entries: PcadZipEntries = new Map();
   for (const entry of entriesToWrite) {
     const bytes = blobs.get(entry.sha256);
     if (!bytes || bytes.byteLength !== entry.byteLength || entries.has(entry.name))
       refuse('corrupt', '保存点のZIP項目参照が壊れています。');
-    entries.set(entry.name, [bytes, { level: entry.level, mtime: FIXED_ENTRY_MTIME }]);
+    const options = { level: entry.level, mtime: FIXED_ENTRY_MTIME };
+    const prefix = storedAssemblyTimestamp ? assemblyEnvelopeStoredPrefixLength(entry.name, bytes) : undefined;
+    entries.set(entry.name, prefix === undefined ? [bytes, options] : [bytes, options, prefix]);
   }
   try { return zipPcadEntries(entries); } catch { return refuse('corrupt', '保存点のZIPを再構築できません。'); }
+}
+async function matchesSourceArchive(point: NamedSavePoint, bytes: Uint8Array): Promise<boolean> {
+  return bytes.byteLength === point.sourceByteLength && await sha256(bytes) === point.sourceSha256;
 }
 interface VerifiedState { revision: number; points: NamedSavePoint[]; blobs: Map<string, SavePointBlob>;
   usedBytes: number; selectedBytes?: Uint8Array }
@@ -149,7 +156,7 @@ export async function verifySavePointState(storage: SavePointStorage, signal?: A
   const hashed = new Set<string>(), validatedSource = new Set<string>();
   let selectedBytes: Uint8Array | undefined;
   for (const point of points) {
-    const sourceKey = JSON.stringify([point.sourceSha256, point.sourceByteLength, point.entries]);
+    const sourceKey = JSON.stringify([point.kind, point.sourceSha256, point.sourceByteLength, point.entries]);
     if (validatedSource.has(sourceKey) && point.id !== selectedId) continue;
     const payloads = new Map<string, Uint8Array>();
     for (const entry of point.entries) if (!payloads.has(entry.sha256)) {
@@ -161,9 +168,13 @@ export async function verifySavePointState(storage: SavePointStorage, signal?: A
         refuse('corrupt', '保存点のblob hashまたは長さが一致しません。');
       hashed.add(blob.sha256); payloads.set(blob.sha256, bytes);
     }
-    const source = archiveOf(point.entries, payloads);
-    if (source.byteLength !== point.sourceByteLength || await sha256(source) !== point.sourceSha256)
-      refuse('corrupt', '保存点の元ZIPのhashまたは長さが一致しません。');
+    let source = archiveOf(point.entries, payloads, point.kind === 'assembly');
+    if (!await matchesSourceArchive(point, source)) {
+      if (point.kind !== 'assembly') refuse('corrupt', '保存点の元ZIPのhashまたは長さが一致しません。');
+      // 旧形式は封筒の保存時刻を圧縮本文に含める。元の長さとSHAで形式を確定する。
+      source = archiveOf(point.entries, payloads);
+      if (!await matchesSourceArchive(point, source)) refuse('corrupt', '保存点の元ZIPのhashまたは長さが一致しません。');
+    }
     if (point.id === selectedId) selectedBytes = source;
     validatedSource.add(sourceKey);
   }

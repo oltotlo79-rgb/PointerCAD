@@ -13,6 +13,7 @@ import { fillFields, popover, popoverInputs } from './popoverFields.js';
 
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { fieldByLabel } from './fieldByLabel.js';
+import { uiMessage } from './uiMessages.js';
 
 /**
  * EX-18 の限られた一段「平らな面の移動」を、実際のブラウザで通しで確かめる。**ヘッドレスで実行する。**
@@ -421,6 +422,49 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
 /** solid.json の solidError.pushPullUnsupported(押し引きで振り分けられない選択の断り)。 */
 const PUSH_PULL_REASON = '押し引きでは、作図の面か閉じた領域、立体の面、立体の辺のどれか 1 種類を選んでから押してください。';
 
+async function openPushPullInput(page: Page, title: string): Promise<void> {
+  await openToolMenu(page, '加工');
+  const tool = machiningTool(page, uiMessage('toolbar', 'toolbar.machining.pushPull'));
+  await expect(tool).toBeEnabled();
+  await tool.click();
+  await expect(popoverTitle(page)).toHaveText(title);
+}
+
+/** 立体の縦の辺を選び、押し引きから開いたR面取りを取消・確定する。 */
+async function pushPullFillet(page: Page): Promise<void> {
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('2');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+  await waitForSettledRecompute(page);
+  await clickWorldPoint(page, [0, 0, 5]);
+  await openPushPullInput(page, '角を丸める');
+  await fillFields(page, ['3']);
+  await cancelPopover(page);
+  await expect(solidRow(page, 'R面取り1')).toHaveCount(0);
+
+  await page.keyboard.press('2');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+  await clickWorldPoint(page, [0, 0, 5]);
+  await openPushPullInput(page, '角を丸める');
+  await fillFields(page, ['2']);
+  await commitPopover(page);
+  await expect(solidRow(page, 'R面取り1')).toBeVisible();
+  await solidRow(page, 'R面取り1').click();
+  await expectVolume(page, BOARD_VOLUME - 10 * (4 - Math.PI));
+  await page.keyboard.press('Control+z');
+  await expect(solidRow(page, 'R面取り1')).toHaveCount(0);
+  await solidRow(page, '押し出し1').click();
+  await expectVolume(page, BOARD_VOLUME);
+  await page.keyboard.press('Control+y');
+  await expect(solidRow(page, 'R面取り1')).toBeVisible();
+  await solidRow(page, 'R面取り1').click();
+  await expectVolume(page, BOARD_VOLUME - 10 * (4 - Math.PI));
+  await page.keyboard.press('Control+z');
+  await expect(solidRow(page, 'R面取り1')).toHaveCount(0);
+  await solidRow(page, '押し出し1').click();
+  await expectVolume(page, BOARD_VOLUME);
+}
+
 /**
  * 押し引き(M-05 4-1a・4-1b)。板(40×30×10)の右の端面を選んで「押し引き」を押すと、面の移動の入力欄が開き、
  * 確定すると面の移動と同じ形・同じ行になる。立体そのものを選んでいる時は、何も開かずに理由を帯へ出す。
@@ -441,7 +485,14 @@ export async function pushPullFlow(page: Page, entry: string): Promise<void> {
 
   await drawRectangle(page, ['0', '0'], ['40', '30']);
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
-  await extrudeFace(page, '面1', null);
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('3');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+  await treeRow(page, '面1').click();
+  await openPushPullInput(page, '押し出す');
+  await fillFields(page, ['10']);
+  await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
   await solidRow(page, '押し出し1').click();
   await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
@@ -474,6 +525,15 @@ export async function pushPullFlow(page: Page, entry: string): Promise<void> {
   await expect(solidRow(page, '面の移動1')).toHaveCount(0);
   await solidRow(page, '押し出し1').click();
   await expectVolume(page, BOARD_VOLUME);
+
+  await page.keyboard.press('Control+y');
+  await expect(solidRow(page, '面の移動1')).toBeVisible();
+  await solidRow(page, '面の移動1').click();
+  await expectVolume(page, BOARD_VOLUME + 5 * END_FACE_AREA);
+  await page.keyboard.press('Control+z');
+  await expect(solidRow(page, '面の移動1')).toHaveCount(0);
+
+  await pushPullFillet(page);
 
   // 4-1b: 穴の内側の面を選んで押すと、入力欄は開かずに穴1を選び、右の欄の「直径」へ焦点が移る。そのまま打つと径が変わる。
   await makeThroughHole(page);

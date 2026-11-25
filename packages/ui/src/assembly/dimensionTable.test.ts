@@ -25,6 +25,19 @@ function inRowOrder(rowKeys: readonly string[], expected: readonly string[]): bo
 }
 
 describe('族の行の表', () => {
+  it('板皿の寸法は台座の幅・奥行き、穴数、左下基準の軸中心、厚さを見出しと単位つきで出す', () => {
+    const family = loaded('t-slot-adjuster');
+    const dims = { padWidth: 80, padDepth: 64, holeCount: 4, shaftCenterX: 28, shaftCenterY: 39, padThickness: 6, threadLength: 30 };
+    const row = { ...family.rows[0], key: 'plate-sample', dims };
+    const rows = familyFigurePart(family, row, {}).rows;
+    expect(rows.map((item) => [item.key, t(item.label), item.value, item.unit])).toEqual([
+      ['padWidth', '台座の幅', dims.padWidth, 'mm'], ['padDepth', '台座の奥行き', dims.padDepth, 'mm'],
+      ['holeCount', '穴の数', dims.holeCount, ''], ['shaftCenterX', '台座の左端から軸中心まで', dims.shaftCenterX, 'mm'],
+      ['shaftCenterY', '台座の手前端から軸中心まで', dims.shaftCenterY, 'mm'], ['padThickness', '台座の厚さ', dims.padThickness, 'mm'],
+      ['threadLength', t('catalog.dimension.threadLength'), dims.threadLength, 'mm'],
+    ]);
+  });
+
   it('名前の決まった鍵だけを行の順で出し、値は行のまま、単位は鍵ごと(mm・kg/m・mm²・cm⁴・cm³)', () => {
     const family = loaded('t-slot-frame-s6');
     const row = family.rows[0];
@@ -36,6 +49,45 @@ describe('族の行の表', () => {
     for (const item of part.rows) expect(item.value).toBe(row.dims[item.key]);
     const unit = (key: string) => part.rows.find((item) => item.key === key)?.unit;
     expect([unit('width'), unit('unitMassKgPerM'), unit('areaMm2'), unit('ixCm4'), unit('zxCm3')]).toEqual(['mm', 'kg/m', 'mm²', 'cm⁴', 'cm³']);
+  });
+
+  it('丸角キャップ全5行では大きい角の半径を1回だけ表示し、締結の溝呼びと簡略化した角の値は表示しない', () => {
+    const family = loaded('t-slot-frame-cap');
+    const expected = [
+      ['s6-20x20-r15', 20, 20, 3, 15, 1.2], ['s8-30x30-r22', 30, 30, 3, 22, 2.4],
+      ['s10-40x40-r32', 40, 40, 3, 32, 4.8], ['s10-45x45-r35', 45, 45, 3, 35, 6.1],
+      ['s8-60x60-r48', 60, 60, 3, 48, 8.9],
+    ] as const;
+    const caps = family.rows.filter((row) => Object.hasOwn(row.dims, 'largeRadius') || expected.some(([key]) => key === row.key));
+    expect(caps.map((row) => row.key)).toEqual(expected.map(([key]) => key));
+    for (const [key, width, height, thickness, radius, mass] of expected) {
+      const row = caps.find((item) => item.key === key);
+      if (row === undefined) throw new Error(`キャップの行が無い: ${key}`);
+      const figure = familyFigurePart(family, row, {});
+      expect(figure.rows.map((item) => [item.key, item.value, item.unit]), key).toEqual([
+        ['width', width, 'mm'], ['height', height, 'mm'], ['thickness', thickness, 'mm'],
+        ['largeRadius', radius, 'mm'], ['massG', mass, 'g'],
+      ]);
+      expect(figure.marks, key).toEqual([{ kind: 'simplified', parts: ['取付けの脚と穴', '角の形'] }]);
+    }
+  });
+
+  it.each([
+    ['t-slot-frame-s6', 's6-40x60-t2s3', 20, 4, 4.2, undefined, 1],
+    ['t-slot-frame-s8', 's8-50x100-t2s4', undefined, 8, 6.8, undefined, 2],
+    ['t-slot-frame-s10', 's10-45x60-t1s1', undefined, undefined, undefined, 12.5, 3],
+    ['t-slot-frame-s8', 's8-30x30-r22', undefined, undefined, undefined, 6.8, undefined],
+    ['t-slot-frame-s6', 's6-l40x40-a20', 20, undefined, undefined, undefined, undefined],
+  ] as const)('外周指定の寸法だけを表示する(%s/%s)', (familyId, itemKey, pitch, holeCount, diameter, center, radius) => {
+    const family = loaded(familyId);
+    const row = family.rows.find((item) => item.key === itemKey);
+    if (row === undefined) throw new Error(itemKey);
+    const part = familyFigurePart(family, row, {});
+    const value = (key: string): number | undefined => part.rows.find((item) => item.key === key)?.value;
+    expect([value('slotPitch'), value('holeCount'), value('holeDiameter'), value('centerHole'), value('cornerRadius')])
+      .toEqual([pitch, holeCount, diameter, center, radius]);
+    expect(part.build()).not.toBeNull();
+    if (row.simplified !== undefined) expect(part.marks).toContainEqual({ kind: 'simplified', parts: row.simplified });
   });
 
   it('印の数(車輪の止め・旋回・取付け)と系列の番号は出さず、質量は g、接触角は度', () => {

@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { ESLint } from 'eslint';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -30,25 +31,6 @@ function handwrittenTolerance(source: string, filename = 'source.ts'): string[] 
   visit(tree); return out;
 }
 
-function baselineRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** Reject malformed baseline entries before comparing occurrence counts. */
-function checkedToleranceBaseline(value: unknown): Record<string, Record<string, number>> {
-  if (!baselineRecord(value)) throw new Error('Invalid tolerance baseline');
-  const result = Object.create(null) as Record<string, Record<string, number>>;
-  for (const [path, counts] of Object.entries(value)) {
-    if (!baselineRecord(counts)) throw new Error('Invalid tolerance baseline counts');
-    result[path] = Object.create(null) as Record<string, number>;
-    for (const [expression, count] of Object.entries(counts)) {
-      if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) throw new Error('Invalid tolerance baseline count');
-      result[path][expression] = count;
-    }
-  }
-  return result;
-}
-
 /** The original audit also matched Math.abs(value) against an identifier-led bound. */
 function originalToleranceExtra(source: string, filename = 'source.ts'): string[] {
   const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, filename.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS) as ParsedSource;
@@ -70,57 +52,40 @@ function originalToleranceExtra(source: string, filename = 'source.ts'): string[
 }
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-function excess(current: readonly string[], allowed: Readonly<Record<string, number>>): string[] {
-  const counts: Record<string, number> = {};
-  for (const item of current) counts[item] = (counts[item] ?? 0) + 1;
-  return Object.entries(counts).filter(([item, count]) => count > (allowed[item] ?? 0)).map(([item]) => item);
-}
 /** eslint.config.js の 1 行の文字の配列の定数を読む(許容差の決まりの範囲は、eslint の設定の 1 か所に持つ)。形が変われば落ちる。 */
 function eslintStringArray(text: string, name: string): string[] {
   const match = new RegExp(`^const ${name} = \\[([^\\]]*)\\];`, 'mu').exec(text);
   if (match === null) throw new Error(`eslint.config.js has no ${name}`);
   return [...(match[1] ?? '').matchAll(/'([^']+)'/gu)].map(item => item[1] ?? '');
 }
-describe('new handwritten absolute-difference tolerances', () => {
-  it('detects one new comparison while allowing an existing one', () => {
-    const original = handwrittenTolerance('const a = Math.abs(x-y) <= t;');
-    const allowed = Object.fromEntries(original.map(value => [value, 1]));
-    expect(excess(original, allowed)).toEqual([]);
-    expect(excess(handwrittenTolerance('const a = Math.abs(x-y) <= t; const b = Math.abs(u-v) <= t;'), allowed)).toHaveLength(1);
+describe('handwritten magnitude comparisons', () => {
+  it('detects both forms of handwritten comparison outside lint-covered packages', () => {
+    expect(handwrittenTolerance('const a = Math.abs(x-y) <= t;')).toHaveLength(1);
     expect(handwrittenTolerance('// Math.abs(x-y) <= t\nconst a = Math.abs(x) <= t;')).toEqual([]);
     expect(originalToleranceExtra('const x = Math.abs(a) <= tol;')).toHaveLength(1);
     expect(originalToleranceExtra('const x = Math.abs(a-b) <= tol;')).toEqual([]);
     expect(originalToleranceExtra('// Math.abs(a) <= tol')).toEqual([]);
-    const yieldBoundary = 'Math.abs(trial) > plasticBarYieldStressPa(plan.material, kappa)';
-    const yieldAllowed = { [yieldBoundary]: 1 };
-    expect(excess(originalToleranceExtra(`if (${yieldBoundary}) {}`), yieldAllowed)).toEqual([]);
-    expect(excess(originalToleranceExtra(`if (${yieldBoundary}) {} if (${yieldBoundary}) {}`), yieldAllowed)).toEqual([yieldBoundary]);
-    expect(excess(originalToleranceExtra('if (Math.abs(other) > limit) {}'), yieldAllowed)).toEqual(['Math.abs(other) > limit']);
-    for (const bad of [-1, 1.5, NaN, '1']) {
-      expect(() => checkedToleranceBaseline({ path: { expression: bad } })).toThrow('Invalid tolerance baseline count');
-    }
+    expect(originalToleranceExtra('if (Math.abs(trial) > plasticBarYieldStressPa(plan.material, kappa)) {}')).toHaveLength(1);
   });
-  it('does not add direct handwritten comparisons to product sources', () => {
-    const baseline = checkedToleranceBaseline(JSON.parse(readFileSync(resolve(root, 'packages/test-utils/src/toleranceBaseline.json'), 'utf8')) as unknown);
-    const extraBaseline = checkedToleranceBaseline(JSON.parse(readFileSync(resolve(root, 'packages/test-utils/src/toleranceOriginalExtraBaseline.json'), 'utf8')) as unknown);
+  it('applies the actual magnitude rule to the import-free spline', async () => {
+    const config: unknown = await new ESLint({ cwd: root })
+      .calculateConfigForFile('packages/kernel/src/math/splineInterpolation.ts');
+    expect(config).toHaveProperty(['rules', 'tolerance/comparison'], [2]);
+  });
+  it('has zero handwritten comparisons in the product trees outside the lint rule', () => {
     const config = readFileSync(resolve(root, 'eslint.config.js'), 'utf8');
     const rulePackages = eslintStringArray(config, 'TOLERANCE_RULE_PACKAGES');
-    const baselineFiles = eslintStringArray(config, 'TOLERANCE_BASELINE_FILES');
-    // 2 つの定数が、許容差の lint の決まりの塊(files・ignores)に使われている事。外したファイルは、決まりの対象のパッケージの中にある事。
-    expect([rulePackages.length > 0, config.includes('`packages/{${TOLERANCE_RULE_PACKAGES.join(\',\')}}/src/**/*.{ts,tsx,mts,cts}`'),
-      config.includes('...TOLERANCE_BASELINE_FILES]')]).toEqual([true, true, true]);
-    expect(baselineFiles.filter(path => !existsSync(resolve(root, path))
-      || !rulePackages.some(name => path.startsWith(`packages/${name}/src/`)))).toEqual([]);
+    expect([rulePackages.length > 0, config.includes('`packages/{${TOLERANCE_RULE_PACKAGES.join(\',\')}}/src/**/*.{ts,tsx,mts,cts}`')])
+      .toEqual([true, true]);
     const roots = ['packages', 'apps'].flatMap(group => readdirSync(resolve(root, group), { withFileTypes: true })
       .filter(entry => entry.isDirectory() && existsSync(resolve(root, group, entry.name, 'src')))
       .filter(entry => group !== 'packages' || !rulePackages.includes(entry.name))
       .map(entry => posix.join(group, entry.name, 'src')));
-    const violations = [...roots.flatMap(dir => productFiles(root, dir, path => productTypeScript(path)
-      && !/\.d\.[cm]?ts$/u.test(path) && !/\.spec\.(?:[cm]?[jt]s|[jt]sx)$/u.test(path))), ...baselineFiles]
+    const violations = roots.flatMap(dir => productFiles(root, dir, path => productTypeScript(path)
+      && !/\.d\.[cm]?ts$/u.test(path) && !/\.spec\.(?:[cm]?[jt]s|[jt]sx)$/u.test(path)))
       .flatMap(path => {
         const source = readFileSync(resolve(root, path), 'utf8');
-        return [...excess(handwrittenTolerance(source, path), baseline[path] ?? {}),
-          ...excess(originalToleranceExtra(source, path), extraBaseline[path] ?? {})].map(item => path + ': ' + item);
+        return [...handwrittenTolerance(source, path), ...originalToleranceExtra(source, path)].map(item => path + ': ' + item);
       });
     expect(violations).toEqual([]);
   });

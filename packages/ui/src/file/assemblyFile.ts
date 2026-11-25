@@ -11,8 +11,8 @@ import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { prepareDocumentSession, SecurePartIdentityError, type PreparedDocumentSession } from '../store/fileSlice.js';
 import { t } from '../i18n/t.js';
-import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
-import { withPcadaExtension, type PickedFile } from './fileGateway.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, pickForOpen, readPickedForOpen } from './documentOpenGuard.js';
+import { savePcadThrough, withPcadaExtension, type PickedNativeFile } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
 import { openErrorMessage } from './documentReadError.js';
 import { hasUnsavedChanges } from './partDocumentDirty.js';
@@ -20,6 +20,7 @@ import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
 import { savedMessageKey, type SaveResultIssueReport } from './saveResultIssue.js';
+import { encodeSaveParts } from './pcadSaveWorker.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { analysisResultsToSave } from '../beam/savedBeamResults.js';
 
@@ -80,14 +81,15 @@ export async function newAssembly(deps: PartFileDeps): Promise<void> {
  * 作り直すため、確認なしに置き換えると読込中の編集を取り戻せない)。
  */
 export async function applyPickedAssembly(
-  picked: PickedFile,
+  picked: PickedNativeFile,
   deps: PartFileDeps,
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
   try {
   // 組立は読込の後に picked.bytes を読まない(学習の控えも無い)ので、自分だけの並びなら写さずに移す。
-  const result = await readForOpen(request, 'assembly', picked.bytes, picked.owned === true);
-  if (result === null) return;
+  const read = await readPickedForOpen(request, 'assembly', picked, 'bytes' in picked && picked.owned === true);
+  if (read === null) return;
+  const { result, saveTargetToken } = read;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
       useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
@@ -103,8 +105,8 @@ export async function applyPickedAssembly(
   const openedId = useAppStore.getState().activeDocumentId;
   before.setAssemblyFileState(picked.name, { document: result.bundle.document, library });
   try {
-    if (picked.saveTargetToken === null) before.fileGateway.clearSaveTarget?.();
-    else await before.fileGateway.confirmSaveTarget?.(picked.saveTargetToken);
+    if (saveTargetToken === null) before.fileGateway.clearSaveTarget?.();
+    else await before.fileGateway.confirmSaveTarget?.(saveTargetToken);
   } catch {
     // 確定を待つ間に別の文書へ切り替わったら、その文書の保存先には触らない(図面を開くのと同じ)。
     if (useAppStore.getState().activeDocumentId === openedId) before.fileGateway.clearSaveTarget?.();
@@ -120,7 +122,7 @@ export async function openAssembly(deps: PartFileDeps): Promise<void> {
   // ファイルを選ぶ窓の間の変更も、確認に答えた時点と比べる。
   const request = beginOpenRequest();
   try {
-    const picked = await useAppStore.getState().fileGateway.openPcad('assembly');
+    const picked = await pickForOpen(request, 'assembly');
     if (picked !== null) await applyPickedAssembly(picked, deps, request);
   } catch {
     if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
@@ -149,12 +151,12 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
     const withThumbnail = encoding.kind === 'assembly' && thumbnailPng !== null
       ? { ...encoding, options: { ...encoding.options, thumbnailPng } } : encoding;
     // A beam result the writer leaves out is named in the saved notice, as for a part (saveResultIssue.ts).
-    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(withThumbnail,
+    const parts = await encodeSaveParts(deps.encodeSave ?? before.saveDocumentEncoder, withThumbnail,
       { ...control, onAnalysisResultIssue: (analysisId, issue) => { resultIssues.push({ analysisId, issue }); } });
     if (!control.beginWriting()) return;
-    const saved = await before.fileGateway.savePcad(
+    const saved = await savePcadThrough(before.fileGateway,
       withPcadaExtension(active.fileName ?? active.document.name ?? t('assembly.untitled')),
-      bytes, saveAs || !before.fileGateway.hasSaveTarget(), 'assembly');
+      parts, saveAs || !before.fileGateway.hasSaveTarget(), 'assembly');
     if (saved === null || !isCurrent()) return;
     const name = withPcadaExtension(saved);
     before.setAssemblyFileState(name, snapshot);

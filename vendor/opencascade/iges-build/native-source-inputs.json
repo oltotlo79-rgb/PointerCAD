@@ -1,0 +1,432 @@
+{
+  "format": "pointercad-native-occt-source/1",
+  "wasmSha256": "d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47",
+  "readme": "vendor/opencascade/iges-build/WINDOWS.md",
+  "upstream": {
+    "freetype-version_1.zip": {
+      "origin": "https://github.com/emscripten-ports/FreeType/archive/version_1.zip",
+      "bytes": 2270210,
+      "sha256": "0cdfd7045172abfe443286ebc795fa96bcebad9471ce3499c30f1bbb5472a6df"
+    },
+    "ocjs-b5ff9847200016dce0d92fe747fc38a945771dc5.tar.gz": {
+      "origin": "https://codeload.github.com/donalffons/opencascade.js/tar.gz/b5ff9847200016dce0d92fe747fc38a945771dc5",
+      "revision": "b5ff9847200016dce0d92fe747fc38a945771dc5",
+      "bytes": 1633308,
+      "sha256": "879c482fc6a4e9cc07e8b73f064b6cf2cd74f698106abc7c9c5870a95ede9269"
+    },
+    "occt-bb368e271e24f63078129283148ce83db6b9670a.tar.gz": {
+      "origin": "https://codeload.github.com/Open-Cascade-SAS/OCCT/tar.gz/bb368e271e24f63078129283148ce83db6b9670a",
+      "revision": "bb368e271e24f63078129283148ce83db6b9670a",
+      "bytes": 48228913,
+      "sha256": "fabda9f139f2c09e675d5b9717110175b0ad5d9fb09187e3d56687220d2687e6"
+    },
+    "emscripten-4343cbec72b7db283ea3bda1adc6cb1811ae9a73.tar.gz": {
+      "origin": "https://codeload.github.com/emscripten-core/emscripten/tar.gz/4343cbec72b7db283ea3bda1adc6cb1811ae9a73",
+      "revision": "4343cbec72b7db283ea3bda1adc6cb1811ae9a73",
+      "bytes": 28481146,
+      "sha256": "079d15cb3f1c0080c9e3ea22ebeff7b91be2cce4cc071a0c4af889f7f3c97e55"
+    }
+  },
+  "files": {
+    "LICENSE": {
+      "origin": "repo",
+      "path": "LICENSE",
+      "facts": {
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    },
+    "NOTICE": {
+      "origin": "repo",
+      "path": "NOTICE",
+      "facts": {
+        "bytes": 2364,
+        "sha256": "2e7ce2c772f9185de998ddcbe6ab8101cdf72b09542232e4b36336fd49fee3a6"
+      }
+    },
+    "docs/standards/licenses/runtime-notices.json": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-notices.json",
+      "facts": {
+        "bytes": 8877,
+        "sha256": "2923b457929886d50534dce0cc1ea08d0b61cbfc54dc76959cd0bf13a5605917"
+      }
+    },
+    "docs/standards/licenses/runtime-occt-emscripten-3.1.14-license.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-occt-emscripten-3.1.14-license.txt",
+      "facts": {
+        "bytes": 5093,
+        "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86"
+      }
+    },
+    "docs/standards/licenses/runtime-occt-freetype-version-1-ftl.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-occt-freetype-version-1-ftl.txt",
+      "facts": {
+        "bytes": 6741,
+        "sha256": "f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8"
+      }
+    },
+    "docs/standards/licenses/runtime-occt-freetype-version-1-gplv2.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-occt-freetype-version-1-gplv2.txt",
+      "facts": {
+        "bytes": 17994,
+        "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18"
+      }
+    },
+    "docs/standards/licenses/runtime-occt-freetype-version-1-license.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-occt-freetype-version-1-license.txt",
+      "facts": {
+        "bytes": 1611,
+        "sha256": "f6333b3a9106f10190e96d9f994f934deb7a5632851a1aaf846b94651a80f4da"
+      }
+    },
+    "docs/standards/licenses/runtime-occt-rapidjson-license.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-occt-rapidjson-license.txt",
+      "facts": {
+        "bytes": 5152,
+        "sha256": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32"
+      }
+    },
+    "docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt": {
+      "origin": "repo",
+      "path": "docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt",
+      "facts": {
+        "bytes": 663,
+        "sha256": "04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b"
+      }
+    },
+    "evidence/materialization.json": {
+      "origin": "native",
+      "path": "vendor/materialization.json",
+      "facts": {
+        "bytes": 2369,
+        "sha256": "9dd30fe136f129d097820d3b9679d43955bb8bfa7a501099f0d183b9c79d98fd"
+      }
+    },
+    "evidence/native-build.json": {
+      "origin": "metadata",
+      "path": "native-build.json",
+      "facts": {
+        "bytes": 1004764,
+        "sha256": "17d08510f8774aee0eaccd8775dbe32d0a242e44a27d12b0c7659c669177e5e0"
+      }
+    },
+    "evidence/oci-inventory.json": {
+      "origin": "metadata",
+      "path": "oci-inventory.json",
+      "facts": {
+        "bytes": 5712684,
+        "sha256": "7b6dd92bc772053b76370bf03791143de0133c1445e5adc1447f2aed12911a0f"
+      }
+    },
+    "evidence/opencascade.closed.yml": {
+      "origin": "native",
+      "path": "raw/opencascade.closed.yml",
+      "facts": {
+        "bytes": 14686,
+        "sha256": "c7cf1c5976cdd7ae7223661213065def6bad520356b5dd8f1792bb062bf55036"
+      }
+    },
+    "generated/Handle_IMeshTools_Context.cpp": {
+      "origin": "native",
+      "path": "generated/Handle_IMeshTools_Context.cpp",
+      "facts": {
+        "bytes": 319248,
+        "sha256": "637c709c43c874ae9a88d751066b2381f04041802bd4b58d858a8fa2ddc266b9"
+      }
+    },
+    "generated/IGESCAFControl_Reader.cpp": {
+      "origin": "native",
+      "path": "generated/IGESCAFControl_Reader.cpp",
+      "facts": {
+        "bytes": 318298,
+        "sha256": "6796db65b89f5cc2ca682133c696bee7b08f6a89c959ab26a4010c99a906b427"
+      }
+    },
+    "generated/IGESCAFControl_Writer.cpp": {
+      "origin": "native",
+      "path": "generated/IGESCAFControl_Writer.cpp",
+      "facts": {
+        "bytes": 318298,
+        "sha256": "e6e36093ff6cf54a27de893817809b27c71979f4a924a8cd23d2bb3fb25e2b2f"
+      }
+    },
+    "generated/IGESControl_Reader.cpp": {
+      "origin": "native",
+      "path": "generated/IGESControl_Reader.cpp",
+      "facts": {
+        "bytes": 318353,
+        "sha256": "5cc587d73259eceee986fdb7bb7c078a3fa1edd0ab200d3ea78ef0ee18bd6541"
+      }
+    },
+    "generated/IGESControl_Writer.cpp": {
+      "origin": "native",
+      "path": "generated/IGESControl_Writer.cpp",
+      "facts": {
+        "bytes": 318299,
+        "sha256": "03a85ede8012da3ed3865b0ce0af800248f5617dcf0a58f401c0c20ea5eb6492"
+      }
+    },
+    "generated/OCJS.cpp": {
+      "origin": "native",
+      "path": "generated/OCJS.cpp",
+      "facts": {
+        "bytes": 317620,
+        "sha256": "995fd23ef798589f993bbfe293a71a2695d70a86baaa55906d24bdda828748e9"
+      }
+    },
+    "generated/opencascade.closed.d.ts": {
+      "origin": "native",
+      "path": "raw/opencascade.closed.d.ts",
+      "facts": {
+        "bytes": 389725,
+        "sha256": "3fe40f4fc6b7b90671d5b2f439ec888618a3913b7756d24e8b887339165a58f8"
+      }
+    },
+    "generated/opencascade.closed.js.cpp": {
+      "origin": "native",
+      "path": "generated/opencascade.closed.js.cpp",
+      "facts": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "patches/standard_time.patch": {
+      "origin": "metadata",
+      "path": "standard_time.patch",
+      "facts": {
+        "bytes": 1231,
+        "sha256": "0f9e4292071507367d8347b5ec15ee69b7a544384e63e7ccd3b74b496b8c7361"
+      }
+    },
+    "patches/using-statements.patch": {
+      "origin": "metadata",
+      "path": "using-statements.patch",
+      "facts": {
+        "bytes": 8013,
+        "sha256": "9fcff9af1fc155140f98f87715b803a3f34b72781cc977c4fbc17daa163dc8d7"
+      }
+    },
+    "sources/emscripten-4343cbec72b7db283ea3bda1adc6cb1811ae9a73.tar.gz": {
+      "origin": "upstream",
+      "path": "emscripten-4343cbec72b7db283ea3bda1adc6cb1811ae9a73.tar.gz",
+      "facts": {
+        "bytes": 28481146,
+        "sha256": "079d15cb3f1c0080c9e3ea22ebeff7b91be2cce4cc071a0c4af889f7f3c97e55"
+      }
+    },
+    "sources/freetype-version_1.zip": {
+      "origin": "upstream",
+      "path": "freetype-version_1.zip",
+      "facts": {
+        "bytes": 2270210,
+        "sha256": "0cdfd7045172abfe443286ebc795fa96bcebad9471ce3499c30f1bbb5472a6df"
+      }
+    },
+    "sources/occt-bb368e271e24f63078129283148ce83db6b9670a.tar.gz": {
+      "origin": "upstream",
+      "path": "occt-bb368e271e24f63078129283148ce83db6b9670a.tar.gz",
+      "facts": {
+        "bytes": 48228913,
+        "sha256": "fabda9f139f2c09e675d5b9717110175b0ad5d9fb09187e3d56687220d2687e6"
+      }
+    },
+    "sources/ocjs-b5ff9847200016dce0d92fe747fc38a945771dc5.tar.gz": {
+      "origin": "upstream",
+      "path": "ocjs-b5ff9847200016dce0d92fe747fc38a945771dc5.tar.gz",
+      "facts": {
+        "bytes": 1633308,
+        "sha256": "879c482fc6a4e9cc07e8b73f064b6cf2cd74f698106abc7c9c5870a95ede9269"
+      }
+    },
+    "sources/rapidjson-headers.tar.gz": {
+      "origin": "native",
+      "path": "raw/rapidjson-headers.tar.gz",
+      "facts": {
+        "bytes": 141522,
+        "sha256": "196e2ca77b09e68a03fdd6e947cbcdbd605377c61f96b7d905a06af7fcada366"
+      }
+    },
+    "vendor/opencascade/iges-build/README.md": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/README.md",
+      "facts": {
+        "bytes": 8796,
+        "sha256": "7d5d8a3a5009ce1fa6fd7ab97764f495c147eeeacd238ee7acdffe0a00bcf27b"
+      }
+    },
+    "vendor/opencascade/iges-build/WINDOWS.md": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/WINDOWS.md",
+      "facts": {
+        "bytes": 7089,
+        "sha256": "c6347bbd4670ad6f0780e7139ff9ae7f5eb6bedbe4cb4a2eb57d8b6d05438966"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/Handle_IMeshTools_Context.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/Handle_IMeshTools_Context.cpp.tail",
+      "facts": {
+        "bytes": 2038,
+        "sha256": "241ce468393bdb22b9b2a280df135c6c786b489b883c4398e69970f124ba732b"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/Handle_IMeshTools_Context.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/Handle_IMeshTools_Context.d.ts.json",
+      "facts": {
+        "bytes": 944,
+        "sha256": "f50e40ca64032b03be7885e3d61ad5f59aeb72ee40b3a144d27e69786bb9a750"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESCAFControl_Reader.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESCAFControl_Reader.cpp.tail",
+      "facts": {
+        "bytes": 1088,
+        "sha256": "2690f9430b5a5255e1787cf880375b8e9589b56802d0949435b1db4b00085891"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESCAFControl_Reader.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESCAFControl_Reader.d.ts.json",
+      "facts": {
+        "bytes": 599,
+        "sha256": "8aad8f6eb50e6ae776412985301ce75f68c90459b2c589322a0f06084cb64421"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESCAFControl_Writer.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESCAFControl_Writer.cpp.tail",
+      "facts": {
+        "bytes": 1088,
+        "sha256": "7ce41aa3ccf3c74d1aa303d8a917da119206c9a6b097703b19a51a82a72632ff"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESCAFControl_Writer.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESCAFControl_Writer.d.ts.json",
+      "facts": {
+        "bytes": 598,
+        "sha256": "d3d3a60e4ccc50d31576e6d072157b6e2280e9ec92f067e161bf9be5ef8422a0"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESControl_Reader.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESControl_Reader.cpp.tail",
+      "facts": {
+        "bytes": 1143,
+        "sha256": "93f232e15048c64f531532445cad0e9560183622c90d40a4a39ed24553c942a2"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESControl_Reader.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESControl_Reader.d.ts.json",
+      "facts": {
+        "bytes": 279,
+        "sha256": "197e41c6d112084b40ad96b975e6a1d998949c4b06e1fd19c4670c0c272a2f63"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESControl_Writer.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESControl_Writer.cpp.tail",
+      "facts": {
+        "bytes": 1089,
+        "sha256": "b9eadc336508fd8cce6e33edde152a9c373c637d7a4f9e41deb546987495f993"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/IGESControl_Writer.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/IGESControl_Writer.d.ts.json",
+      "facts": {
+        "bytes": 353,
+        "sha256": "1b73e397384376c60fa0b884969c7770fd22fedb2fb912bb0fab2f381ece45e4"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/OCJS.cpp.tail": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/OCJS.cpp.tail",
+      "facts": {
+        "bytes": 410,
+        "sha256": "554e01241a11e024bb54e5a8c1d5acb2338575088d343290ba7eae6d4d61a213"
+      }
+    },
+    "vendor/opencascade/iges-build/bindings/OCJS.d.ts.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/bindings/OCJS.d.ts.json",
+      "facts": {
+        "bytes": 199,
+        "sha256": "58fff6b5834a989531f819472df916f10f662e5eca1bdfeb9b543a978428189b"
+      }
+    },
+    "vendor/opencascade/iges-build/build.py": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/build.py",
+      "facts": {
+        "bytes": 11488,
+        "sha256": "6d2fb1a60a57b1dad6160d543579341090ffc8c49b3ce588c437d06b670e1a0e"
+      }
+    },
+    "vendor/opencascade/iges-build/opencascade.base.yml": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/opencascade.base.yml",
+      "facts": {
+        "bytes": 14456,
+        "sha256": "746249211720f7988d875f2360557e7b57343a9672acf3cdb85dcd3601ad52ab"
+      }
+    },
+    "vendor/opencascade/iges-build/package.mjs": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/package.mjs",
+      "facts": {
+        "bytes": 8243,
+        "sha256": "8a447bb95273818534d9503012afcc49c9db44f145ca386ca84985a769da584e"
+      }
+    },
+    "vendor/opencascade/iges-build/pins.json": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/pins.json",
+      "facts": {
+        "bytes": 10904,
+        "sha256": "4b8463a26381827ff84cf44af977d4f3f9f3e65a1dda2b10d2a657795cc26dce"
+      }
+    },
+    "vendor/opencascade/iges-build/release-source.py": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/release-source.py",
+      "facts": {
+        "bytes": 5308,
+        "sha256": "a838080f74e12e269f94ba4eac78feebcb5a572ef2af0834cfc250ec16356820"
+      }
+    },
+    "vendor/opencascade/iges-build/windows/build_windows.py": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/windows/build_windows.py",
+      "facts": {
+        "bytes": 22975,
+        "sha256": "70a94a37ba4c74e55464da98a018a6dc24174c26ff886366af23dd3e4ed9fa21"
+      }
+    },
+    "vendor/opencascade/iges-build/windows/materials.py": {
+      "origin": "repo",
+      "path": "vendor/opencascade/iges-build/windows/materials.py",
+      "facts": {
+        "bytes": 14598,
+        "sha256": "907774ba2ac0cbd0e517667d7d82d1dadc1670f3fd0c18481b1a2ab81d998ee1"
+      }
+    },
+    "vendor/opencascade/patches/opencascade.js@2.0.0-beta.b5ff984.patch": {
+      "origin": "repo",
+      "path": "vendor/opencascade/patches/opencascade.js@2.0.0-beta.b5ff984.patch",
+      "facts": {
+        "bytes": 808521,
+        "sha256": "e6176c68e6bc668179e1491d299747848c4b51344c3bb5ff9ad1764f31e28e64"
+      }
+    }
+  }
+}

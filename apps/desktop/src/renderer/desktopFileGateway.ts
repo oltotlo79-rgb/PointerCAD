@@ -1,4 +1,5 @@
-import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
+import { MAX_COMPRESSED_INPUT_BYTES, validArchiveReadRange } from '@pointercad/ui/file-contracts';
+import { t, type FileGateway, type PickedFile, type PickedNativeSource } from '@pointercad/ui';
 import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
 import { controlledDesktopExport, desktopCamGateway } from './desktopCamGateway.js';
 
@@ -20,8 +21,8 @@ import { controlledDesktopExport, desktopCamGateway } from './desktopCamGateway.
  * 何を返すかは確かめられないため。答えの形はこのファイルの中で 1 つずつ見る。
  */
 interface DesktopFileApi {
-  beginPcadOpen(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown>;
-  readPcadOpenChunk(readId: string, index: number): Promise<unknown>;
+  beginPcadOpen(kind?: 'part' | 'assembly' | 'drawing' | 'all', allowRanges?: true): Promise<unknown>;
+  readPcadOpenChunk(readId: string, index: number, offset?: number, length?: number): Promise<unknown>;
   finishPcadOpen(readId: string): Promise<unknown>;
   abortPcadOpen(readId: string): Promise<unknown>;
   rereadPcadOpen(token: string): Promise<unknown>;
@@ -220,8 +221,8 @@ function isOpenReceipt(value: unknown): value is OpenReceipt {
  * (2026-11-13。1 回で受けると、IPC の受け取り・世界の境目の写し・この世界の並びが同時に生き、読込の記憶量の山になった)。
  * 各回の長さ・通し番号・合計を確かめ、途中や終わりで失敗したら本体に開いたファイルを閉じさせてから失敗を返す。
  */
-async function readPcadInChunks(api: DesktopFileApi, receipt: OpenReceipt): Promise<PickedFile> {
-  const { bytes, answer } = await receiveOpenedPcad(api, receipt);
+async function readPcadInChunks(api: DesktopFileApi, receipt: OpenReceipt, signal?: AbortSignal): Promise<PickedFile> {
+  const { bytes, answer } = await receiveOpenedPcad(api, receipt, signal);
   if (typeof answer !== 'string') throw new Error(t('file.openFailed'));
   const saveTargetToken = answer;
   // bytes はこの「開く」のために作った全域の並びで、ほかに持ち主はいない(読込の Worker へ写さずに移してよい)。
@@ -230,12 +231,14 @@ async function readPcadInChunks(api: DesktopFileApi, receipt: OpenReceipt): Prom
 }
 
 /** 区切りを順に受け取って 1 本の並びへ組み、終わりの答えを返す。途中や終わりで失敗したら取消を呼んでから失敗を返す。 */
-async function receiveOpenedPcad(api: DesktopFileApi, receipt: OpenReceipt): Promise<{ bytes: Uint8Array; answer: unknown }> {
+async function receiveOpenedPcad(api: DesktopFileApi, receipt: OpenReceipt, signal?: AbortSignal): Promise<{ bytes: Uint8Array; answer: unknown }> {
   const { readId, size, chunkBytes } = receipt;
   try {
+    signal?.throwIfAborted();
     const bytes = new Uint8Array(size);
     for (let index = 0, offset = 0; offset < size; index += 1, offset += chunkBytes) {
       const piece = toBytes(await api.readPcadOpenChunk(readId, index));
+      signal?.throwIfAborted();
       if (piece === null || piece.byteLength !== Math.min(chunkBytes, size - offset)) throw new Error(t('file.openFailed'));
       bytes.set(piece, offset);
     }
@@ -258,6 +261,55 @@ async function abortMalformedReceipt(api: DesktopFileApi, receipt: unknown): Pro
   if (isObject(receipt) && 'readId' in receipt && typeof receipt.readId === 'string') {
     await api.abortPcadOpen(receipt.readId).catch(() => undefined);
   }
+}
+
+async function beginPcadReceipt(api: DesktopFileApi, kind: Parameters<DesktopFileApi['beginPcadOpen']>[0],
+  signal?: AbortSignal, allowRanges?: true): Promise<OpenReceipt | null> {
+  if (signal?.aborted) return null;
+  let receipt: unknown;
+  try { receipt = allowRanges === true ? await api.beginPcadOpen(kind, true) : await api.beginPcadOpen(kind); }
+  catch (error) { if (signal?.aborted) return null; throw openFailure(error); }
+  if (receipt === null || receipt === undefined) return null;
+  if (signal?.aborted || !isOpenReceipt(receipt)) {
+    await abortMalformedReceipt(api, receipt);
+    if (signal?.aborted) return null;
+    throw new Error(t('file.openFailed'));
+  }
+  return receipt;
+}
+
+function desktopNativeSource(api: DesktopFileApi, receipt: OpenReceipt, signal: AbortSignal): PickedNativeSource {
+  const { readId, name, size } = receipt;
+  let next = 0, closed: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    signal.removeEventListener('abort', cancel);
+    closed ??= api.abortPcadOpen(readId).then(() => undefined, () => undefined);
+    return closed;
+  };
+  const cancel = (): void => { void close(); };
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) cancel();
+  return {
+    name,
+    source: { size, async read(offset, length) {
+      signal.throwIfAborted();
+      if (closed !== undefined || !validArchiveReadRange(size, offset, length)) throw new Error(t('file.openFailed'));
+      const bytes = toBytes(await api.readPcadOpenChunk(readId, next++, offset, length));
+      signal.throwIfAborted();
+      if (bytes === null || bytes.byteLength !== length) throw new Error(t('file.error.corrupted'));
+      return bytes;
+    } },
+    async complete() {
+      signal.throwIfAborted();
+      const token: unknown = await api.finishPcadOpen(readId);
+      signal.throwIfAborted();
+      if (typeof token !== 'string') throw new Error(t('file.openFailed'));
+      signal.removeEventListener('abort', cancel);
+      closed = Promise.resolve();
+      return token;
+    },
+    close,
+  };
 }
 
 /**
@@ -386,24 +438,16 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
 
   const base: FileGateway = {
     ...desktopCamGateway(api),
-    async openPcad(kind): Promise<PickedFile | null> {
-      let receipt: unknown;
-      try {
-        receipt = await api.beginPcadOpen(kind);
-      } catch (error) {
-        const key = readFailureMessageKey(error);
-        if (key !== null) throw new Error(t(key), { cause: error });
-        throw error;
-      }
-      if (receipt === null || receipt === undefined) {
-        // 取り消された。
-        return null;
-      }
-      if (!isOpenReceipt(receipt)) {
-        await abortMalformedReceipt(api, receipt);
-        throw new Error(t('file.openFailed'));
-      }
-      return readPcadInChunks(api, receipt);
+    async openPcad(kind, signal) {
+      const receipt = await beginPcadReceipt(api, kind, signal);
+      return receipt === null ? null : readPcadInChunks(api, receipt, signal);
+    },
+
+    async openPcadSource(kind, signal) {
+      const receipt = await beginPcadReceipt(api, kind, signal, true);
+      if (receipt === null) return null;
+      return receipt.size <= MAX_COMPRESSED_INPUT_BYTES ? readPcadInChunks(api, receipt, signal)
+        : desktopNativeSource(api, receipt, signal);
     },
 
     async confirmSaveTarget(token): Promise<void> {

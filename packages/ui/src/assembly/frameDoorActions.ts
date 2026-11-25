@@ -25,6 +25,8 @@ export const DOOR_CONNECTOR_PREFIX = 'flat-connector-';
 
 /** 窓で選ぶ物: 板・扉の枠・ヒンジの行、ヒンジを付ける側、上下の端からヒンジの中心まで、開口と扉の間の隙間(mm)。 */
 export interface FrameDoorChoices {
+  /** 枠付きパーティションの場合はヒンジを置かない。 */
+  readonly partition?: boolean;
   readonly boardKey: string | null;
   readonly frameKey: string | null;
   readonly hingeKey: string | null;
@@ -49,12 +51,17 @@ const REASON_KEYS: Readonly<Record<string, MessageKey>> = {
 };
 
 /** 理由の文字。 */
-export function frameDoorReasonText(reason: string): string {
-  return t(REASON_KEYS[reason] ?? 'catalog.framePanel.reason.unavailable');
+export function frameDoorReasonText(reason: string, partition = false): string {
+  const partitionKeys: Readonly<Record<string, MessageKey>> = {
+    noRoom: 'catalog.frameDoor.partitionReason.noRoom', invalidNumber: 'catalog.frameDoor.partitionReason.invalidNumber',
+    noRows: 'catalog.frameDoor.partitionReason.noRows', invalidOption: 'catalog.frameDoor.partitionReason.invalidOption',
+  };
+  return t((partition ? partitionKeys[reason] : undefined) ?? REASON_KEYS[reason] ?? 'catalog.framePanel.reason.unavailable');
 }
 
-const rowOf = (familyId: string, key: string | null) => key === null ? undefined
-  : PRODUCT_CATALOG_REGISTRY.loaded(familyId)?.rows.find((candidate) => candidate.key === key);
+const rowOf = (familyId: string, key: string | null, prefix = '') => key === null ? undefined
+  : PRODUCT_CATALOG_REGISTRY.loaded(familyId)?.rows.find((candidate) =>
+    candidate.key === key && candidate.key.startsWith(prefix) && candidate.listed !== false);
 
 /** 今選んでいる部材 4 本の枠に付ける扉の計画(作れない時は理由)。 */
 export function frameDoorPlan(choices: FrameDoorChoices): { readonly ok: true; readonly plan: DoorPlan } | { readonly ok: false; readonly reason: string } {
@@ -62,13 +69,15 @@ export function frameDoorPlan(choices: FrameDoorChoices): { readonly ok: true; r
   const assembly = state.assembly, view = state.assemblyView;
   if (assembly === null || view === null || view.sourceDocument !== assembly) return { ok: false, reason: 'unavailable' };
   const board = rowOf(FENCE_PANEL_FAMILY, choices.boardKey), frame = rowOf(DOOR_FAMILIES.frame, choices.frameKey);
-  const hinge = rowOf(DOOR_FAMILIES.hinge, choices.hingeKey);
   const [thickness, frameWidth] = [board?.dims.thickness, frame?.dims.width];
+  const hinge = rowOf(DOOR_FAMILIES.hinge, choices.hingeKey, DOOR_HINGE_PREFIX);
   const [hingeWidth, hingeDepth, hingeHeight] = [hinge?.dims.width, hinge?.dims.depth, hinge?.dims.height];
-  if (thickness === undefined || frameWidth === undefined || hingeWidth === undefined || hingeDepth === undefined || hingeHeight === undefined) {
-    return { ok: false, reason: 'noRows' };
-  }
-  const holderRow = rowOf(DOOR_FAMILIES.hinge, choices.holderKey), connectorRow = rowOf(DOOR_FAMILIES.hinge, choices.connectorKey);
+  const hingeSize = hingeWidth === undefined || hingeDepth === undefined || hingeHeight === undefined ? undefined
+    : { width: hingeWidth, depth: hingeDepth, height: hingeHeight, side: choices.side, offset: choices.offset };
+  const plannedHinge = choices.partition === true ? null : hingeSize;
+  if (thickness === undefined || frameWidth === undefined || plannedHinge === undefined) return { ok: false, reason: 'noRows' };
+  const holderRow = rowOf(DOOR_FAMILIES.hinge, choices.holderKey, DOOR_HOLDER_PREFIX);
+  const connectorRow = rowOf(DOOR_FAMILIES.hinge, choices.connectorKey, DOOR_CONNECTOR_PREFIX);
   if ((choices.holderKey !== null && holderRow === undefined) || (choices.connectorKey !== null && connectorRow === undefined)) {
     return { ok: false, reason: 'noRows' };
   }
@@ -79,8 +88,9 @@ export function frameDoorPlan(choices: FrameDoorChoices): { readonly ok: true; r
   const selected = new Set(state.selection);
   const members = placedFrameMembers(assembly, view.resolved.placements).filter((member) => selected.has(member.componentId));
   if (members.length !== state.selection.length) return { ok: false, reason: 'notFour' };
-  const plan = planFrameDoor(members, { clearance: choices.clearance, frameWidth, boardThickness: thickness,
-    hinge: { width: hingeWidth, depth: hingeDepth, height: hingeHeight, side: choices.side, offset: choices.offset }, holder, connector });
+  const input = { clearance: choices.clearance, frameWidth, boardThickness: thickness, holder, connector };
+  const plan = plannedHinge === null ? planFrameDoor(members, { ...input, hinge: null })
+    : planFrameDoor(members, { ...input, hinge: plannedHinge });
   if (!plan.ok) return plan;
   const family = PRODUCT_CATALOG_REGISTRY.loaded(FENCE_PANEL_FAMILY);
   const built = board === undefined || family === undefined ? null
@@ -106,7 +116,7 @@ export function placeFrameDoor(choices: FrameDoorChoices): { readonly ok: true; 
   const planned = frameDoorPlan(choices);
   const state = useAppStore.getState();
   if (!planned.ok) return planned;
-  if (state.assembly === null || choices.frameKey === null || choices.boardKey === null || choices.hingeKey === null) {
+  if (state.assembly === null || choices.frameKey === null || choices.boardKey === null) {
     return { ok: false, reason: 'unavailable' };
   }
   const { plan } = planned;

@@ -79,12 +79,29 @@ describe('押し出しの矢印のつまみ(M-05 4-2b)', () => {
     expect(distanceHandleOf({ ...profileState(), selection })).toBeNull();
   });
 
-  it('閉じた領域からの押し出しでは出さない', () => {
+  it('選んだ閉じた領域に出し、別スケッチや失われた境界には出さない', () => {
     const state = profileState();
-    const numericInput = {
-      ...state.numericInput,
-      extrudeRegion: { sketchId: state.sketch.id, planeId: 'xy' as const, boundary: [{ featureId: 'face-1-corner-1' }] },
+    const empty = createEmptyPartDocument();
+    const sketch = appendFeature(empty.sketches[0], {
+      id: 'region-rectangle', name: 'region-rectangle', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0), construction: false,
+    });
+    const regionState = {
+      ...state, document: replaceSketch(empty, sketch), sketch, resolvedSketch: resolveSketch(sketch), selection: [],
     };
-    expect(distanceHandleOf({ ...state, numericInput })).toBeNull();
+    const region = { sketchId: sketch.id, planeId: 'xy' as const, boundary: [{ featureId: 'region-rectangle' }] };
+    const numericInput = {
+      ...state.numericInput, extrudeRegion: region,
+    };
+    expect(distanceHandleOf(regionState)).toBeNull();
+    expect(distanceHandleOf({ ...regionState, numericInput })).toMatchObject({
+      base: [20, 15, 0], origin: [20, 15, 10], normal: [0, 0, 1], distanceMm: 10,
+    });
+    expect(distanceHandleOf({ ...regionState, numericInput: {
+      ...numericInput, extrudeRegion: { ...region, sketchId: 'other-sketch' },
+    } })).toBeNull();
+    expect(distanceHandleOf({ ...regionState, numericInput: {
+      ...numericInput, extrudeRegion: { ...region, boundary: [{ featureId: 'face-1-corner-1' }] },
+    } })).toBeNull();
   });
 });

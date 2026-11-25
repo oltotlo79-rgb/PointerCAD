@@ -252,14 +252,14 @@ describe('形式 × 立体の種類の可否(§0.a-0.12、§0.a-0.23、§2.8)', 
     }
   });
 
-  it('面だけの立体を持てるのは STEP / OBJ / glTF だけ', () => {
+  it('面だけの立体を持てるのは STEP / IGES / OBJ / glTF', () => {
     expect(EXPORT_FORMATS.filter((format) => acceptsShellBody(format))).toEqual([
-      'step', 'obj', 'glb',
+      'step', 'iges', 'obj', 'glb',
     ]);
   });
 
-  it('読み込んだ三角形の形を持てないのは STEP だけ(§0.a-0.23)', () => {
-    expect(EXPORT_FORMATS.filter((format) => !acceptsMeshBody(format))).toEqual(['step']);
+  it('読み込んだ三角形の形を持てないのは STEP と IGES(§0.a-0.23)', () => {
+    expect(EXPORT_FORMATS.filter((format) => !acceptsMeshBody(format))).toEqual(['step', 'iges']);
   });
 
   it('色を持てないのは STL だけ(§0.a-0.15、§0.a-0.22)', () => {
@@ -297,7 +297,7 @@ describe('なめらかさと形式の一覧(§0.a-0.20、FR-802、FR-803)', () =
   });
 
   it('文書・処理・交換形式を区別し、書き出し・読み込みはその部分集合である', () => {
-    expect([...FILE_KINDS]).toEqual(['pcad', 'pcadt', 'pcadscript', 'pcadinput', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg']);
+    expect([...FILE_KINDS]).toEqual(['pcad', 'pcadt', 'pcadscript', 'pcadinput', 'step', 'iges', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg']);
     expect(canRoundTrip('dwg')).toBe(false);
     expect(canRoundTrip('pcadscript')).toBe(true);
     expect(canRoundTrip('pcadinput')).toBe(true);
@@ -310,12 +310,12 @@ describe('なめらかさと形式の一覧(§0.a-0.20、FR-802、FR-803)', () =
     }
   });
 
-  it('書き出しは STEP / STL / 3MF / OBJ / glTF に対応する(FR-803)', () => {
-    expect([...EXPORT_FORMATS]).toEqual(['step', 'stl', '3mf', 'obj', 'glb']);
+  it('書き出しは STEP / IGES / STL / 3MF / OBJ / glTF に対応する(FR-803)', () => {
+    expect([...EXPORT_FORMATS]).toEqual(['step', 'iges', 'stl', '3mf', 'obj', 'glb']);
   });
 
   it('読み込める形式(FR-802)はすべて書き出しもできる', () => {
-    expect([...IMPORT_FORMATS]).toEqual(['step', 'stl', 'obj']);
+    expect([...IMPORT_FORMATS]).toEqual(['step', 'iges', 'stl', 'obj']);
     for (const format of IMPORT_FORMATS) {
       expect(canRoundTrip(format), format).toBe(true);
     }

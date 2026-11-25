@@ -1,0 +1,23 @@
+{
+  "functionPlot.failure.withReason": "{reason} {guidance}",
+  "functionPlot.failure.deadline": "計算時間の上限に達しました。",
+  "functionPlot.failure.subdivision": "標本数または分割数の上限に達しました。",
+  "functionPlot.failure.roundoff": "数値の丸めにより、これ以上細かく計算できません。",
+  "functionPlot.failure.queueFull": "計算の順番待ちが上限に達しました。ほかの計算が終わってから、もう一度「形を確認」を押してください。",
+  "functionPlot.failure.curvePrecision": "指定した精度で曲線を計算しきれませんでした。範囲や精度を見直してください。",
+  "functionPlot.failure.surfacePrecision": "指定した精度で面を計算しきれませんでした。範囲や精度を見直してください。",
+  "functionPlot.failure.implicitCurvePrecision": "指定した範囲・精度で等式の曲線を計算しきれませんでした。",
+  "functionPlot.failure.implicitSurfacePrecision": "指定した範囲・精度で等式の面を計算しきれませんでした。XYZの範囲を狭めるか、精度を見直してください。",
+  "functionPlot.failure.curveDegenerate": "指定範囲の関数は長さのある曲線になりません。",
+  "functionPlot.failure.surfaceDegenerate": "指定範囲の関数が面として定まりません。式や範囲を見直してください。",
+  "functionPlot.failure.implicitCurveDegenerate": "指定範囲の等式は長さのある曲線として定まりません。",
+  "functionPlot.failure.implicitSurfaceDegenerate": "等式の解が面として定まりません。式とXYZの範囲を見直してください。",
+  "functionPlot.failure.implicitSurfaceEmpty": "指定したXYZ範囲内に、この等式を満たす面がありません。",
+  "functionPlot.failure.implicitCurveUnresolved": "特異点や未解決の領域があり、等式の曲線を確定できません。範囲や精度を見直してください。",
+  "functionPlot.failure.implicitSurfaceUnresolved": "特異点や未解決の領域があり、等式の面を確定できません。範囲や精度を見直してください。",
+  "functionPlot.failure.implicitSurfaceDomain": "式を連続な実数として計算できない領域があります。XYZの範囲を見直してください。",
+  "functionPlot.failure.implicitCurveUnavailable": "等式の曲線の計算部を準備できません。再計算してください。",
+  "functionPlot.failure.implicitSurfaceUnavailable": "等式の面の計算部を準備できません。再計算してから作図してください。",
+  "functionPlot.failure.coefficientRecompute": "係数の原式を再計算できません: {label}",
+  "functionPlot.failure.coefficientMissing": "係数の原式を確認できません: {label}"
+}

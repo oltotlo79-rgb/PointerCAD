@@ -575,6 +575,35 @@ export function* solveMatesSteps(
   return rigid === null ? outcome : { ...outcome, placements: expandRigidGroupPlacements(rigid.collapse, outcome.placements) };
 }
 
+function mateBranchGeometry(mates: readonly PreparedMateResidual[], joints: readonly PreparedJointResidual[]) {
+  const branchGeometry = new Map<string, BranchGeometry>(mates.map((mate) =>
+    [constraintKey({ kind: 'mate', id: mate.mateId }), mate]));
+  for (const joint of joints) branchGeometry.set(constraintKey({ kind: 'joint', id: joint.jointId }), {
+    componentA: joint.componentA, componentB: joint.componentB,
+    a: { point: joint.frames.a.origin, frame: { t: joint.frames.a.x } },
+    b: { point: joint.frames.b.origin, frame: { t: joint.frames.b.x } },
+  });
+  return branchGeometry;
+}
+
+function prepareMateCouplings(assembly: AssemblyDocument, options: SolveMatesOptions,
+  activePlacements: ReadonlyMap<string, RigidPlacement>, drive: PreparedJointDrive | undefined) {
+  const evaluatedCouplings = evaluateMechanismCouplings(assembly);
+  const gears = evaluatedCouplings.ok ? prepareMechanismCouplings({ couplings: evaluatedCouplings.couplings,
+    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements }) : evaluatedCouplings;
+  // A follower may not also be a gear joint or the driven joint: one driver per follower.
+  const drivenJointIds = new Set<string>(gears.ok ? gears.prepared.couplings.flatMap(row => [row.a.jointId, row.b.jointId]) : []);
+  if (drive !== undefined) drivenJointIds.add(drive.joint.jointId);
+  const evaluatedCams = evaluateCamCouplings(assembly);
+  const cams = !gears.ok ? gears : !evaluatedCams.ok ? evaluatedCams : prepareCamFollowers({ couplings: evaluatedCams.couplings,
+    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements, drivenJointIds });
+  const coupled = !gears.ok ? gears : !cams.ok ? cams : { ok: true as const, prepared: {
+    couplings: gears.prepared.couplings, cams: cams.prepared,
+    references: new Map([...cams.prepared.map(c => [c.cam.jointId, c.definition.referenceAngleCam] as const),
+      ...gears.prepared.references]) } };
+  return coupled;
+}
+
 function* solveMatesCoreSteps(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions,
@@ -612,26 +641,8 @@ function* solveMatesCoreSteps(
   yield* work.boundary();
   const jointsById = new Map(preparedJoints.joints.map((joint) => [joint.jointId, joint]));
   const activeJoints = assembly.joints.filter((joint) => jointsById.has(joint.id));
-  const branchGeometry = new Map<string, BranchGeometry>(prepared.mates.map((mate) =>
-    [constraintKey({ kind: 'mate', id: mate.mateId }), mate]));
-  for (const joint of preparedJoints.joints) branchGeometry.set(constraintKey({ kind: 'joint', id: joint.jointId }), {
-    componentA: joint.componentA, componentB: joint.componentB,
-    a: { point: joint.frames.a.origin, frame: { t: joint.frames.a.x } },
-    b: { point: joint.frames.b.origin, frame: { t: joint.frames.b.x } },
-  });
-  const evaluatedCouplings = evaluateMechanismCouplings(assembly);
-  const gears = evaluatedCouplings.ok ? prepareMechanismCouplings({ couplings: evaluatedCouplings.couplings,
-    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements }) : evaluatedCouplings;
-  // A follower may not also be a gear joint or the driven joint: one driver per follower.
-  const drivenJointIds = new Set<string>(gears.ok ? gears.prepared.couplings.flatMap(row => [row.a.jointId, row.b.jointId]) : []);
-  if (drive !== undefined) drivenJointIds.add(drive.joint.jointId);
-  const evaluatedCams = evaluateCamCouplings(assembly);
-  const cams = !gears.ok ? gears : !evaluatedCams.ok ? evaluatedCams : prepareCamFollowers({ couplings: evaluatedCams.couplings,
-    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements, drivenJointIds });
-  const coupled = !gears.ok ? gears : !cams.ok ? cams : { ok: true as const, prepared: {
-    couplings: gears.prepared.couplings, cams: cams.prepared,
-    references: new Map([...cams.prepared.map(c => [c.cam.jointId, c.definition.referenceAngleCam] as const),
-      ...gears.prepared.references]) } };
+  const branchGeometry = mateBranchGeometry(prepared.mates, preparedJoints.joints);
+  const coupled = prepareMateCouplings(assembly, options, activePlacements, drive);
   if (!coupled.ok) return { placements: new Map(initial), converged: false, iterations: 0,
     residualNorm: 0, maxResidual: 0, couplingFailure: coupled,
     diagnosis: { status: 'stalled', components: [], limits: [], constantConflicts: [], unsupportedJointIds: [] },

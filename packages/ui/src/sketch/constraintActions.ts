@@ -23,6 +23,7 @@ import {
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { commitWorkingPartDocument } from '../store/partEditActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   commitAddConstraint,
@@ -124,18 +125,15 @@ export function constraintPickGuide(store: Store): string | null {
  */
 function applyAdded(store: Store, document: SketchDocument, firstId: string): void {
   const added = document.constraints?.find(constraint => constraint.id === firstId);
-  if (added?.kind === 'horizontalDistance' || added?.kind === 'verticalDistance'
-    || added?.kind === 'midpoint' || added?.kind === 'pointOnCurve') {
-    store.applyDocument({ ...replaceSketch(store.document, document),
-      schemaVersion: Math.max(store.document.schemaVersion, PART_SCHEMA_VERSION) });
-  } else {
-    store.setSketch(document);
-  }
-  const next = useAppStore.getState();
-  next.setConstraintTargets([]);
-  next.setConstraintPrompt(null);
-  // 付けたばかりの拘束を一覧と印で見せる(何が起きたかを目で確かめられるように)。
-  next.setSelectedConstraint(firstId);
+  const part = replaceSketch(store.document, document);
+  const next = added?.kind === 'horizontalDistance' || added?.kind === 'verticalDistance'
+    || added?.kind === 'midpoint' || added?.kind === 'pointOnCurve'
+    ? { ...part, schemaVersion: Math.max(part.schemaVersion, PART_SCHEMA_VERSION) } : part;
+  void commitWorkingPartDocument(store, next, current => {
+    current.setConstraintTargets([]);
+    current.setConstraintPrompt(null);
+    current.setSelectedConstraint(firstId);
+  });
 }
 
 /**
@@ -267,7 +265,7 @@ export function commitConstraintPrompt(source: string): void {
     store.setConstraintError(t('constraint.error.invalidValue'));
     return;
   }
-  store.setConstraintPrompt(null);
+  if (store.partEdit === null) store.setConstraintPrompt(null);
   addConstraint(
     useAppStore.getState(),
     prompt.kind,
@@ -298,8 +296,9 @@ export function removeConstraintById(constraintId: string): void {
     store.setConstraintError(outcome.message);
     return;
   }
-  store.setSketch(outcome.document);
-  useAppStore.getState().setSelectedConstraint(null);
+  void commitWorkingPartDocument(store, replaceSketch(store.document, outcome.document), current => {
+    current.setSelectedConstraint(null);
+  });
 }
 
 /**

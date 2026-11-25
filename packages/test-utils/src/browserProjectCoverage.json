@@ -831,6 +831,11 @@
       "reason": "electron project filename rule"
     },
     {
+      "file": "electron-iges-exchange.spec.ts",
+      "category": "electron",
+      "reason": "electron project filename rule"
+    },
+    {
       "file": "electron-impact.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule"

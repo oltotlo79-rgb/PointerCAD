@@ -1,4 +1,4 @@
-import { drawingPrintOptions, toSvg, type DrawingPrintOptions } from '@pointercad/drawing';
+import { drawingPrintOptions, paperSizeOf, toSvg, type DrawingPrintOptions } from '@pointercad/drawing';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { prepareDrawingOutput } from '../drawing/exportDrawing.js';
@@ -25,6 +25,10 @@ export async function printDrawing(copies = 1): Promise<boolean> {
   const state = useAppStore.getState();
   const drawing = state.drawing;
   if (drawing === null || printing) { state.setDrawingMessage(t('drawing.error.noPrintDrawing')); return false; }
+  if (paperSizeOf(drawing.sheet.paperSizeId) === undefined) {
+    state.setDrawingMessage(t('drawing.error.unsupportedPaper'));
+    return false;
+  }
   const options = drawingPrintOptions(drawing.sheet.paperSizeId, copies);
   if (options === null) { state.setDrawingMessage(t('drawing.error.printOptions')); return false; }
   printing = true;

@@ -21,6 +21,9 @@ import assembly from './ja/assembly.json';
 import steelBend from './ja/steelBend.json';
 import catalog from './ja/catalog.json';
 import drawing from './ja/drawing.json';
+import drawingDiagnostics from './ja/drawingDiagnostics.json';
+import mathScalar from './ja/mathScalar.json';
+import functionPlotDiagnostics from './ja/functionPlotDiagnostics.json';
 import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
@@ -73,6 +76,7 @@ export const ja = {
   ...catalog,
   // 図面。道具・木・プロパティと、利用者へ返す断りの正本。
   ...drawing,
+  ...drawingDiagnostics,
   ...help,
   ...sheetMetal,
   ...strength,
@@ -89,6 +93,8 @@ export const ja = {
   ...shellAnalysis,
   ...script,
   ...math,
+  ...mathScalar,
+  ...functionPlotDiagnostics,
   ...mathGeometry,
   ...mathPaletteBasic,
   ...mathPaletteCalculus,
@@ -100,6 +106,8 @@ export const ja = {
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
 export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, string>>])[] = [
   ['math', math],
+  ['mathScalar', mathScalar],
+  ['functionPlotDiagnostics', functionPlotDiagnostics],
   ['mathGeometry', mathGeometry],
   ['mathPaletteBasic', mathPaletteBasic],
   ['mathPaletteCalculus', mathPaletteCalculus],
@@ -118,6 +126,7 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['steelBend', steelBend],
   ['catalog', catalog],
   ['drawing', drawing],
+  ['drawingDiagnostics', drawingDiagnostics],
   ['help', help],
   ['sheetMetal', sheetMetal],
   ['strength', strength],

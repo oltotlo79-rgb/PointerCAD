@@ -1,3 +1,4 @@
+import type { ArchiveReadSource } from './archiveReadSource.js';
 import { fileFailure as fail } from './codedFailure.js';
 import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTreeFailure, crossLevelCamTreeFailure } from '@pointercad/model';
 /**
@@ -50,11 +51,13 @@ import {
   createAssemblyDocumentBundle,
   detectSubAssemblyProblem,
   MAX_SUB_ASSEMBLY_DEPTH,
+  partAttachmentReferences,
   partLibraryOfBundle,
   type DocumentBundle,
   type AssemblyDocument,
   type DrawingDocument,
   type DrawingSourceInput,
+  type AssemblyDocumentBundle,
   type EmbeddedPartAttachments,
   type EmbeddedPartMesh,
   type LengthUnit,
@@ -62,9 +65,9 @@ import {
   type PartLibrary,
   type SubAssemblyProblem,
 } from '@pointercad/model';
-import { strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
+import { strToU8, zipSync, type Zippable } from 'fflate';
 import { decodeUtf8 } from '../decodeUtf8.js';
-import { hasSteppedZipEntry, zipEntriesPartsAsync, zipEntriesSync, type ZipStepsControl } from './zipSteps.js';
+import { hasSteppedZipEntry, restoreZipStoredPrefixes, zipEntriesPartsAsync, zipEntriesSync, ZIP_STEP_BYTES, type ZipChunkedBytes, type ZipStepEntry, type ZipStepsControl } from './zipSteps.js';
 
 import {
   IO_LIMITS,
@@ -86,6 +89,7 @@ import {
 } from './schema.js';
 import {
   ARCHIVE_TOO_LARGE_MESSAGE,
+  openArchiveSource,
   readArchive,
   type ArchiveReadError,
   type ArchiveReadLimits,
@@ -94,7 +98,8 @@ import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
 import { analysisResultBinding } from './analysisResultBinding.js';
 import { readAnalysisResult, serializeAnalysisResult, type AnalysisResultIssue } from './codecs/analysisResult.js';
 import { SOLID_RESULT_MAX_BYTES } from './codecs/solidResultBinary.js';
-import { isSafeZipEntryName } from './zipDirectory.js';
+import { zipCrc32 } from './zipCrc32.js';
+import { isSafeZipEntryName, zipDirectory, ZipDirectoryError } from './zipDirectory.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
@@ -161,15 +166,29 @@ const ATTACHMENT_IMAGE_LEVEL = 0;
  * (`drawingBundle.ts`)は参照元の部品・アセンブリの項目をこの形のまま結合し、
  * 圧縮してから展開し直す往復をしない。
  */
-export type PcadZipEntry = readonly [bytes: Uint8Array, options: ZipOptions];
+export type PcadZipEntry = ZipStepEntry;
 /**
  * 項目の表。**挿入の順がそのまま ZIP の項目の順になる**(同じ名前を入れ直したときは
  * 最初の位置のまま中身だけ替わる。以前の平たいオブジェクトと同じ振る舞い)。
  */
-export type PcadZipEntries = Map<string, PcadZipEntry>;
+export type PcadZipEntries<Extra = never> = Map<string, ZipStepEntry<Uint8Array | Extra>>;
+type SaveEntryBytes = Uint8Array | ZipChunkedBytes;
+type MeshEntryEncoder<Extra> = (mesh: ImportedMeshBytes) => Uint8Array | Extra | null;
 
-function zipEntry(bytes: Uint8Array, level: 0 | 6): PcadZipEntry {
+function zipEntry<Bytes extends SaveEntryBytes>(bytes: Bytes, level: 0 | 6): ZipStepEntry<Bytes> {
   return [bytes, { level, mtime: FIXED_ENTRY_MTIME }];
+}
+
+/** A ZIP with isolated prefixes can use the one-shot packer only within one chunk's memory budget. */
+function needsSteppedPcadZip(entries: ReadonlyMap<string, PcadZipEntry>): boolean {
+  if (hasSteppedZipEntry(entries)) return true;
+  let total = 0;
+  let hasPrefix = false;
+  for (const [bytes, , prefix] of entries.values()) {
+    total += bytes.length;
+    hasPrefix ||= prefix !== undefined;
+  }
+  return hasPrefix && total > ZIP_STEP_BYTES;
 }
 
 /**
@@ -178,17 +197,21 @@ function zipEntry(bytes: Uint8Array, level: 0 | 6): PcadZipEntry {
  */
 export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint8Array {
   // 1MiB を超える項目は保存 Worker と同じ区切りで圧縮する(`zipSteps.ts`。取消を1秒以内に効かせる)。
-  if (hasSteppedZipEntry(entries)) return zipEntriesSync(entries);
+  if (needsSteppedPcadZip(entries)) return zipEntriesSync(entries);
   const zippable: Zippable = {};
-  for (const [name, [bytes, options]] of entries) {
+  let hasPrefix = false;
+  for (const [name, [bytes, options, prefix]] of entries) {
+    hasPrefix ||= prefix !== undefined;
+    const payload = prefix === undefined ? bytes : bytes.subarray(prefix);
     Object.defineProperty(zippable, name, {
       configurable: true,
       enumerable: true,
       writable: true,
-      value: [bytes, options],
+      value: [payload, options],
     });
   }
-  return zipSync(zippable);
+  const packed = zipSync(zippable);
+  return hasPrefix ? restoreZipStoredPrefixes(entries, packed) : packed;
 }
 
 /**
@@ -198,7 +221,7 @@ export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint
 export async function zipPcadEntriesPartsAsync(entries: ReadonlyMap<string, PcadZipEntry>,
   control: ZipStepsControl = {}): Promise<Uint8Array[]> {
   control.signal?.throwIfAborted();
-  return hasSteppedZipEntry(entries) ? zipEntriesPartsAsync(entries, control) : [zipPcadEntries(entries)];
+  return needsSteppedPcadZip(entries) ? zipEntriesPartsAsync(entries, control) : [zipPcadEntries(entries)];
 }
 
 /**
@@ -254,26 +277,40 @@ export async function writeDocumentBundle(
 }
 
 /** `writeDocumentBundle` の圧縮前の項目。図面の束が項目のまま抱き込むための口。 */
-export async function documentBundleEntries(
+export function documentBundleEntries(
   bundle: DocumentBundle,
   options: WriteDocumentBundleOptions = {},
 ): Promise<PcadZipEntries> {
+  return bundleEntriesWithMeshes<never>(bundle, options, encodeImportedMeshBytes);
+}
+
+export async function bundleEntriesWithMeshes<Extra extends ZipChunkedBytes>(
+  bundle: DocumentBundle,
+  options: WriteDocumentBundleOptions,
+  encodeMesh: MeshEntryEncoder<Extra>,
+  digestAttachments: typeof attachmentsDigestOf = attachmentsDigestOf,
+): Promise<PcadZipEntries<Extra>> {
   if (bundle.kind === 'part') {
-    return pcadEntries(bundle.document, { ...options, attachments: bundle.attachments, analysisResults: bundle.analysisResults });
+    return partEntriesWithMeshes(bundle.document, { ...options, attachments: bundle.attachments, analysisResults: bundle.analysisResults }, encodeMesh);
   }
   // 現行pcadaで原本を持つのは抱き込んだ部品。保存できない原本を黙って捨てない。
   if (bundle.attachments.shapes.size + bundle.attachments.meshes.size + bundle.attachments.canvases.size > 0) {
     throw new Error('Assembly attachments must belong to an embedded part');
   }
   const library = partLibraryOfBundle(bundle);
-  return pcadaEntries(bundle.document, {
+  const pending = pcadaEntries(bundle.document, {
     ...options,
     partFiles: library.partFiles,
     parts: library.parts,
     assemblies: library.assemblies,
     partAttachments: library.attachments,
     analysisResults: bundle.analysisResults,
-  });
+  }, encodeMesh, digestAttachments);
+  const legacy = legacyAssemblyZipLayouts.get(bundle);
+  if (legacy === undefined || options.savedAt !== legacy.savedAt) return pending;
+  const entries = await pending;
+  stripLegacyAssemblyPrefixes(entries, legacy);
+  return entries;
 }
 
 export type ReadDocumentBundleResult =
@@ -286,6 +323,58 @@ export type ReadDocumentBundleResult =
     }
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
+interface LegacyAssemblyZipLayout {
+  readonly savedAt: string;
+  readonly entries: ReadonlyMap<string, { readonly length: number; readonly crc: number; readonly method: 0 | 8 }>;
+}
+
+// Only the bundle returned by the successful byte reader carries the layout. No archive bytes are retained.
+const legacyAssemblyZipLayouts = new WeakMap<DocumentBundle, LegacyAssemblyZipLayout>();
+
+function hasIsolatedTimestamp(compressed: Uint8Array, savedAt: string): boolean {
+  // The current writer starts with a byte-aligned non-final stored block through savedAt.
+  if (compressed.length < 6 || compressed[0] !== 0 || compressed[5] !== 0x7b) return false;
+  const length = compressed[1] + 256 * compressed[2];
+  const inverse = compressed[3] + 256 * compressed[4];
+  const suffix = strToU8(`\n  "savedAt": ${JSON.stringify(savedAt)}`);
+  return (length ^ inverse) === 65_535 && length >= suffix.length && 5 + length < compressed.length
+    && suffix.every((byte, index) => compressed[5 + length - suffix.length + index] === byte);
+}
+
+function rememberLegacyAssemblyZip(bytes: Uint8Array, result: ReadDocumentBundleResult): void {
+  if (!result.ok || result.bundle.kind !== 'assembly' || bytes.length > ZIP_STEP_BYTES) return;
+  try {
+    const regions = zipDirectory(bytes, IO_LIMITS.archiveEntryCount);
+    const document = regions.find(region => region.name === PCAD_DOCUMENT_ENTRY);
+    if (document?.method !== 8 || hasIsolatedTimestamp(document.compressed, result.savedAt)
+      || regions.reduce((total, region) => total + region.expandedSize, 0) > ZIP_STEP_BYTES) return;
+    legacyAssemblyZipLayouts.set(result.bundle, {
+      savedAt: result.savedAt, entries: new Map(regions.map(({ name, method, expandedSize, crc32 }) =>
+        [name, { method, length: expandedSize, crc: crc32 }])),
+    });
+  } catch (error) {
+    if (!(error instanceof ZipDirectoryError)) throw error;
+    // Compatibility metadata is optional. The primary reader already validated the file.
+  }
+}
+
+function stripLegacyAssemblyPrefixes<Extra extends ZipChunkedBytes>(
+  entries: PcadZipEntries<Extra>, layout: LegacyAssemblyZipLayout,
+): void {
+  if (entries.size !== layout.entries.size) return;
+  const original = layout.entries.entries();
+  for (const [name, [bytes, options]] of entries) {
+    const step = original.next();
+    if (step.done === true || step.value[0] !== name || !(bytes instanceof Uint8Array)) return;
+    const expected = step.value[1];
+    if (expected.method !== (options.level === 0 ? 0 : 8) || expected.length !== bytes.length
+      || expected.crc !== zipCrc32(bytes)) return;
+  }
+  for (const [name, [bytes, options, prefix]] of entries) {
+    if (prefix !== undefined) entries.set(name, [bytes, options]);
+  }
+}
+
 /** 種別を明示して既存の読み手を通す。未来版や欠損の理由は既存の値のまま返す。 */
 export async function readDocumentBundle(
   bytes: Uint8Array,
@@ -296,7 +385,9 @@ export async function readDocumentBundle(
   // 待ちの段数を以前と同じに保つため、ダイジェストを待つ所だけをこの関数の中に置く。
   const result = await readPcadaFile(bytes, options);
   if (!result.ok) return result;
-  return assemblyBundleOf(result, await partFilesWithDigests(result));
+  const read = assemblyBundleOf(result, await partFilesWithDigests(result));
+  rememberLegacyAssemblyZip(bytes, read);
+  return read;
 }
 
 /**
@@ -411,7 +502,7 @@ const MESH_LITTLE_ENDIAN = true;
  * ここでは**位置の長さを正**として法線を同じ長さとして扱い、足りない分は 0 で埋める
  * ——のではなく、**そろっていないものは受け取らない**(`null` を返す)。
  */
-export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | null {
+function meshCounts(mesh: ImportedMeshBytes): { readonly vertexCount: number; readonly triangleCount: number } | null {
   const vertexCount = mesh.positions.length / 3;
   const triangleCount = mesh.indices.length / 3;
   if (!Number.isInteger(vertexCount) || !Number.isInteger(triangleCount)) {
@@ -420,9 +511,16 @@ export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | n
   if (mesh.normals.length !== mesh.positions.length) {
     return null;
   }
-  const bytes = new Uint8Array(
-    MESH_HEADER_BYTES + mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength,
-  );
+  return { vertexCount, triangleCount };
+}
+
+export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | null {
+  const counts = importedMeshCounts(mesh);
+  if (counts === null) {
+    return null;
+  }
+  const { vertexCount, triangleCount } = counts;
+  const bytes = new Uint8Array(counts.byteLength);
   bytes.set(MESH_MAGIC, 0);
   const view = new DataView(bytes.buffer);
   view.setUint32(4, vertexCount, MESH_LITTLE_ENDIAN);
@@ -443,6 +541,84 @@ export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | n
   return bytes;
 }
 
+/** 三角形の頂点の数・三角形の数と、`meshes/<id>.bin` の全体の長さ。そろっていない三角形は `null`(書き手は項目ごと省く)。 */
+function importedMeshCounts(mesh: ImportedMeshBytes): { vertexCount: number; triangleCount: number; byteLength: number } | null {
+  const counts = meshCounts(mesh);
+  if (counts === null) return null;
+  return { ...counts,
+    byteLength: MESH_HEADER_BYTES + mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength };
+}
+
+/** 区切りへ順に書く位置(A-10)。区切りは 1 つずつ、書く値が来た時に確保する。 */
+interface MeshChunkCursor {
+  readonly total: number;
+  readonly chunks: Uint8Array[];
+  view: DataView;
+  at: number;
+  allocated: number;
+}
+
+function nextMeshChunk(cursor: MeshChunkCursor): void {
+  const chunk = new Uint8Array(Math.min(ZIP_STEP_BYTES, cursor.total - cursor.allocated));
+  cursor.chunks.push(chunk);
+  cursor.view = new DataView(chunk.buffer);
+  cursor.at = 0;
+  cursor.allocated += chunk.length;
+}
+
+/** 位置・法線(float32)か添字(uint32)の成分を、`encodeImportedMeshBytes` と同じ DataView の書き方で区切りへ続けて書く。 */
+function writeMeshComponent(cursor: MeshChunkCursor, values: Float32Array | Uint32Array): void {
+  let from = 0;
+  while (from < values.length) {
+    if (cursor.at === cursor.view.byteLength) nextMeshChunk(cursor);
+    const part = values.subarray(from, from + Math.min(values.length - from, (cursor.view.byteLength - cursor.at) / 4));
+    let at = cursor.at;
+    if (part instanceof Float32Array) {
+      for (const value of part) { cursor.view.setFloat32(at, value, MESH_LITTLE_ENDIAN); at += 4; }
+    } else {
+      for (const value of part) { cursor.view.setUint32(at, value, MESH_LITTLE_ENDIAN); at += 4; }
+    }
+    cursor.at = at;
+    from += part.length;
+  }
+}
+
+/**
+ * 保存 Worker の持ち主の道で、三角形を `meshes/<id>.bin` の中身にする(A-10)。バイトは `encodeImportedMeshBytes` と同じで、
+ * 項目の先頭から 1MiB ごとの独立した領域(最後だけ短い)に分けて書く。1MiB と全部の欄は 4 バイトの倍数なので、
+ * 1 つの値が区切りをまたがない。成分(位置・法線・添字)を書き終えるたびに `onComponentWritten` を呼ぶ
+ * (呼び出し側は、その成分の領域をほかに読む物が無ければ、ここで手放せる)。そろっていない三角形は `null`。
+ */
+function encodeImportedMeshChunks(mesh: ImportedMeshBytes,
+  onComponentWritten: ((component: Float32Array | Uint32Array) => void) | undefined): ZipChunkedBytes | null {
+  const counts = importedMeshCounts(mesh);
+  if (counts === null) {
+    return null;
+  }
+  const cursor: MeshChunkCursor = { total: counts.byteLength, chunks: [], view: new DataView(new ArrayBuffer(0)), at: 0, allocated: 0 };
+  nextMeshChunk(cursor);
+  new Uint8Array(cursor.view.buffer).set(MESH_MAGIC, 0);
+  cursor.view.setUint32(4, counts.vertexCount, MESH_LITTLE_ENDIAN);
+  cursor.view.setUint32(8, counts.triangleCount, MESH_LITTLE_ENDIAN);
+  cursor.at = MESH_HEADER_BYTES;
+  for (const component of [mesh.positions, mesh.normals, mesh.indices]) {
+    writeMeshComponent(cursor, component);
+    onComponentWritten?.(component);
+  }
+  if (cursor.allocated !== cursor.total || cursor.at !== cursor.view.byteLength) {
+    throw new Error('三角形の区切りの長さが合いません。');
+  }
+  return { length: cursor.total, pending: cursor.chunks };
+}
+
+/** 持ち主の道で、1MiB を超える三角形だけを区切りの並びにする(1MiB 以下は今の道と同じ 1 本のバイト列)。 */
+export function ownedMeshEntryBytes(mesh: ImportedMeshBytes,
+  onComponentWritten: ((component: Float32Array | Uint32Array) => void) | undefined): Uint8Array | ZipChunkedBytes | null {
+  const counts = importedMeshCounts(mesh);
+  return counts !== null && counts.byteLength > ZIP_STEP_BYTES ? encodeImportedMeshChunks(mesh, onComponentWritten)
+    : encodeImportedMeshBytes(mesh);
+}
+
 /**
  * `meshes/<id>.bin` のバイト列から三角形を取り出す。読めなければ `null`
  * (**例外を投げない**。NFR-RE-1)。
@@ -451,6 +627,10 @@ export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | n
  * 範囲内であることを確かめる。壊れた値を描画・計測へ渡さないため、1 つでも違えば
  * 添付全体を `null` で断る。
  */
+function meshVertexIndexValid(value: number, vertexCount: number): boolean {
+  return Number.isInteger(value) && value < vertexCount;
+}
+
 export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | null {
   const header = inspectImportedMeshBytes(bytes);
   if (
@@ -482,7 +662,7 @@ export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | 
   }
   for (let index = 0; index < indices.length; index += 1) {
     const value = view.getUint32(offset, MESH_LITTLE_ENDIAN);
-    if (!Number.isInteger(value) || value >= vertexCount) {
+    if (!meshVertexIndexValid(value, vertexCount)) {
       return null;
     }
     indices[index] = value;
@@ -502,10 +682,15 @@ function decodeOwnedArchiveMesh(bytes: Uint8Array): ImportedMeshBytes | null {
   const positions = new Float32Array(bytes.buffer, MESH_HEADER_BYTES, count);
   const normals = new Float32Array(bytes.buffer, MESH_HEADER_BYTES + count * 4, count);
   const indices = new Uint32Array(bytes.buffer, MESH_HEADER_BYTES + count * 8, indexCount);
-  for (const value of positions) if (!Number.isFinite(value)) return null;
-  for (const value of normals) if (!Number.isFinite(value)) return null;
-  for (const value of indices) if (value >= header.vertexCount) return null;
-  return { positions, normals, indices };
+  const mesh = { positions, normals, indices };
+  return meshValuesValid(mesh, header.vertexCount) ? mesh : null;
+}
+
+function meshValuesValid(mesh: ImportedMeshBytes, vertexCount: number): boolean {
+  for (const value of mesh.positions) if (!Number.isFinite(value)) return false;
+  for (const value of mesh.normals) if (!Number.isFinite(value)) return false;
+  for (const value of mesh.indices) if (!meshVertexIndexValid(value, vertexCount)) return false;
+  return true;
 }
 
 interface ImportedMeshHeader {
@@ -572,30 +757,37 @@ export interface WritePcadFileOptions extends ResultWriteOptions {
  * 中身を組み立てられなかった三角形は**黙って落とす**(書き出しは断れないため。
  * 呼び出し側が壊れた配列を渡さない限り起きない)。
  */
-function appendAttachments(
-  entries: PcadZipEntries,
+function attachmentEntryName(kind: keyof EmbeddedPartAttachments, ref: string): string {
+  if (kind === 'shapes') return `${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`;
+  if (kind === 'meshes') return `${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`;
+  return `${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`;
+}
+
+function appendAttachments<Extra extends ZipChunkedBytes>(
+  entries: PcadZipEntries<Extra>,
   attachments: PcadAttachments,
+  encodeMesh: MeshEntryEncoder<Extra>,
   entryPrefix = '',
 ): void {
   for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
     entries.set(
-      `${entryPrefix}${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`,
+      entryPrefix + attachmentEntryName('shapes', ref),
       zipEntry(bytes, ATTACHMENT_BINARY_LEVEL),
     );
   }
   for (const [ref, mesh] of sortedEntries(attachments.meshes)) {
-    const bytes = encodeImportedMeshBytes(mesh);
+    const bytes = encodeMesh(mesh);
     if (bytes === null) {
       continue;
     }
     entries.set(
-      `${entryPrefix}${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`,
+      entryPrefix + attachmentEntryName('meshes', ref),
       zipEntry(bytes, ATTACHMENT_BINARY_LEVEL),
     );
   }
   for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
     entries.set(
-      `${entryPrefix}${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`,
+      entryPrefix + attachmentEntryName('canvases', ref),
       zipEntry(bytes, ATTACHMENT_IMAGE_LEVEL),
     );
   }
@@ -626,20 +818,25 @@ export function writePcadFile(
 
 /** `writePcadFile` の圧縮前の項目(並びと圧縮の指定は `writePcadFile` の説明のとおり)。 */
 export function pcadEntries(document: PartDocument, options: WritePcadFileOptions): PcadZipEntries {
+  return partEntriesWithMeshes<never>(document, options, encodeImportedMeshBytes);
+}
+
+export function partEntriesWithMeshes<Extra extends ZipChunkedBytes>(document: PartDocument, options: WritePcadFileOptions,
+  encodeMesh: MeshEntryEncoder<Extra>): PcadZipEntries<Extra> {
   const text = serializeDocument(document, {
     savedAt: options.savedAt,
     kind: options.kind,
     lengthUnit: options.lengthUnit,
     toolDefaults: options.toolDefaults,
   });
-  const entries: PcadZipEntries = new Map([
+  const entries: PcadZipEntries<Extra> = new Map([
     [PCAD_DOCUMENT_ENTRY, zipEntry(strToU8(text), DOCUMENT_LEVEL)],
   ]);
   if (options.thumbnailPng !== undefined) {
     entries.set(PCAD_THUMBNAIL_ENTRY, zipEntry(options.thumbnailPng, THUMBNAIL_LEVEL));
   }
   if (options.attachments !== undefined) {
-    appendAttachments(entries, options.attachments);
+    appendAttachments(entries, options.attachments, encodeMesh);
   }
   if (options.kind !== PCAD_TEMPLATE_KIND) appendAnalysisResults(entries, options);
   return entries;
@@ -649,7 +846,7 @@ export function pcadEntries(document: PartDocument, options: WritePcadFileOption
  * 読み込めなかった理由。`notZip`・`missingDocument`・`subAssemblyCycle`・`subAssemblyDepth` はこの層で見つけたもの、
  * それ以外は `document.json` の読み手(documentJson.ts)の理由をそのまま通したもの。
  */
-export type ReadPcadFileErrorCode = ParseErrorCode | 'notZip' | 'missingDocument' | 'subAssemblyCycle' | 'subAssemblyDepth';
+export type ReadPcadFileErrorCode = ParseErrorCode | 'notZip' | 'archiveExpansionLimit' | 'missingDocument' | 'subAssemblyCycle' | 'subAssemblyDepth';
 
 /** 読み込めなかった理由。`message` はそのまま利用者へ見せる日本語(NFR-UX-5)。 */
 export interface ReadPcadFileError {
@@ -717,10 +914,11 @@ function attachmentRef(name: string, prefix: string, suffix: string): string | n
     return null;
   }
   const ref = name.slice(prefix.length, name.length - suffix.length);
-  if (ref.length === 0 || ref.includes('/')) {
-    return null;
-  }
-  return ref;
+  return isAttachmentRef(ref) ? ref : null;
+}
+
+function isAttachmentRef(ref: string): boolean {
+  return ref.length > 0 && !ref.includes('/');
 }
 
 function analysisIdOf(name: string): string | null {
@@ -739,18 +937,23 @@ function resultEntryLimit(name: string): number {
   return binaryIdOf(name) === null ? IO_LIMITS.archiveEntryExpandedBytes : SOLID_RESULT_MAX_BYTES;
 }
 
-function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | PcadZipEntry>):
-  Generator<readonly [string, Uint8Array, boolean]> {
+function isAssemblyDocumentEntry(name: string): boolean {
+  return name === PCAD_DOCUMENT_ENTRY || attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX) !== null;
+}
+
+function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | ZipStepEntry<SaveEntryBytes>>):
+  Generator<readonly [string, Uint8Array | readonly (Uint8Array | undefined)[], boolean]> {
   for (const [name, entry] of entries) {
-    const document = name === PCAD_DOCUMENT_ENTRY || attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX) !== null;
+    const document = isAssemblyDocumentEntry(name);
     if (name === PCAD_THUMBNAIL_ENTRY || isResultEntry(name)) continue;
     if (isPcadArchiveEntry(name) || name.startsWith(PCAD_PART_ENTRY_PREFIX)) {
-      yield [name, ArrayBuffer.isView(entry) ? entry : entry[0], document];
+      const bytes = ArrayBuffer.isView(entry) ? entry : entry[0];
+      yield [name, bytes instanceof Uint8Array ? bytes : bytes.pending, document];
     }
   }
 }
 
-function appendAnalysisResults(entries: PcadZipEntries, options: ResultWriteOptions & SavedResultFields): void {
+function appendAnalysisResults(entries: PcadZipEntries<ZipChunkedBytes>, options: ResultWriteOptions & SavedResultFields): void {
   const { analysisResults: results, onAnalysisResultIssue } = options;
   if (results === undefined || results.size === 0) return;
   let binding: string;
@@ -761,7 +964,7 @@ function appendAnalysisResults(entries: PcadZipEntries, options: ResultWriteOpti
     return;
   }
   let remaining = IO_LIMITS.archiveTotalExpandedBytes;
-  for (const [bytes] of entries.values()) remaining -= bytes.byteLength;
+  for (const [bytes] of entries.values()) remaining -= bytes.length;
   for (const [id, saved] of sortedEntries(results)) {
     const stem = PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + id;
     const name = stem + PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX;
@@ -914,22 +1117,32 @@ function collectAttachments(
  */
 function findMissingAttachment(
   document: PartDocument,
-  attachments: PcadAttachments,
+  attachments: EmbeddedPartAttachments,
 ): string | null {
-  for (const feature of document.solids) {
-    if (feature.kind === 'importedSolid' && !attachments.shapes.has(feature.shapeRef)) {
-      return `${PCAD_SHAPE_ENTRY_PREFIX}${feature.shapeRef}${PCAD_SHAPE_ENTRY_SUFFIX}`;
-    }
-    if (feature.kind === 'importedMesh' && !attachments.meshes.has(feature.meshRef)) {
-      return `${PCAD_MESH_ENTRY_PREFIX}${feature.meshRef}${PCAD_MESH_ENTRY_SUFFIX}`;
-    }
-  }
-  for (const canvas of document.canvases) {
-    if (!attachments.canvases.has(canvas.imageId)) {
-      return `${PCAD_CANVAS_ENTRY_PREFIX}${canvas.imageId}${PCAD_CANVAS_ENTRY_SUFFIX}`;
-    }
+  for (const [kind, ref] of partAttachmentReferences(document)) {
+    if (!attachments[kind].has(ref)) return attachmentEntryName(kind, ref);
   }
   return null;
+}
+
+/** 組立の履歴へ積む前に、同じ保存名・復号条件で添付が読めることを確かめる。 */
+export function canPersistPartAttachments(document: PartDocument, attachments: EmbeddedPartAttachments, partRef: string): boolean {
+  if (findMissingAttachment(document, attachments) !== null || !isAttachmentRef(partRef)) return false;
+  for (const kind of ['shapes', 'meshes', 'canvases'] as const) {
+    for (const ref of attachments[kind].keys()) {
+      const name = `${PCAD_PART_ENTRY_PREFIX}${partRef}/${attachmentEntryName(kind, ref)}`;
+      if (!isAttachmentRef(ref) || !isSafeZipEntryName(name) || decodeUtf8(strToU8(name)) !== name) return false;
+    }
+  }
+  let remainingMeshBytes = IO_LIMITS.meshAllocationBytes;
+  for (const mesh of attachments.meshes.values()) {
+    const counts = meshCounts(mesh);
+    if (counts === null) return false;
+    const bytes = meshAllocationByteLength(counts.vertexCount, counts.triangleCount);
+    if (bytes === null || bytes > remainingMeshBytes || !meshValuesValid(mesh, counts.vertexCount)) return false;
+    remainingMeshBytes -= bytes;
+  }
+  return true;
 }
 
 /**
@@ -947,17 +1160,18 @@ export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {
   return readPcadEntriesInternal(archive.entries, true, archive.omittedOptional === true);
 }
 
-/**
- * 大きすぎるものは上限の理由を、それ以外(ZIP でない・壊れている)は共通の文言を返す。
- * 3 つの読み手(`.pcad`・`.pcada`・`.pcadd`)で同じ判定にする。
- */
-function archiveFailureMessage(error: ArchiveReadError): string {
+function archiveFailureCode(error: ArchiveReadError): 'notZip' | 'archiveExpansionLimit' {
   return error.kind === 'compressedInput' ||
     error.kind === 'entryCount' ||
     error.kind === 'entryExpanded' ||
     error.kind === 'totalExpanded'
-    ? error.reason
-    : NOT_ZIP_MESSAGE;
+    ? 'archiveExpansionLimit'
+    : 'notZip';
+}
+
+/** 全体バイトの読み手は従来のエラーコードと上限の案内を保つ。 */
+function archiveFailureMessage(error: ArchiveReadError): string {
+  return archiveFailureCode(error) === 'archiveExpansionLimit' ? error.reason : NOT_ZIP_MESSAGE;
 }
 
 /**
@@ -1053,6 +1267,21 @@ export interface WritePcadaFileOptions extends ResultWriteOptions {
   readonly partAttachments?: ReadonlyMap<string, PcadAttachments>;
 }
 
+/** 組立封筒の先頭にある通常の保存時刻を、後ろの圧縮率から独立させる。 */
+export function assemblyEnvelopeStoredPrefixLength(name: string, bytes: Uint8Array): number | undefined {
+  if (!isAssemblyDocumentEntry(name)) return undefined;
+  // 文書本体より前の5行を、バイト位置を保ったまま照合する。
+  const header = String.fromCharCode(...bytes.subarray(0, 256));
+  const prefix = /^(?:[^\n]*\n){4} {2}"savedAt": "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"(?=,\n)/u.exec(header)?.[0];
+  return prefix?.length;
+}
+
+function assemblyEnvelopeEntry(name: string, text: string): PcadZipEntry {
+  const entry = zipEntry(strToU8(text), DOCUMENT_LEVEL);
+  const prefixLength = assemblyEnvelopeStoredPrefixLength(name, entry[0]);
+  return prefixLength === undefined ? entry : [entry[0], entry[1], prefixLength];
+}
+
 /**
  * 抱き込んだ部品文書を ZIP のエントリへ並べる。**名前の順に並べる**(表の並び順は作った側の
  * 都合で変わるので、同じ中身から同じバイト列ができる約束を守るために毎回そろえる)。
@@ -1070,10 +1299,8 @@ function appendParts(
 ): void {
   for (const [ref, document] of sortedEntries(parts)) {
     const text = serializeDocument(document, { savedAt });
-    entries.set(
-      `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`,
-      zipEntry(strToU8(text), DOCUMENT_LEVEL),
-    );
+    const name = `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`;
+    entries.set(name, assemblyEnvelopeEntry(name, text));
   }
 }
 
@@ -1085,27 +1312,73 @@ function appendAssemblies(
 ): void {
   for (const [ref, document] of sortedEntries(assemblies)) {
     const text = writeAssemblyDocument(document, { savedAt, partFiles: [] });
-    entries.set(
-      `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`,
-      zipEntry(strToU8(text), DOCUMENT_LEVEL),
-    );
+    const name = `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`;
+    entries.set(name, assemblyEnvelopeEntry(name, text));
   }
 }
 
+/** 親の保存と同じ名前空間で、ZIP の展開量と復号時のメッシュ確保量を照合する。 */
+export async function canPersistAssemblyPartEdit(bundle: AssemblyDocumentBundle): Promise<boolean> {
+  const library = partLibraryOfBundle(bundle);
+  const savedAt = '1970-01-01T00:00:00.000Z';
+  const lengths = new Map<string, number>();
+  const documents = pcadaDocumentEntries(bundle.document, { ...library, savedAt });
+  for (const [name, [bytes]] of documents) lengths.set(name, bytes.byteLength);
+  let meshBytes = 0;
+  for (const [ref, document] of library.parts) {
+    const attachments = library.attachments.get(ref);
+    if (!isAttachmentRef(ref) || library.assemblies?.has(ref) || attachments === undefined
+      || findMissingAttachment(document, attachments) !== null) return false;
+    for (const table of [attachments.shapes, attachments.meshes, attachments.canvases]) {
+      for (const key of table.keys()) if (!isAttachmentRef(key)) return false;
+    }
+    const prefix = `${PCAD_PART_ENTRY_PREFIX}${ref}/`;
+    // The writer emits a digest even for an empty attachment table.
+    lengths.set(prefix + PCAD_PART_ATTACHMENTS_DIGEST_ENTRY, 64);
+    for (const [key, bytes] of attachments.shapes) lengths.set(prefix + attachmentEntryName('shapes', key), bytes.byteLength);
+    for (const [key, bytes] of attachments.canvases) lengths.set(prefix + attachmentEntryName('canvases', key), bytes.byteLength);
+    for (const [key, mesh] of attachments.meshes) {
+      const counts = meshCounts(mesh);
+      if (counts === null) return false;
+      const bytes = meshAllocationByteLength(counts.vertexCount, counts.triangleCount);
+      if (bytes === null || !meshValuesValid(mesh, counts.vertexCount)) return false;
+      meshBytes += bytes;
+      if (meshBytes > IO_LIMITS.meshAllocationBytes) return false;
+      lengths.set(prefix + attachmentEntryName('meshes', key), MESH_HEADER_BYTES + bytes);
+    }
+  }
+  if (lengths.size > IO_LIMITS.archiveEntryCount) return false;
+  let expanded = 0;
+  for (const [name, bytes] of lengths) {
+    const encoded = strToU8(name);
+    if (!isSafeZipEntryName(name) || encoded.byteLength > 65_535 || decodeUtf8(encoded) !== name) return false;
+    if (bytes > IO_LIMITS.archiveEntryExpandedBytes) return false;
+    expanded += bytes;
+    if (expanded > IO_LIMITS.archiveTotalExpandedBytes) return false;
+  }
+  // savedAt has the same width as the real save timestamp. Its stored block contributes the same bytes
+  // to the length and the following compressed payload starts with an independent dictionary.
+  await appendPartAttachments(documents, library.attachments, encodeImportedMeshBytes);
+  const parts = await zipPcadEntriesPartsAsync(documents);
+  return parts.reduce((total, bytes) => total + bytes.byteLength, 0) <= IO_LIMITS.archiveCompressedBytes;
+}
+
 /** 部品添付を一時表へ集め、完全なエントリ名の順に本表へ足す。 */
-async function appendPartAttachments(
-  entries: PcadZipEntries,
+async function appendPartAttachments<Extra extends ZipChunkedBytes>(
+  entries: PcadZipEntries<Extra>,
   partAttachments: ReadonlyMap<string, PcadAttachments>,
+  encodeMesh: MeshEntryEncoder<Extra>,
+  digestAttachments: typeof attachmentsDigestOf = attachmentsDigestOf,
 ): Promise<void> {
-  const staged: PcadZipEntries = new Map();
+  const staged: PcadZipEntries<Extra> = new Map();
   for (const [ref, attachments] of sortedEntries(partAttachments)) {
     const prefix = `${PCAD_PART_ENTRY_PREFIX}${ref}/`;
-    const digest = await attachmentsDigestOf(attachments);
+    const digest = await digestAttachments(attachments);
     staged.set(
       `${prefix}${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`,
       zipEntry(strToU8(digest), DOCUMENT_LEVEL),
     );
-    appendAttachments(staged, attachments, prefix);
+    appendAttachments(staged, attachments, encodeMesh, prefix);
   }
   for (const name of [...staged.keys()].sort()) {
     const entry = staged.get(name);
@@ -1129,23 +1402,46 @@ export async function writePcadaFile(
   // 待つのは添付のダイジェストだけにする(以前と同じ待ちの段数で書き終える)。
   const entries = pcadaDocumentEntries(document, options);
   if (options.partAttachments !== undefined) {
-    await appendPartAttachments(entries, options.partAttachments);
+    await appendPartAttachments(entries, options.partAttachments, encodeImportedMeshBytes);
   }
-  appendAnalysisResults(entries, options);
+  finishAssemblySaveEntries(entries, options);
   return zipPcadEntries(entries);
 }
 
 /** `writePcadaFile` の圧縮前の項目(並びと圧縮の指定は `writePcadaFile` の説明のとおり)。 */
-async function pcadaEntries(
+async function pcadaEntries<Extra extends ZipChunkedBytes>(
   document: AssemblyDocument,
   options: WritePcadaFileOptions,
-): Promise<PcadZipEntries> {
-  const entries = pcadaDocumentEntries(document, options);
+  encodeMesh: MeshEntryEncoder<Extra>,
+  digestAttachments: typeof attachmentsDigestOf,
+): Promise<PcadZipEntries<Extra>> {
+  const entries: PcadZipEntries<Extra> = pcadaDocumentEntries(document, options);
   if (options.partAttachments !== undefined) {
-    await appendPartAttachments(entries, options.partAttachments);
+    await appendPartAttachments(entries, options.partAttachments, encodeMesh, digestAttachments);
+  }
+  finishAssemblySaveEntries(entries, options);
+  return entries;
+}
+
+function finishAssemblySaveEntries(entries: PcadZipEntries<ZipChunkedBytes>, options: WritePcadaFileOptions): void {
+  const thumbnail = entries.get(PCAD_THUMBNAIL_ENTRY)?.[0];
+  if (thumbnail !== undefined && (entries.size > IO_LIMITS.archiveEntryCount
+    || thumbnail.length > IO_LIMITS.archiveEntryExpandedBytes
+    || [...entries.values()].reduce((total, [bytes]) => total + bytes.length, 0) > IO_LIMITS.archiveTotalExpandedBytes)) {
+    entries.delete(PCAD_THUMBNAIL_ENTRY);
   }
   appendAnalysisResults(entries, options);
-  return entries;
+}
+
+/** 圧縮後に予算を超えた場合、保存できる原本を残して再導出できる項目を外す。 */
+export function dropAssemblySaveExtras(entries: PcadZipEntries<ZipChunkedBytes>, report?: ResultWriteOptions['onAnalysisResultIssue']): boolean {
+  let removed = entries.delete(PCAD_THUMBNAIL_ENTRY);
+  for (const name of entries.keys()) {
+    const id = analysisIdOf(name);
+    if (id !== null) report?.(id, 'resultTooLarge');
+    if (isResultEntry(name)) removed = entries.delete(name) || removed;
+  }
+  return removed;
 }
 
 /** アセンブリの封筒・サムネイル・抱き込んだ文書の項目(添付の項目の前まで)。 */
@@ -1157,7 +1453,7 @@ function pcadaDocumentEntries(
   const savedAt = options.savedAt ?? new Date().toISOString();
   const text = writeAssemblyDocument(document, { savedAt, partFiles: options.partFiles });
   const entries: PcadZipEntries = new Map([
-    [PCAD_DOCUMENT_ENTRY, zipEntry(strToU8(text), DOCUMENT_LEVEL)],
+    [PCAD_DOCUMENT_ENTRY, assemblyEnvelopeEntry(PCAD_DOCUMENT_ENTRY, text)],
   ]);
   if (options.thumbnailPng !== undefined) {
     entries.set(PCAD_THUMBNAIL_ENTRY, zipEntry(options.thumbnailPng, THUMBNAIL_LEVEL));
@@ -1535,7 +1831,12 @@ export function readPcaddFile(bytes: Uint8Array, options: ReadPcadFileOptions = 
   if (!archive.ok) {
     return fail('notZip', archiveFailureMessage(archive.error));
   }
-  const documentBytes = findEntry(archive.entries, PCAD_DOCUMENT_ENTRY);
+  return readPcaddEntries(archive.entries);
+}
+
+/** 已にZIPの検査を終えて取り出した図面の封筒と参照元を読む。 */
+export function readPcaddEntries(entries: ReadonlyMap<string, Uint8Array>): ReadPcaddFileResult {
+  const documentBytes = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentBytes === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
   }
@@ -1545,7 +1846,7 @@ export function readPcaddFile(bytes: Uint8Array, options: ReadPcadFileOptions = 
   if (!drawing.ok) return { ok: false, error: drawing.error };
 
   const sourceEntry = `${PCAD_SOURCE_ENTRY_PREFIX}${drawing.document.source.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`;
-  const sourceBytes = findEntry(archive.entries, sourceEntry);
+  const sourceBytes = findEntry(entries, sourceEntry);
   if (sourceBytes === null) {
     return fail(
       'missingField',
@@ -1572,7 +1873,7 @@ export function readPcaddFile(bytes: Uint8Array, options: ReadPcadFileOptions = 
       `抱き込んだ文書を読めませんでした(${sourceEntry})。`,
     );
   }
-  const thumbnail = findEntry(archive.entries, PCAD_THUMBNAIL_ENTRY);
+  const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
   return thumbnail === null
     ? { ok: true, document: drawing.document, source, savedAt: drawing.savedAt }
     : {
@@ -1582,4 +1883,32 @@ export function readPcaddFile(bytes: Uint8Array, options: ReadPcadFileOptions = 
         savedAt: drawing.savedAt,
         thumbnailPng: thumbnail,
       };
+}
+
+
+export function nativeArchiveFailure(error: ArchiveReadError): { readonly ok: false; readonly error: ReadPcadFileError } {
+  const code = archiveFailureCode(error);
+  return { ok: false, error: { code, message: code === 'archiveExpansionLimit' ? error.reason : NOT_ZIP_MESSAGE } };
+}
+
+export async function readPcadFromSource(source: ArchiveReadSource): Promise<ReadPcadFileResult> {
+  const opened = await openArchiveSource(source);
+  if (!opened.ok) return nativeArchiveFailure(opened.error);
+  const archive = await opened.archive.extract({
+    shouldExtract: isPcadArchiveEntry, optionalEntry: isResultEntry, optionalEntryLimit: resultEntryLimit,
+  });
+  if (!archive.ok) return nativeArchiveFailure(archive.error);
+  return readPcadEntriesInternal(archive.entries, true, archive.omittedOptional === true);
+}
+
+export async function readAssemblyFromSource(source: ArchiveReadSource): Promise<ReadDocumentBundleResult> {
+  const opened = await openArchiveSource(source);
+  if (!opened.ok) return nativeArchiveFailure(opened.error);
+  const archive = await opened.archive.extract({
+    shouldExtract: isPcadaArchiveEntry, optionalEntry: isResultEntry, optionalEntryLimit: resultEntryLimit,
+  });
+  if (!archive.ok) return nativeArchiveFailure(archive.error);
+  const result = await readPcadaEntries(archive.entries, archive.omittedOptional === true);
+  if (!result.ok) return result;
+  return assemblyBundleOf(result, await partFilesWithDigests(result));
 }

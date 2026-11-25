@@ -1,0 +1,7 @@
+{
+  ".d.ts": "export declare class IGESControl_Reader extends XSControl_Reader {\n  FileUnitFlag(): Standard_Integer;\n  FileUnitValue(): Standard_Real;\n  FileScale(): Standard_Real;\n  delete(): void;\n}\n\n\n",
+  "kind": "class",
+  "exports": [
+    "IGESControl_Reader"
+  ]
+}

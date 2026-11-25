@@ -772,24 +772,10 @@ function sheetConvertParts(document: PartDocument, feature: SheetConvertFeature)
     toggles: [], choices: [], references: [bodyReference(document, 'propertyPanel.targetBody', feature.sourceFeatureId)], subShapeCounts: [] };
 }
 
-/** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
-export function summarizeSolid(
-  document: PartDocument,
-  feature: SolidFeature,
-  errors: readonly PartRecomputeError[] = [],
-  cylindricalLocationIndex?: number,
-): SolidSummary {
-  const kind = solidKindOf(feature);
-  const base = {
-    featureId: feature.id,
-    name: feature.name,
-    kind,
-    kindLabelKey: SOLID_KIND_LABEL_KEYS[kind],
-    suppressed: feature.suppressed,
-    consumed: consumedIds(document, errors).has(feature.id),
-    axis: axisSummary(document, feature),
-  };
+type SolidSummaryBase = Pick<SolidSummary, "featureId" | "name" | "kind" | "kindLabelKey" | "suppressed" | "consumed" | "axis">;
 
+function summarizeSheetSolid(document: PartDocument, feature: Extract<SolidFeature,
+  { kind: 'sheetRelief' | 'sheetConvert' | 'sheetBend' | 'sheetBase' | 'sheetFlange' }>, base: SolidSummaryBase): SolidSummary {
   switch (feature.kind) {
     case 'sheetRelief': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
       toggles: [], choices: [{ key: 'sheetReliefShape', labelKey: 'sheetMetal.reliefShape', value: feature.shape, presentation: 'menu',
@@ -807,6 +793,12 @@ export function summarizeSolid(
         options: [{ value: 'tangent', labelKey: 'sheetMetal.basisTangent' }, { value: 'outer', labelKey: 'sheetMetal.basisOuter' }, { value: 'inner', labelKey: 'sheetMetal.basisInner' }] }] : [],
       references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
         ...(feature.profile === null ? [] : [feature.profile.face, ...feature.profile.holes].map((ref) => profileReference(document, ref)))], subShapeCounts: [] };
+  }
+}
+
+function summarizeProfileAndBooleanSolid(document: PartDocument, feature: Extract<SolidFeature,
+  { kind: 'extrude' | 'revolve' | 'sew' | 'boolean' }>, base: SolidSummaryBase): SolidSummary {
+  switch (feature.kind) {
     case 'extrude': {
       /*
         押し出し(FR-401、FR-415、FR-416)。**省略できる 5 欄は必ず
@@ -884,6 +876,12 @@ export function summarizeSolid(
         ],
         subShapeCounts: [],
       };
+  }
+}
+
+function summarizeMachinedSolid(document: PartDocument, feature: Extract<SolidFeature,
+  { kind: 'hole' | 'threadHole' | 'fillet' | 'chamfer' }>, base: SolidSummaryBase, cylindricalLocationIndex: number | undefined): SolidSummary {
+  switch (feature.kind) {
     case 'hole':
       // 入口(ざぐり・皿もみ、FR-422)は **`holeEntryOf` を通して**読む(既定は「広げない」)。
       return {
@@ -941,6 +939,12 @@ export function summarizeSolid(
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedEdges', count: feature.targets.length }],
       };
+  }
+}
+
+function summarizePatternAndFormedSolid(document: PartDocument, feature: Extract<SolidFeature,
+  { kind: 'pattern' | 'spring' | 'primitive' | 'ruled' | 'loft' | 'draft' }>, base: SolidSummaryBase): SolidSummary {
+  switch (feature.kind) {
     case 'pattern': {
       const { placement } = feature;
       if (placement.kind === 'linear') {
@@ -1071,6 +1075,12 @@ export function summarizeSolid(
           { labelKey: 'propertyPanel.draftFaces', count: feature.faces.length },
         ],
       };
+  }
+}
+
+function summarizeDirectSolidEdit(document: PartDocument, feature: Extract<SolidFeature,
+  { kind: 'holeTranslate' | 'faceRotate' | 'faceOffset' }>, base: SolidSummaryBase): SolidSummary {
+  switch (feature.kind) {
     case 'holeTranslate':
     case 'faceRotate':
       return { ...base, fields: feature.kind === 'holeTranslate'
@@ -1090,6 +1100,38 @@ export function summarizeSolid(
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
       };
+  }
+}
+
+/** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
+export function summarizeSolid(
+  document: PartDocument,
+  feature: SolidFeature,
+  errors: readonly PartRecomputeError[] = [],
+  cylindricalLocationIndex?: number,
+): SolidSummary {
+  const kind = solidKindOf(feature);
+  const base = {
+    featureId: feature.id,
+    name: feature.name,
+    kind,
+    kindLabelKey: SOLID_KIND_LABEL_KEYS[kind],
+    suppressed: feature.suppressed,
+    consumed: consumedIds(document, errors).has(feature.id),
+    axis: axisSummary(document, feature),
+  };
+
+  switch (feature.kind) {
+    case 'sheetRelief': case 'sheetConvert': case 'sheetBend': case 'sheetBase': case 'sheetFlange':
+      return summarizeSheetSolid(document, feature, base);
+    case 'extrude': case 'revolve': case 'sew': case 'boolean':
+      return summarizeProfileAndBooleanSolid(document, feature, base);
+    case 'hole': case 'threadHole': case 'fillet': case 'chamfer':
+      return summarizeMachinedSolid(document, feature, base, cylindricalLocationIndex);
+    case 'pattern': case 'spring': case 'primitive': case 'ruled': case 'loft': case 'draft':
+      return summarizePatternAndFormedSolid(document, feature, base);
+    case 'holeTranslate': case 'faceRotate': case 'faceOffset':
+      return summarizeDirectSolidEdit(document, feature, base);
     case 'mirror':
       return {
         ...base,

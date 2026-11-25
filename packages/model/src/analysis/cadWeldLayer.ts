@@ -58,20 +58,13 @@ export function prepareCadWeldSpanLayers(document: AssemblyDocument, definitionV
   return prepareCadWeldLayersOwned(document, definitionValue, readCadWeldSpanInputs(value), context);
 }
 
-function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: unknown, saved: SavedCadWeldInputs,
-  context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
-    readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldSpanLayer[] } {
+function checkWeldDefinition(document: AssemblyDocument, definitionValue: unknown, saved: SavedCadWeldInputs,
+  context: StandardBeamAdapterContext) {
   const spanRoute = saved.schema === 'pointercad-cad-weld-layers/2';
   if (spanRoute && definitionValue !== null && typeof definitionValue === 'object'
     && (Object.hasOwn(definitionValue, 'axialBolts') || Object.hasOwn(definitionValue, 'initialStrain'))) {
     throw new InputIssue('weld-span-unsupported', '$', 'Span solver does not support bolt or initial-strain combinations');
   }
-  type SavedSide = SavedCadWeldInputs['welds'][number]['first'];
-  const explicitSide = (side: SavedSide): CadWeldSpanSide => 'kind' in side ? side : { kind: 'section-node', ...side };
-  const sideKey = (side: SavedSide): string => {
-    const s = explicitSide(side);
-    return JSON.stringify(s.kind === 'section-node' ? [s.kind, s.memberId, s.nodeId] : [s.kind, s.memberId]);
-  };
   const read = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition: definitionValue }] }, document.id);
   if (!read.ok) throw new InputIssue(read.issue.code, read.issue.path, read.issue.message);
   const item = read.value.analyses[0];
@@ -91,6 +84,19 @@ function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: 
     || saved.analysisId !== geometry.id || saved.analysisRevision !== geometry.revision || geometry.units !== 'N-mm') {
     throw new InputIssue('stale-source', 'source', 'Weld and beam associations must belong to current CAD geometry');
   }
+  return { spanRoute, definition, geometry };
+}
+
+function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: unknown, saved: SavedCadWeldInputs,
+  context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
+    readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldSpanLayer[] } {
+  const { spanRoute, definition, geometry } = checkWeldDefinition(document, definitionValue, saved, context);
+  type SavedSide = SavedCadWeldInputs['welds'][number]['first'];
+  const explicitSide = (side: SavedSide): CadWeldSpanSide => 'kind' in side ? side : { kind: 'section-node', ...side };
+  const sideKey = (side: SavedSide): string => {
+    const s = explicitSide(side);
+    return JSON.stringify(s.kind === 'section-node' ? [s.kind, s.memberId, s.nodeId] : [s.kind, s.memberId]);
+  };
   const solved = resolveConstrainedAssembly(document, context.bodies, { ...context.assemblyOptions, standardPart: buildStandardPartFromSource });
   if (!solved.ok) throw new InputIssue('unresolved-assembly', '$', 'Current assembly must resolve');
   // Existing weld footprint revalidation reads component placements. Supply actual solved world poses, once.

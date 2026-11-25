@@ -198,6 +198,7 @@ export interface RecomputeSlice {
    * 採用できたら true。断ったときは何も変えない。
    */
   readonly adoptStagedSolid: (ticket: StagedAdoptionTicket) => boolean;
+  readonly adoptAssemblyStagedSolid: (ticket: StagedAdoptionTicket, onApplied: () => void) => Promise<boolean>;
 }
 
 /**
@@ -606,6 +607,17 @@ function adoptable(state: AppState, ticket: StagedAdoptionTicket): boolean {
     && staged.ownership.stager === ticket.stager && currentStagedSolid(state) === staged;
 }
 
+function stagedResultPatch(state: AppState, staged: StagedSolidState, fields: Partial<AppState>): Partial<AppState> {
+  const result = staged.result;
+  if (result === null) return fields;
+  const requested: AppState = { ...state, ...fields, requestedGeneration: result.generation,
+    meshJsAccounting: null, referenceRepairBodies: null };
+  const recomputeFields = recomputeResultPatch(requested, staged.displayed, result,
+    adoptReferenceScope(requested, staged.displayed, result), true);
+  return { ...fields, requestedGeneration: result.generation, ...recomputeFields,
+    ...completionPatch({ ...requested, ...recomputeFields }, result.generation, 'success'), stagedSolid: null };
+}
+
 export const createRecomputeSlice: StateCreator<
   AppState,
   [],
@@ -640,7 +652,7 @@ export const createRecomputeSlice: StateCreator<
     set({ stagedSolid });
   },
   adoptStagedSolid: (ticket) => {
-    if (consumedTickets.has(ticket) || !adoptable(get(), ticket)) return false;
+    if (get().partEdit !== null || consumedTickets.has(ticket) || !adoptable(get(), ticket)) return false;
     let adopted = false;
     set((state) => {
       const staged = ticket.staged, result = staged.result;
@@ -650,17 +662,21 @@ export const createRecomputeSlice: StateCreator<
       // 取り消しの段はちょうど 1 つ。確かめた文書そのものを積む(作り直さない)。
       const stack = pushUndo(state.undoStack, staged.placement.document);
       const documentFields = documentEditPatch(state, staged.placement, stack, false, undefined);
-      // 採用した結果の世代を、依頼した世代として同時に記録する(古い結果を採用しない判定と同じ形)。
-      const requested: AppState = { ...state, ...documentFields, requestedGeneration: result.generation,
-        meshJsAccounting: null, referenceRepairBodies: null };
-      const recomputeFields = recomputeResultPatch(requested, staged.displayed, result,
-        adoptReferenceScope(requested, staged.displayed, result), true);
-      const recomputed: AppState = { ...requested, ...recomputeFields };
-      return { ...documentFields, requestedGeneration: result.generation, ...recomputeFields,
-        ...completionPatch(recomputed, result.generation, 'success'), stagedSolid: null };
+      return stagedResultPatch(state, staged, documentFields);
     });
     if (adopted) rememberTimelineHintShown(get());
     return adopted;
+  },
+  adoptAssemblyStagedSolid: async (ticket, onApplied) => {
+    const state = get();
+    if (state.partEdit === null || consumedTickets.has(ticket) || !adoptable(state, ticket)) return false;
+    consumedTickets.add(ticket);
+    const outcome = await state.commitAssemblyPartPlacement(ticket.staged.placement, {
+      isCurrent: current => adoptable(current, ticket),
+      patch: (current, fields) => stagedResultPatch(current, ticket.staged, fields),
+      onApplied,
+    });
+    return outcome === 'applied';
   },
   applyRecompute: (document, result) => {
     set((state) => {

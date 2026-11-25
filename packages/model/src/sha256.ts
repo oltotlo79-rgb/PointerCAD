@@ -28,49 +28,91 @@ function rotateRight(value: number, bits: number): number {
  * 作業領域は入力サイズによらず一定。非同期でよい呼び手は sha256Hex(WebCrypto)を使う。
  */
 export function sha256HexSync(bytes: Uint8Array): string {
-  const length = bytes.byteLength;
-  const paddedLength = Math.ceil((length + 9) / 64) * 64;
-  const bitLength = length * 8;
-  const state = new Uint32Array([
+  return sha256HexChunksSync([bytes]);
+}
+
+/** SHA-256 over consecutive byte ranges, with a single padding and length for the entire sequence. */
+export function sha256HexChunksSync(chunks: readonly (Uint8Array | undefined)[]): string {
+  const digest = new Sha256Digest();
+  for (const chunk of chunks) {
+    if (chunk === undefined) throw new Error('Missing SHA-256 input range');
+    digest.update(chunk);
+  }
+  return digest.finish();
+}
+
+function compressSha256(state: Uint32Array, words: Uint32Array): void {
+  for (let index = 16; index < 64; index += 1) {
+    const x = words[index - 15];
+    const y = words[index - 2];
+    const s0 = rotateRight(x, 7) ^ rotateRight(x, 18) ^ (x >>> 3);
+    const s1 = rotateRight(y, 17) ^ rotateRight(y, 19) ^ (y >>> 10);
+    words[index] = words[index - 16] + s0 + words[index - 7] + s1;
+  }
+  let [a, b, c, d, e, f, g, h] = state;
+  for (let index = 0; index < 64; index += 1) {
+    const s1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+    const choice = (e & f) ^ (~e & g);
+    const t1 = (h + s1 + choice + SHA256_ROUND_CONSTANTS[index] + words[index]) | 0;
+    const s0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+    const majority = (a & b) ^ (a & c) ^ (b & c);
+    const t2 = (s0 + majority) | 0;
+    h = g; g = f; f = e; e = (d + t1) | 0;
+    d = c; c = b; b = a; a = (t1 + t2) | 0;
+  }
+  const chunk = [a, b, c, d, e, f, g, h];
+  for (let index = 0; index < 8; index += 1) {
+    state[index] += chunk[index];
+  }
+}
+
+/** SHA-256 for a source whose previously read chunks have already been released. */
+export class Sha256Digest {
+  private readonly state = new Uint32Array([
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
   ]);
-  const words = new Uint32Array(64);
-  for (let offset = 0; offset < paddedLength; offset += 64) {
-    words.fill(0, 0, 16);
-    for (let index = 0; index < 64; index += 1) {
-      const position = offset + index;
-      let value = position < length ? bytes[position] : position === length ? 0x80 : 0;
-      if (position >= paddedLength - 8) {
-        const shift = (paddedLength - 1 - position) * 8;
-        value = shift >= 32
-          ? (Math.floor(bitLength / 0x100000000) >>> (shift - 32)) & 0xff
-          : (bitLength >>> shift) & 0xff;
+  private readonly words = new Uint32Array(64);
+  private length = 0;
+  private pending = 0;
+  private finished = false;
+
+  update(bytes: Uint8Array): void {
+    if (this.finished) throw new Error('SHA-256 digest is finished');
+    const byteLength = bytes.byteLength;
+    this.length += byteLength;
+    let index = 0;
+    while (this.pending !== 0 && index < byteLength) this.append(bytes[index++]);
+    for (; index <= byteLength - 64; index += 64) {
+      for (let word = 0; word < 16; word++) {
+        const offset = index + word * 4;
+        this.words[word] = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
       }
-      words[index >>> 2] |= value << (24 - (index % 4) * 8);
+      compressSha256(this.state, this.words);
+      this.words.fill(0, 0, 16);
     }
-    for (let index = 16; index < 64; index += 1) {
-      const x = words[index - 15];
-      const y = words[index - 2];
-      const s0 = rotateRight(x, 7) ^ rotateRight(x, 18) ^ (x >>> 3);
-      const s1 = rotateRight(y, 17) ^ rotateRight(y, 19) ^ (y >>> 10);
-      words[index] = words[index - 16] + s0 + words[index - 7] + s1;
-    }
-    let [a, b, c, d, e, f, g, h] = state;
-    for (let index = 0; index < 64; index += 1) {
-      const s1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
-      const choice = (e & f) ^ (~e & g);
-      const t1 = (h + s1 + choice + SHA256_ROUND_CONSTANTS[index] + words[index]) | 0;
-      const s0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
-      const majority = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (s0 + majority) | 0;
-      h = g; g = f; f = e; e = (d + t1) | 0;
-      d = c; c = b; b = a; a = (t1 + t2) | 0;
-    }
-    const chunk = [a, b, c, d, e, f, g, h];
-    for (let index = 0; index < 8; index += 1) {
-      state[index] += chunk[index];
+    for (; index < byteLength; index++) this.append(bytes[index]);
+  }
+
+  private append(byte: number): void {
+    this.words[this.pending >>> 2] |= byte << (24 - (this.pending % 4) * 8);
+    this.pending += 1;
+    if (this.pending === 64) {
+      compressSha256(this.state, this.words);
+      this.words.fill(0, 0, 16);
+      this.pending = 0;
     }
   }
-  return [...state].map((word) => word.toString(16).padStart(8, '0')).join('');
+
+  finish(): string {
+    if (this.finished) throw new Error('SHA-256 digest is finished');
+    this.finished = true;
+    const bitsLow = (this.length % 0x20000000) * 8, bitsHigh = Math.floor(this.length / 0x20000000);
+    this.append(0x80);
+    while (this.pending !== 56) this.append(0);
+    this.words[14] = bitsHigh;
+    this.words[15] = bitsLow;
+    compressSha256(this.state, this.words);
+    return [...this.state].map((word) => word.toString(16).padStart(8, '0')).join('');
+  }
 }

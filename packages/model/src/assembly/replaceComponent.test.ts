@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { SolidBody } from '../kernelBridge.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
+import { createComponentFor } from './assemblyEdit.js';
 import { PRODUCT_CATALOG_REGISTRY } from './catalog/registry.js';
 import { placedPartName } from './componentNames.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
@@ -89,6 +90,13 @@ describe('差し替える部品の名前', () => {
     { name: '箱:7', other: '台', before: '箱', after: '箱', expected: '箱:7' },
     { name: '箱:7', other: '台', before: null, after: '球', expected: '箱:7' },
     { name: '箱:7', other: '台', before: '箱', after: null, expected: '箱:7' },
+    { name: '箱:7', other: '部品:1', before: '箱', after: '', expected: '部品:2' },
+    { name: '箱:7', other: '台', before: '箱', after: '  ', expected: '部品:1' },
+    { name: ':7', other: '台', before: '', after: '球', expected: '球:1' },
+    { name: '  :7', other: '球:1', before: '  ', after: '球', expected: '球:2' },
+    { name: '部品:7', other: '台', before: '', after: '球', expected: '球:1' },
+    { name: '部品:7', other: '台', before: '', after: '部品', expected: '部品:7' },
+    { name: '左の柱', other: '台', before: '', after: '球', expected: '左の柱' },
   ])('$name と $other がある組で $before から $after へ替えると $expected になる', ({ name, other, before, after, expected }) => {
     const assembly = { ...document(), components: [
       { ...component('component-1'), name }, { ...component('component-2'), name: other },
@@ -97,6 +105,12 @@ describe('差し替える部品の名前', () => {
     expect(plan?.after.components.map((item) => item.name)).toEqual([expected, other]);
     expect(plan?.after.components[0].source).toEqual(NEXT_SOURCE);
     expect(assembly.components[0].name).toBe(name);
+  });
+
+  it('空の文書名を配置すると既定名の連番を使う', () => {
+    const current = { ...createAssemblyDocument('組'), components: [{ ...component('component-1'), name: '部品:5' }] };
+    expect(createComponentFor(current, NEXT_SOURCE, { partName: '' }).name).toBe('部品:6');
+    expect(createComponentFor(current, NEXT_SOURCE, { partName: '  ' }).name).toBe('部品:6');
   });
 
   it('部品名を渡さない差し替えでは自動の名前も維持する', () => {

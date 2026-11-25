@@ -9,10 +9,11 @@ import { parseDocument, readPcadFile, serializeDocument, writePcadFile } from '@
 import {
   absoluteCoordinate, appendFeature, appendReference, appendSolid, createEmptyPartDocument, createEmptySketchDocument,
   DEFAULT_FACE_COLOR, replaceSketch, resolvePart, createFunctionCurve, recomputePart,
-  type PartDocument, type PartRecomputeOptions, type PartRecomputeResult,
+  type PartDocument, type PartRecomputeOptions, type PartRecomputeResult, type SolidBody,
 } from '@pointercad/model';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
+import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { attachPartRecompute, type PartRecomputer } from '../store/attachKernel.js';
 import { bodyFor, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -208,6 +209,86 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
       expect(useAppStore.getState().document).toBe(retry.document);
       const reopened = parseDocument(serializeDocument(retry.document));
       expect(reopened.ok && reopened.document.solids).toEqual(retry.document.solids);
+    } finally { detach(); }
+  });
+
+  it('取り込んだ面の縫合は遅いプレビューを破棄し、選んだ面だけを一度確定できる', async () => {
+    const featureId = 'imported-body';
+    const shapeRef = 'attachment-for-imported-body';
+    const bytes = Uint8Array.of(1, 2, 3);
+    const document = appendSolid(createEmptyPartDocument(), {
+      kind: 'importedSolid', id: featureId, name: '取り込んだ形', suppressed: false, shapeRef, bodyKind: 'solid',
+      source: { format: 'step', fileName: 'body.step', unit: 'mm', byteLength: bytes.byteLength },
+    });
+    const initial = useAppStore.getState();
+    initial.setImportedAttachments(new Map([[shapeRef, bytes]]), new Map());
+    initial.applyDocument(document);
+    const { calls, detach } = attachControlled();
+    try {
+      const body: SolidBody = {
+        ...bodyFor(featureId),
+        mesh: {
+          positions: new Float32Array([
+            -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0,
+            -1, -1, 2, 1, -1, 2, 1, 1, 2, -1, 1, 2,
+            -1, 2, -1, -1, 2, 1, 1, 2, 1, 1, 2, -1,
+          ]),
+          normals: new Float32Array([
+            0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+            0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+            0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+          ]),
+          indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11]),
+          edgePositions: new Float32Array(0),
+          triangleCount: 6,
+        },
+        faces: [
+          { index: 0, surfaceKind: 'plane', area: 4, centroid: [0, 0, 0], axis: [0, 0, 1],
+            radius: null, triangleOffset: 0, triangleCount: 2 },
+          { index: 1, surfaceKind: 'plane', area: 4, centroid: [0, 0, 2], axis: [0, 0, 1],
+            radius: null, triangleOffset: 2, triangleCount: 2 },
+          { index: 2, surfaceKind: 'plane', area: 4, centroid: [0, 2, 0], axis: [0, 1, 0],
+            radius: null, triangleOffset: 4, triangleCount: 2 },
+        ],
+      };
+      calls[0].settle({ ...success(calls[0], [featureId]), bodies: [body] });
+      await vi.waitFor(() => { expect(useAppStore.getState().lastOutcome).toBe('success'); });
+      const begin = () => {
+        const store = useAppStore.getState();
+        store.setActiveTool('sew');
+        store.setSelection([subShapeElementId(featureId, 'face', 0), subShapeElementId(featureId, 'face', 1)]);
+        const input = createNumericInput('sew', 'sewTolerance');
+        store.updateNumericInput(input);
+        return commitNumericInput(input);
+      };
+      const transition = begin();
+      const before = useAppStore.getState();
+      previewExtrudeTransition(transition);
+      expect(calls).toHaveLength(2);
+      const preview = calls[1];
+      const result = preview.document.solids.at(-1);
+      if (result?.kind !== 'sew') throw new Error('Missing selected-face sewing candidate');
+      expect(result.surfaceFaces?.map(face => [face.bodyFeatureId, face.index])).toEqual([[featureId, 0], [featureId, 1]]);
+      expect(preview.options.importedShapes?.get(shapeRef)).toBe(bytes);
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+
+      applyNumericTransition({ kind: 'cancelled' });
+      preview.settle(success(preview, [featureId, result.id]));
+      applyNumericTransition(begin());
+      await vi.waitFor(() => { expect(calls).toHaveLength(3); });
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      const confirming = calls[2];
+      confirming.settle(success(confirming, [featureId, result.id]));
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); });
+      const adopted = useAppStore.getState();
+      expect(adopted.document).toBe(confirming.document);
+      expect(adopted.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(adopted.importedShapes.get(shapeRef)).toBe(bytes);
+      adopted.undo();
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().importedShapes.get(shapeRef)).toBe(bytes);
     } finally { detach(); }
   });
 

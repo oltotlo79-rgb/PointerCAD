@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * 大きい項目を区切って圧縮する ZIP の書き手(レビュー R06、取消の1秒)。
  *
@@ -14,7 +15,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIXED_ENTRY_MTIME, readPcadFile, writePcadFile, zipPcadEntries, zipPcadEntriesPartsAsync } from './pcadFile.js';
 import { readArchive } from './readArchive.js';
 import { finishZipCrc32, startZipCrc32, updateZipCrc32, zipCrc32 } from './zipCrc32.js';
-import { concatZipParts, hasSteppedZipEntry, zipEntriesSteps, zipEntriesSync, zipEntriesWithOwnedBuffersPartsAsync,
+import { concatZipParts, hasSteppedZipEntry, packOwnedZipEntries, zipEntriesSteps, zipEntriesSync, zipEntriesWithOwnedBuffersPartsAsync,
   zipEntriesWithOwnedBuffersSteps, type ZipStepEntry } from './zipSteps.js';
 
 // ESM namespace exports are immutable: use a hoisted module mock that delegates normally.
@@ -69,6 +70,36 @@ function legacyZip(entries: ReadonlyMap<string, ZipStepEntry>): Uint8Array {
   for (const [name, [bytes, options]] of entries) zippable[name] = [bytes, options];
   return zipSync(zippable);
 }
+
+it('消費した区切りを再読せず、任意項目を除いたZIPのCRC・目録・位置を保つ', async () => {
+  const original = structuredBytes(ZIP_STEP_BYTES + 17);
+  const chunks = [original.slice(0, ZIP_STEP_BYTES), original.slice(ZIP_STEP_BYTES)];
+  const pending = [...chunks];
+  const optional = entry(Uint8Array.of(1, 2, 3), 0);
+  const options = { level: 6 as const, mtime: FIXED_ENTRY_MTIME };
+  const set = new Map<string, ZipStepEntry<Uint8Array | { length: number; pending: (Uint8Array | undefined)[] }>>([
+    ['optional', optional], ['mesh', [{ length: original.length, pending }, options]],
+  ]);
+  const write = await packOwnedZipEntries(set, {});
+  expect(pending).toHaveLength(0);
+  const all = new Map<string, ZipStepEntry>([['optional', optional], ['mesh', [original, options]]]);
+  expect(digest(concatZipParts(write(set)))).toBe(digest(zipEntriesSync(all)));
+  set.delete('optional');
+  all.delete('optional');
+  expect(digest(concatZipParts(write(set)))).toBe(digest(zipEntriesSync(all)));
+});
+
+it('所有する途中のZIPの取消で全ての未消費領域の参照を落とす', async () => {
+  const chunks = [new Uint8Array(ZIP_STEP_BYTES), Uint8Array.of(1)];
+  const pending = [...chunks];
+  const entries = new Map([['mesh', [{ length: ZIP_STEP_BYTES + 1, pending },
+    { level: 6 as const, mtime: FIXED_ENTRY_MTIME }] as const]]);
+  const controller = new AbortController();
+  const writing = packOwnedZipEntries(entries, { signal: controller.signal });
+  controller.abort();
+  await expect(writing).rejects.toMatchObject({ name: 'AbortError' });
+  expect(pending).toHaveLength(0);
+});
 
 function largeEntries(): Map<string, ZipStepEntry> {
   return new Map([

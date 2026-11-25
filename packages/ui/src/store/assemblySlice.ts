@@ -12,13 +12,13 @@
  */
 
 import {
-  createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, syncAccessorySets, undo,
+  EMPTY_PART_LIBRARY,
   crossLevelCamDocumentFailure, crossLevelGearDocumentFailure, evaluateCamCouplings, evaluateMechanismCouplings,
   prepareCamFollowers, prepareMechanismCouplings, type MechanismCamCoupling, type MechanismGearCoupling,
-  type AssemblyDocument, type AssemblyInterferenceProgress, type AssemblyInterferenceResult,
+  type AssemblyDocument, type AssemblyInterferenceProgress, type AssemblyInterferenceResult, type AssemblyKernelBridge,
   type EmbeddedPartAttachments, type JointCoordinate, type JointFramePair, type JointOccurrenceInputs,
   type MateDiagnosis, type MateResidualTargetPair, type PartDocument, type PartLibrary, type ResolvedAssembly,
-  type RigidPlacement, type SolidBody, type UndoStack,
+  type RigidPlacement, type SolidBody, type SubShapeRef, type UndoStack, type WorkPlane,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import { createCircularWeldActions, type CircularWeldSlice } from './circularWeldActions.js';
@@ -26,10 +26,10 @@ import { createFrameEdgePickActions, type FrameEdgePickSlice } from './frameEdge
 import { createFrameStrokeActions, type FrameStrokeSlice } from './frameStrokeActions.js';
 import { createFrameSlotFasteningActions, type FrameSlotFasteningSlice } from './frameSlotFasteningActions.js';
 import { createFrameJointCheckActions, type FrameJointCheckSlice } from './frameJointCheckActions.js';
-import { createFrameJointBracketActions, emptyJointBracketState, type FrameJointBracketSlice } from './frameJointBracketActions.js';
-import { createMemberStretchActions, emptyMemberStretchState, type MemberStretchSlice } from './memberStretchActions.js';
-import { createDimensionMoveActions, emptyDimensionMoveState, type DimensionMoveSlice } from './dimensionMoveActions.js';
-import { createComponentPickActions, emptyComponentPickState, type ComponentPickSlice } from './componentPickActions.js';
+import { createFrameJointBracketActions, type FrameJointBracketSlice } from './frameJointBracketActions.js';
+import { createMemberStretchActions, type MemberStretchSlice } from './memberStretchActions.js';
+import { createDimensionMoveActions, type DimensionMoveSlice } from './dimensionMoveActions.js';
+import { createComponentPickActions, type ComponentPickSlice } from './componentPickActions.js';
 import { createBoltedJointActions } from './boltedJointActions.js';
 import { createStandardPartPlacementActions, type StandardPartPlacementSlice } from './standardPartPlacementActions.js';
 import { createBoltedJointDraftActions, type BoltedJointDraftSlice } from './boltedJointDraftActions.js';
@@ -38,7 +38,6 @@ import { createAssemblyJointDriveActions, type AssemblyJointDriveSlice } from '.
 import { createAssemblyExplodeActions, type AssemblyExplodeSlice } from './assemblyExplodeActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
-import { emptySheetMetalTool } from './sheetMetalSlice.js';
 import { documentSessionId, type PreparedDocumentSession } from './documentIdentity.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { AssemblyMeshOwnership } from '../viewport/assemblyMeshAdmission.js';
@@ -59,14 +58,22 @@ import type { AssemblyFilletWeldDraft, FilletWeldDraftPreview } from '../assembl
 import type { NestedWeldDraft, NestedWeldPreview } from '../assembly/nestedWeldDraft.js';
 import type { ChildWeldDefinitionTarget } from '../assembly/childWeldDefinitionEdit.js';
 import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
-import { openedAnalysisResults, type OpenedAnalysisResults } from '../beam/savedBeamResults.js';
+import type { OpenedAnalysisResults } from '../beam/savedBeamResults.js';
+import { createAssemblyDocumentActions, emptyInterferenceState } from './assemblyDocumentActions.js';
+
+import type { AssemblyPartAdoption, AssemblyPartEdit, AssemblyPartEditActions } from './partEditActions.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
   readonly library: PartLibrary;
 }
 
+export type AssemblyFaceProjection = (partRef: string, body: SolidBody,
+  face: SubShapeRef, plane: WorkPlane, stillRequested: () => boolean) =>
+  Promise<Awaited<ReturnType<AssemblyKernelBridge['projectSketchCurves']>>['results'][number] | null>;
+
 export interface AssemblyView {
+  readonly projectContextFace?: AssemblyFaceProjection;
   /** Current nonstored source/ledger ownership, separate from mate solving outcome. */
   readonly meshOwnership?: AssemblyMeshOwnership;
   /** この導出値を作った文書。古い形で合致を確定しない。 */
@@ -114,7 +121,7 @@ export type AssemblyMotionNotice =
 /** アセンブリのスライスが持つ欄と操作。 */
 export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameStrokeSlice, FrameSlotFasteningSlice,
   FrameJointCheckSlice, FrameJointBracketSlice, MemberStretchSlice, DimensionMoveSlice, ComponentPickSlice,
-  StandardPartPlacementSlice, BoltedJointDraftSlice, FilletWeldSlice, AssemblyJointDriveSlice, AssemblyExplodeSlice {
+  StandardPartPlacementSlice, BoltedJointDraftSlice, FilletWeldSlice, AssemblyJointDriveSlice, AssemblyExplodeSlice, AssemblyPartEditActions {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -134,7 +141,7 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, Fr
       /** 保存してあった結果を io が出さなかった(指紋の不一致・壊れた中身)。梁の窓に理由を 1 行出す。 */
       readonly analysisResultsDropped?: boolean }) => void;
   /** 配置・固定・表示・抑制・部品更新の確定操作。1 回が Undo の 1 段。 */
-  readonly applyAssembly: (document: AssemblyDocument, library?: PartLibrary) => void;
+  readonly applyAssembly: (document: AssemblyDocument, library?: PartLibrary, adopt?: AssemblyPartAdoption) => void;
   readonly setAssemblyMechanismCouplings: (couplings: readonly MechanismGearCoupling[]) => boolean;
   /** Cam-follower relations; same admission and one Undo step as the gear setter. False keeps the document. */
   readonly setAssemblyCamCouplings: (couplings: readonly MechanismCamCoupling[]) => boolean;
@@ -144,6 +151,7 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, Fr
   readonly undoAssembly: () => void;
   readonly redoAssembly: () => void;
   readonly assemblyLibrary: PartLibrary;
+  readonly partEdit: AssemblyPartEdit | null;
   readonly assemblyUndoStack: UndoStack<AssemblySnapshot> | null;
   readonly savedAssembly: AssemblySnapshot | null;
   readonly assemblyFileName: string | null;
@@ -286,42 +294,6 @@ export interface AssemblyJointDrive {
   readonly path?: readonly string[];
 }
 
-type InterferenceTransientState = Pick<AssemblyOwnedInitialState,
-  'assemblyInterferenceOpen' | 'assemblyInterferenceResult' | 'assemblyInterferenceSelectedKey'
-  | 'assemblyInterferenceProgress' | 'assemblyInterferenceRequestId' | 'assemblyGapRequestId'
-  | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError'>;
-
-/** いまの文書・表示の形・部品の一式でボルト締結を予告する。表示が古ければ予告しない。 */
-/** an edit or Undo that ends a coupled drag of the current document gives back the drives shown at the drag start,
- * but only while the shown drives are still the ones that drag published (anything else replaced them on purpose). */
-function endedDragDrives(state: AppState): Pick<AppState, 'assemblyOccurrenceDrives'> | null {
-  const drag = state.assemblyDrag;
-  return drag !== null && drag.published !== null && state.assemblyOccurrenceDrives === drag.published
-    && state.assembly === drag.document && state.assemblyLibrary === drag.library
-    && state.activeDocumentId === drag.documentId && state.documentVersion === drag.version
-    ? { assemblyOccurrenceDrives: drag.occurrenceDrives } : null;
-}
-
-/** 付属の組の記録のある文書の付属を、本体の今の端へ付け直した文書(A3。付け直せない時は元のまま。理由は接合チェックが出す)。 */
-function withSyncedAccessories(document: AssemblyDocument): AssemblyDocument {
-  const synced = syncAccessorySets(document);
-  return synced.ok ? synced.document : document;
-}
-
-/** 文書を替える全経路で解析結果と非同期要求を同時に失効させる正本。 */
-function emptyInterferenceState(): InterferenceTransientState {
-  return {
-    assemblyInterferenceOpen: false,
-    assemblyInterferenceResult: null,
-    assemblyInterferenceSelectedKey: null,
-    assemblyInterferenceProgress: null,
-    assemblyInterferenceRequestId: null,
-    assemblyGapRequestId: null,
-    isCheckingAssemblyInterference: false,
-    assemblyInterferenceError: null,
-  };
-}
-
 function runAssemblyInterference(set: (patch: Partial<AppState>) => void, get: () => AppState): void {
   const state = get();
   const document = state.assembly;
@@ -455,93 +427,12 @@ export const createAssemblySlice: StateCreator<
   [],
   Omit<AssemblySlice, keyof AssemblyInitialState>
 > = (set, get) => {
-  const empty = createAssemblyInitialState;
-  function applyHistory(stack: UndoStack<AssemblySnapshot>): void {
-    set((state) => ({
-      assembly: stack.present.document,
-      assemblyLibrary: stack.present.library,
-      assemblyUndoStack: stack,
-      canUndo: stack.past.length > 0,
-      canRedo: stack.future.length > 0,
-      documentVersion: state.documentVersion + 1,
-      fileMessage: null,
-      selection: [],
-      connectionSelection: null,
-      hoveredElementId: null,
-      assemblyPlacement: null,
-      assemblyMateDraft: null,
-      assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null,
-      assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
-      assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
-      assemblyExplodeDraft: null, assemblyExplodeError: null,
-      standardPartPickerOpen: false, frameEdgePick: null, assemblyFrameSlotDraft: null, assemblyFrameSlotPreview: null,
-      assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
-      assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-      assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
-      assemblyJointDrive: null,
-      ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...emptyComponentPickState(), ...endedDragDrives(state),
-    }));
-  }
   return {
-    ...empty(),
+    ...createAssemblyInitialState(),
+    partEdit: null,
     ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameStrokeActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createFrameJointCheckActions(set, get), ...createFrameJointBracketActions(set, get), ...createMemberStretchActions(set, get), ...createDimensionMoveActions(set, get), ...createComponentPickActions(set, get), ...createBoltedJointActions(set, get),
     recoveryRecord: null,
-    resetAssembly: (update, session) => {
-      const initial = empty(session);
-      set((state) => ({ ...update(state), ...initial, assembly: null, strengthSession: null, exportHandoff: null, exportHandoffAttempt: null }));
-    },
-    openAssembly: (assembly, library = EMPTY_PART_LIBRARY, options) => {
-      const initial = empty(options?.preparedSession);
-      if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
-      set((state) => ({
-        ...initial, assembly, drawing: null, savedDrawing: null, drawingFileName: null, strengthSession: null,
-        exportHandoff: null, exportHandoffAttempt: null, ...emptySheetMetalTool(),
-        drawingInitialName: null, assemblyLibrary: library, assemblyInitialName: assembly.name,
-        assemblyUndoStack: createUndoStack({ document: assembly, library }),
-        documentVersion: state.documentVersion + 1,
-        canUndo: false, canRedo: false, selection: [], connectionSelection: null, hoveredElementId: null,
-        activeTool: 'select', fileMessage: null, assemblyOpenedAnalysisResults: openedAnalysisResults(assembly, options?.analysisResults, options?.analysisResultsDropped),
-      }));
-    },
-    applyAssembly: (assembly, library = get().assemblyLibrary) => {
-      // An edit that breaks a saved cross-level gear or cam keeps the file readable: the repaired document is committed
-      // instead (one Undo step), and what was suspended or removed is reported.
-      const repaired = get().pruneAssemblyCrossLevelCouplings(withSyncedAccessories(assembly), library.assemblies ?? new Map());
-      if (repaired.document !== assembly) {
-        get().applyAssembly(repaired.document, library);
-        set({ assemblyCrossLevelGearRepairs: repaired.repairs });
-        return;
-      }
-      const state = get();
-      if (state.assembly === null || state.assemblyUndoStack === null) {
-        return;
-      }
-      if (state.assembly === assembly && state.assemblyLibrary === library) {
-        return;
-      }
-      const stack = pushUndo(state.assemblyUndoStack, { document: assembly, library });
-      set((current) => {
-        const overlay = current.assemblyDragOverlay;
-        const keepOverlay = overlay !== null && overlay.document === assembly
-          && overlay.library === library && overlay.documentId === current.activeDocumentId
-          && overlay.version === current.documentVersion;
-        return { assembly, assemblyLibrary: library, assemblyUndoStack: stack,
-          canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
-          assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null,
-          assemblyDragOverlay: keepOverlay ? overlay : null,
-          assemblyDragNotice: keepOverlay ? current.assemblyDragNotice : null,
-          assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
-          assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
-          assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false, frameEdgePick: null, assemblyFrameSlotDraft: null, assemblyFrameSlotPreview: null,
-          assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
-          assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
-          assemblyJointDrive: null,
-          assemblyCrossLevelGearRepairs: repaired.repairs,
-          ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...emptyComponentPickState(), ...endedDragDrives(current) };
-      });
-    },
+    ...createAssemblyDocumentActions(set, get, createAssemblyInitialState),
     setAssemblyMechanismCouplings: (couplings) => {
       const state = get(), document = state.assembly;
       if (document === null) return false;
@@ -607,43 +498,5 @@ export const createAssemblySlice: StateCreator<
     ...createFilletWeldActions(set, get),
     ...createAssemblyJointDriveActions(set, get),
     ...createAssemblyExplodeActions(set, get),
-    setAssemblyFileState: (assemblyFileName, savedAssembly) => {
-      set({ assemblyFileName, savedAssembly });
-    },
-    closeAssembly: () => {
-      const state = get();
-      const initial = empty();
-      state.fileGateway.clearSaveTarget?.();
-      set({ ...initial, assembly: null, documentVersion: state.documentVersion + 1,
-        canUndo: state.undoStack.past.length > 0, canRedo: state.undoStack.future.length > 0 });
-    },
-    undoAssembly: () => {
-      const stack = get().assemblyUndoStack;
-      if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
-        || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy
-        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null || get().assemblyCircularWeldDraft !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
-          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
-          assemblyReplacementRequestId: null, assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
-      }
-    },
-    redoAssembly: () => {
-      const stack = get().assemblyUndoStack;
-      if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
-        || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy
-        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null || get().assemblyCircularWeldDraft !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
-          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
-          assemblyReplacementRequestId: null, assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
-      }
-    },
   };
 };

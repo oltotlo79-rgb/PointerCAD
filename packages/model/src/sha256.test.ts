@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { sha256Hex, sha256HexSync } from './sha256.js';
 import { importedShapeOf } from './part/types.js';
-import { attachmentsDigestOf, canonicalPartDocumentText, contentHashOf, CONTENT_HASH_ALGORITHM } from './assembly/partLibrary.js';
+import { attachmentsDigestOf, canonicalPartDocumentText, ownedAttachmentsDigestOf, contentHashOf, CONTENT_HASH_ALGORITHM } from './assembly/partLibrary.js';
 import { canonicalDrawingSourceText, drawingSourceContentHash, drawingSourceInputHash } from './drawing/sourceLibrary.js';
 import { createEmptyPartDocument } from './part/createPartDocument.js';
 import { sha256ScriptSource } from './scripting/scriptModules.js';
@@ -50,6 +50,19 @@ describe('internal model SHA-256 byte digest', () => {
     } });
     expect(await drawingSourceInputHash(input)).toBe(nodeHash(originalCanonical));
     expect(await sha256ScriptSource(document.name)).toBe(nodeHash(document.name));
+  });
+
+  it('hashes owned attachment ranges exactly like the existing canonical byte stream', async () => {
+    const shape = new Uint8Array(1024 * 1024 + 67);
+    shape[1] = 255;
+    shape[shape.length - 2] = 47;
+    const attachments = {
+      shapes: new Map([['shape', shape.subarray(1, -1)]]),
+      meshes: new Map([['mesh', { positions: Float32Array.of(-0, 0.125, -2),
+        normals: Float32Array.of(0, 0, 1), indices: Uint32Array.of(0, 1, 2) }]]),
+      canvases: new Map([['下絵', Uint8Array.of(5, 6, 7)]]),
+    };
+    expect(await ownedAttachmentsDigestOf(attachments)).toBe(await attachmentsDigestOf(attachments));
   });
 
   it('preserves the original digest failure object through the helper and consumers', async () => {

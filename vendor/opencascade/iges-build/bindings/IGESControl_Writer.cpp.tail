@@ -1,0 +1,28 @@
+
+#include <IGESControl_Controller.hxx>
+#include <Interface_Static.hxx>
+#include <string>
+
+EMSCRIPTEN_BINDINGS(IGESControl_Writer) {
+  class_<IGESControl_Writer>("IGESControl_Writer")
+    .class_function("WriteUnit", +[]() -> std::string {
+      IGESControl_Controller::Init();
+      const auto unit = Interface_Static::CVal("write.iges.unit");
+      return unit == nullptr ? std::string() : std::string(unit);
+    })
+    .class_function("SetWriteUnit", +[](const std::string& unit) {
+      IGESControl_Controller::Init();
+      return Interface_Static::SetCVal("write.iges.unit", unit.c_str());
+    })
+    .class_function("WriteBRepMode", +[]() {
+      IGESControl_Controller::Init();
+      return Interface_Static::IVal("write.iges.brep.mode");
+    })
+    .class_function("SetWriteBRepMode", +[](Standard_Integer mode) {
+      IGESControl_Controller::Init();
+      return Interface_Static::SetIVal("write.iges.brep.mode", mode);
+    })
+  ;
+}
+
+namespace emscripten { namespace internal { template<> void raw_destructor<IGESControl_Writer>(IGESControl_Writer* ptr) { /* do nothing */ } } }

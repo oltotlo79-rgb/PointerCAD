@@ -263,6 +263,13 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
       expect(inputs.coefficients[0]).not.toHaveProperty('exactExpression');
     });
 
+  async function expectImplicitEqualsFailure(operation: Promise<unknown>): Promise<void> {
+    await expect(operation).rejects.toBeInstanceOf(Error);
+    await expect(operation).rejects.toBeInstanceOf(FailureTextError);
+    await expect(operation).rejects.toMatchObject({ name: 'Error', message: IMPLICIT_EQUATION_EQUALS_MESSAGE });
+    await expect(operation).rejects.toHaveProperty('text', { key: 'functionPlot.implicitEqualsNotSupported', parameters: {} });
+  }
+
   // rules/06 §10.317 (GR-18b): the plan's own example used "=" at the implicit root
   // (`X^2+Y^2=coef("R")^2`) as something `resolveFunctionInputs` accepts; real computation showed the
   // calculation tape has no `equal` at all, so it failed deep in sampling with an unclear message. The
@@ -272,16 +279,14 @@ describe('再計算での拒否(実際の数学計算部・関数の計算部・
     'resolveFunctionInputs は陰関数曲線の根の「=」(%s)を、図形由来の係数の有無や測定の有無によらず同じ案内の文で断る',
     async (source, geometry) => {
       const { document, analysis } = await evaluate(part([curveFeature('rooted', formulaOf('implicit-curve', source))]), geometry);
-      await expect(resolveFunctionInputs(document, functionCurve(document, 'rooted').definition, analysis, () => true))
-        .rejects.toThrow(new Error(IMPLICIT_EQUATION_EQUALS_MESSAGE));
+      await expectImplicitEqualsFailure(resolveFunctionInputs(document, functionCurve(document, 'rooted').definition, analysis, () => true));
     });
 
   it('resolveFunctionInputs は陰関数曲面の根の「=」(X^2+Y^2+Z^2=4)も同じ案内の文で断る', async () => {
     const { document, analysis } = await evaluate(part([], [surfaceFeature('rooted', formulaOf('implicit-surface', 'X^2+Y^2+Z^2=4'))]));
     const feature = document.solids.find(item => item.id === 'rooted');
     if (feature?.kind !== 'functionSurface') throw new Error('Expected the surface feature');
-    await expect(resolveFunctionInputs(document, feature.definition, analysis, () => true))
-      .rejects.toThrow(new Error(IMPLICIT_EQUATION_EQUALS_MESSAGE));
+    await expectImplicitEqualsFailure(resolveFunctionInputs(document, feature.definition, analysis, () => true));
   });
 
   it('陰関数のF=0のF形(根に「=」が無い)は、根の「=」の検査には引っかからず従来どおり受理する', async () => {

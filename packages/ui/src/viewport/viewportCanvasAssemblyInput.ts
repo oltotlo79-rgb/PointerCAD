@@ -84,6 +84,10 @@ export function createViewportAssemblyInput(deps: ViewportAssemblyInputDependenc
     try {
       if (currentAssemblyMeshAdmission({ bundle, ownership: owner, state }, state)) return true;
       if (!currentAssemblyMeshPublication(owner, state)) return refuseReady('publication-stale');
+      // A child reply can still change the ledger. Leave this parent's refresh available for the settled frame.
+      if (state.partEdit !== null && (state.isComputing || state.requestedGeneration !== state.completedGeneration)) {
+        return refuseReady('part-edit-computing');
+      }
       if (owner.receipt.status !== 'known') return refuseReady('receipt-unknown');
       if (owner.backingInspection.status !== 'known') return refuseReady('backing-unknown');
       if (owner.refreshOwnership === undefined) return refuseReady('no-refresh');

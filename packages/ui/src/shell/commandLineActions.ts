@@ -45,6 +45,7 @@ import {
   type NumericInputToolId,
 } from '../sketch/numericInput.js';
 import { activePartDocument } from '../store/documentKind.js';
+import { commitWorkingPartDocument } from '../store/partEditActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /** さかのぼれる履歴の件数。**保存しない**ので、閉じると消える。 */
@@ -454,6 +455,7 @@ export function submitCommandLine(text: string): CommandLineSubmission {
 
 type TableSubmission =
   | { readonly kind: 'created'; readonly count: number }
+  | { readonly kind: 'pending' }
   | Extract<CommandLineSubmission, { kind: 'error' }>;
 
 function tableRowFailure(row: number, reason: string): Extract<TableSubmission, { kind: 'error' }> {
@@ -480,7 +482,10 @@ function tableCommit(
   return t('commandLine.error.notCoordinateStep');
 }
 
-export function submitCommandTable(text: string): TableSubmission {
+export function submitCommandTable(text: string, owner?: {
+  readonly isCurrent: () => boolean;
+  readonly onCreated: (count: number) => void;
+}): TableSubmission {
   const store = useAppStore.getState();
   const part = activePartDocument(store);
   const tool = store.activeTool === 'select' ? 'point' : store.activeTool;
@@ -511,9 +516,11 @@ export function submitCommandTable(text: string): TableSubmission {
     lastRow = row.row;
   }
   if (count === 0) return tableRowFailure(lastRow, t('commandLine.error.tooFewValues'));
-  store.applyDocument(replaceSketch(part, document));
-  store.setPendingStart(null);
-  store.setInferredConstraints(null);
-  store.closeNumericInput();
-  return { kind: 'created', count };
+  const applied = commitWorkingPartDocument(store, replaceSketch(part, document), current => {
+    current.setPendingStart(null);
+    current.setInferredConstraints(null);
+    current.closeNumericInput();
+    owner?.onCreated(count);
+  }, owner?.isCurrent);
+  return applied === true ? { kind: 'created', count } : { kind: 'pending' };
 }

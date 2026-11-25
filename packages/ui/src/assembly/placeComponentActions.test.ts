@@ -11,7 +11,7 @@ import {
   emptyEmbeddedPartAttachments,
   setFixed,
 } from '@pointercad/model';
-import { encodeSaveDocument, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
+import { concatZipParts, encodeSaveDocument, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveAssembly } from '../file/assemblyFile.js';
 import type { FileGateway } from '../file/fileGateway.js';
@@ -246,11 +246,19 @@ describe('部品配置の非同期入口', () => {
   async function verifySaveTargetAfterOpenFile(
     openFile: NonNullable<FileGateway['openFile']>,
     place: boolean,
+    mode: 'parts' | 'legacy',
   ): Promise<void> {
     openEmptyAssembly();
     let targetIdentity: string | null = 'assembly-save-target-1';
     const reachedTargets: (string | null)[] = [];
     let cleared = 0;
+    const write = vi.fn<FileGateway['savePcad']>((name) => {
+      reachedTargets.push(targetIdentity);
+      return Promise.resolve(name);
+    });
+    const savePcad = vi.fn<FileGateway['savePcad']>((...args) => write(...args));
+    const savePcadParts = vi.fn<NonNullable<FileGateway['savePcadParts']>>(
+      (name, parts, saveAs, kind) => write(name, concatZipParts(parts), saveAs, kind));
     const gateway: FileGateway = {
       ...useAppStore.getState().fileGateway,
       openFile,
@@ -259,40 +267,44 @@ describe('部品配置の非同期入口', () => {
         cleared += 1;
         targetIdentity = null;
       },
-      savePcad: (name) => {
-        reachedTargets.push(targetIdentity);
-        return Promise.resolve(name);
-      },
+      savePcad, savePcadParts: mode === 'parts' ? savePcadParts : undefined,
     };
     useAppStore.setState({ fileGateway: gateway });
     await startPlaceComponent();
     if (place) await commitPlaceComponent();
+    const document = useAppStore.getState().assembly;
     // NodeにはWorkerがないため、実IOを公開された注入口へ明示する。
     await saveAssembly({ captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), encodeSave: encodeSaveDocument }, false);
     expect(useAppStore.getState().fileGateway).toBe(gateway);
     expect(reachedTargets).toEqual(['assembly-save-target-1']);
     expect(targetIdentity).toBe('assembly-save-target-1');
     expect(cleared).toBe(0);
+    expect(savePcad).toHaveBeenCalledTimes(mode === 'legacy' ? 1 : 0);
+    expect(savePcadParts).toHaveBeenCalledTimes(mode === 'parts' ? 1 : 0);
+    const [name, bytes, saveAs, kind] = write.mock.calls[0];
+    expect([name, saveAs, kind]).toEqual(['組立.pcada', false, 'assembly']);
+    expect(await readDocumentBundle(bytes, 'assembly')).toMatchObject({ ok: true, bundle: { document } });
+    expect(useAppStore.getState().assemblyFileName).toBe(name);
   }
 
-  it('本番openFileThroughの成功後も同じアセンブリ保存先へ保存する', async () => {
+  it.each(['parts', 'legacy'] as const)('本番openFileThroughの成功後も同じアセンブリ保存先へ保存する (%s)', async (mode) => {
     const bytes = await writeDocumentBundle(createPartDocumentBundle(createEmptyPartDocument(), attachments));
     const requested: (readonly string[])[] = [];
     await verifySaveTargetAfterOpenFile((kinds) => {
       requested.push(kinds);
       return Promise.resolve({ kind: 'pcad', fileName: '箱.pcad', bytes });
-    }, true);
+    }, true, mode);
     expect(requested).toEqual([['pcad']]);
     expect(useAppStore.getState().assembly?.components).toHaveLength(1);
   });
 
-  it('本番openFileThroughの取消後も同じアセンブリ保存先へ保存する', async () => {
-    await verifySaveTargetAfterOpenFile(() => Promise.resolve(null), false);
+  it.each(['parts', 'legacy'] as const)('本番openFileThroughの取消後も同じアセンブリ保存先へ保存する (%s)', async (mode) => {
+    await verifySaveTargetAfterOpenFile(() => Promise.resolve(null), false, mode);
     expect(useAppStore.getState().assemblyPlacement).toBeNull();
   });
 
-  it('本番openFileThroughの失敗後も同じアセンブリ保存先へ保存する', async () => {
-    await verifySaveTargetAfterOpenFile(() => Promise.reject(new Error('picker failed')), false);
+  it.each(['parts', 'legacy'] as const)('本番openFileThroughの失敗後も同じアセンブリ保存先へ保存する (%s)', async (mode) => {
+    await verifySaveTargetAfterOpenFile(() => Promise.reject(new Error('picker failed')), false, mode);
     expect(useAppStore.getState().assemblyPlacement).toBeNull();
   });
 });

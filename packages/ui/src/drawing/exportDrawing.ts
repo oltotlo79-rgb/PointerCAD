@@ -1,5 +1,5 @@
 import { drawingDimensionContext } from '@pointercad/model';
-import { renderDrawing, toPdf, toSvg, type DrawingDocument, type RenderDocument } from '@pointercad/drawing';
+import { renderDrawing, UnknownDrawingPaperError, toPdf, toSvg, type DrawingDocument, type RenderDocument } from '@pointercad/drawing';
 import { resolveDrawingDimensions, resolveDrawingGdt, resolveDrawingWelds } from '@pointercad/model';
 import { writeDrawingDxf } from '@pointercad/io';
 import { saveFileAsThrough } from '../file/fileGateway.js';
@@ -57,6 +57,12 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
   return { drawing, render: rendered.document, isCurrent };
 }
 
+function exportFailureText(error: unknown): string {
+  if (hasSaveRecoveryCopy(error)) return t('file.saveRecoveryCopyRetained');
+  if (error instanceof UnknownDrawingPaperError) return t('drawing.error.unsupportedPaper');
+  return error instanceof Error ? error.message : t('drawing.error.outputFailed');
+}
+
 const exporting = new Set<string>();
 
 export async function exportDrawing(options: { readonly format: DrawingOutputFormat; readonly dpi?: DrawingDpi }): Promise<boolean> {
@@ -99,8 +105,7 @@ export async function exportDrawing(options: { readonly format: DrawingOutputFor
     if (saved && notice !== null && prepared.isCurrent()) state.setDrawingMessage(notice);
     return saved;
   } catch (error) {
-    if (useAppStore.getState().drawing === drawing) state.setDrawingMessage(hasSaveRecoveryCopy(error)
-      ? t('file.saveRecoveryCopyRetained') : error instanceof Error ? error.message : t('drawing.error.outputFailed'));
+    if (useAppStore.getState().drawing === drawing) state.setDrawingMessage(exportFailureText(error));
     return false;
   } finally { exporting.delete(drawing.id); }
 }

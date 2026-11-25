@@ -5,8 +5,8 @@ import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
-import { nativeFileFilter, isFileDialogKind, MAX_COMPRESSED_INPUT_BYTES, typedReadLimitOf,
-  PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
+import { nativeFileFilter, isFileDialogKind, ARCHIVE_READ_CHUNK_BYTES, MAX_COMPRESSED_INPUT_BYTES, typedReadLimitOf, validArchiveReadRange,
+  PCADA_EXTENSION, PCADD_EXTENSION, PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
 
 import { validateAppSender } from './appSender.js';
 import { beginExportWrite, clearExportHandoff, registerExportHandoffIpc } from './exportHandoffIpc.js';
@@ -199,7 +199,7 @@ async function readBytesFrom(filePath: string): Promise<Uint8Array> {
 
 /**
  * 部品・アセンブリ・図面の「開く」: ファイルを読むために開き、同じ記述子の大きさと更新時刻を控える。本文はまだ読まない。
- * 上限は種類つきの「開く」と同じ(`readLimitOf`。大きければ本文を読まずに断る)。
+ * 通常の「開く」の部品・組立・図面だけは、旧上限を超えたファイルを範囲読取の候補にする。
  *
  * 読む途中の変化は「開いたままの記述子で読む」ことと「読み終えた時の記述子の stat を開いた時と照合する」ことで防ぐ。
  * 今の readFile の「開く」は大きさだけを照合していたが、区切って読むと IPC の往復の分だけ読む時間が延びるので、
@@ -208,7 +208,7 @@ async function readBytesFrom(filePath: string): Promise<Uint8Array> {
  * 置換は開いている先には効かず、Node に置換の意味を変える口は無い)。そのため、読込と同じファイルへの保存の確定は
  * `replaceWithTemporary` の「控えを作ってから上書きする」道へ落ち、読込の側は終わりの照合で断る。
  */
-async function openForChunkedRead(filePath: string): Promise<{ handle: FileHandle; size: number; modifiedAt: number }> {
+async function openForChunkedRead(filePath: string, allowRanges = false): Promise<{ handle: FileHandle; size: number; modifiedAt: number }> {
   if (extname(filePath).toLowerCase() === '.dwg') throw new Error(DWG_GUIDE);
   let handle: FileHandle;
   try {
@@ -218,7 +218,9 @@ async function openForChunkedRead(filePath: string): Promise<{ handle: FileHandl
   }
   try {
     const metadata = await handle.stat();
-    if (metadata.size > readLimitOf(filePath)) throw new InputTooLargeError(READ_TOO_LARGE_MESSAGE);
+    const native = [PCAD_DOTTED_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION].some(extension => extension === extname(filePath).toLowerCase());
+    if (!Number.isSafeInteger(metadata.size) || metadata.size < 0) throw new InputTooLargeError(READ_SIZE_CHANGED_MESSAGE);
+    if (!(allowRanges && native) && metadata.size > readLimitOf(filePath)) throw new InputTooLargeError(READ_TOO_LARGE_MESSAGE);
     return { handle, size: metadata.size, modifiedAt: metadata.mtimeMs };
   } catch (cause) {
     await handle.close().catch(() => undefined);
@@ -336,7 +338,7 @@ async function replaceWithTemporary(filePath: string, temporaryPath: string,
  * 開けなくなるよりはよい)。
  */
 export async function openPcadDialog(window: BrowserWindow | null,
-  kind: 'part' | 'assembly' | 'drawing' | 'all' = 'part'): Promise<OpenedPcadFile | null> {
+  kind: 'part' | 'assembly' | 'drawing' | 'all' = 'part', allowRanges = false): Promise<OpenedPcadFile | null> {
   const options: OpenDialogOptions = {
     properties: ['openFile'],
     filters: documentFilters(kind),
@@ -349,7 +351,7 @@ export async function openPcadDialog(window: BrowserWindow | null,
   if (result.canceled || filePath === undefined) {
     return null;
   }
-  return { name: basename(filePath), path: filePath, ...await openForChunkedRead(filePath) };
+  return { name: basename(filePath), path: filePath, ...await openForChunkedRead(filePath, allowRanges) };
 }
 
 /**
@@ -546,6 +548,7 @@ interface PendingSaveTarget {
 }
 
 const pendingPaths = new Map<number, PendingSaveTarget>();
+const openSelections = new Map<number, object>();
 const targetRevisions = new Map<number, object>();
 const watchedWindowIds = new Set<number>();
 let nextSaveTargetToken = 1;
@@ -562,6 +565,7 @@ function watchWindow(event: IpcMainInvokeEvent): void {
     lastPaths.delete(id);
     pendingPaths.delete(id);
     targetRevisions.delete(id);
+    openSelections.delete(id);
     watchedWindowIds.delete(id);
     abortSenderWork(id);
   });
@@ -573,6 +577,7 @@ function watchWindow(event: IpcMainInvokeEvent): void {
 
 /** 送り手の途中の保存と途中の「開く」を、どちらも片付ける。 */
 function abortSenderWork(senderId: number): void {
+  openSelections.delete(senderId);
   abortSenderTransfers(senderId);
   abortSenderOpenReads(senderId);
 }
@@ -604,6 +609,7 @@ interface PcadOpenRead {
   readonly modifiedAt: number;
   /** 読み直しの時だけ、その候補の token。終わりで候補を作り直さず、同じ token を返す。 */
   readonly rereadToken: string | null;
+  readonly rangeSelection?: object;
   sentBytes: number;
   nextIndex: number;
   busy: boolean;
@@ -851,18 +857,21 @@ function ownOpenRead(event: IpcMainInvokeEvent, readId: unknown): { readonly id:
  */
 async function beginOpenRead(event: IpcMainInvokeEvent, args: readonly unknown[]):
   Promise<{ readId: string; name: string; size: number; chunkBytes: number } | null> {
-  if (args.length !== 1) return null;
-  const [kind = 'part'] = args;
+  if (args.length !== 1 && !(args.length === 2 && args[1] === true)) return null;
+  const [kind = 'part', allowRanges = false] = args;
   if (kind !== 'part' && kind !== 'assembly' && kind !== 'drawing' && kind !== 'all') return null;
   const senderId = event.sender.id;
   if (countBySender(openReads.values(), senderId) >= MAX_OPEN_READS_PER_SENDER) throw new Error(OPEN_REQUEST_REFUSED);
   // 未確定の候補は次の「開く」を始めた時点で失効する。確定済みの先はまだ保つ。
   pendingPaths.delete(senderId);
   watchWindow(event);
-  const opened = await openPcadDialog(windowOf(event), kind);
+  const selection = {};
+  openSelections.set(senderId, selection);
+  const opened = await openPcadDialog(windowOf(event), kind, allowRanges === true);
+  const ranging = opened !== null && opened.size > MAX_COMPRESSED_INPUT_BYTES && allowRanges === true;
   if (opened === null) return null;
   // 窓の間に画面が閉じたら送り手がいないので、開いたファイルをすぐ閉じる。
-  if (!watchedWindowIds.has(senderId)) {
+  if (!watchedWindowIds.has(senderId) || (ranging && openSelections.get(senderId) !== selection)) {
     await opened.handle.close().catch(() => undefined);
     return null;
   }
@@ -872,8 +881,8 @@ async function beginOpenRead(event: IpcMainInvokeEvent, args: readonly unknown[]
   }
   const readId = crypto.randomUUID();
   openReads.set(readId, { senderId, path: opened.path, handle: opened.handle, size: opened.size,
-    modifiedAt: opened.modifiedAt, rereadToken: null, sentBytes: 0, nextIndex: 0, busy: false });
-  return { readId, name: opened.name, size: opened.size, chunkBytes: PCAD_OPEN_CHUNK_BYTES };
+    modifiedAt: opened.modifiedAt, rereadToken: null, ...(ranging ? { rangeSelection: selection } : {}), sentBytes: 0, nextIndex: 0, busy: false });
+  return { readId, name: opened.name, size: opened.size, chunkBytes: ranging ? ARCHIVE_READ_CHUNK_BYTES : PCAD_OPEN_CHUNK_BYTES };
 }
 
 /**
@@ -916,17 +925,30 @@ async function readExactly(handle: FileHandle, position: number, length: number)
   return piece;
 }
 
+function openChunkRange(read: PcadOpenRead, args: readonly unknown[]): readonly [number, number] | null {
+  if (read.rangeSelection === undefined) {
+    if (args.length !== 2 || read.sentBytes >= read.size) return null;
+    return [read.sentBytes, Math.min(PCAD_OPEN_CHUNK_BYTES, read.size - read.sentBytes)];
+  }
+  const [, , offset, length] = args;
+  if (args.length !== 4 || openSelections.get(read.senderId) !== read.rangeSelection
+    || typeof offset !== 'number' || typeof length !== 'number' || !validArchiveReadRange(read.size, offset, length)) return null;
+  return [offset, length];
+}
+
 /**
  * 区切りの 1 回分を読んで返す。通し番号は 0 から 1 つずつ(入れ違い・欠け・二重・読み過ぎを断る)、長さは
  * 最後の回より前は `PCAD_OPEN_CHUNK_BYTES` ちょうど。1 つの「開く」の回は 1 つずつ(前の回を読んでいる間の次の回は断る)。
+ * 大容量の範囲モードでは要求番号と位置・長さを照合し、必要な位置を最大1MiB読む。
  * 返す並びはその回の長さだけの独立した領域(大きい並びの見せ方を返すと、構造化複製が全体を写す)。
  */
 async function readOpenChunk(event: IpcMainInvokeEvent, args: readonly unknown[]): Promise<Uint8Array> {
   const [readId, index] = args;
   const { id, read } = ownOpenRead(event, readId);
-  if (args.length !== 2 || read.busy || index !== read.nextIndex || read.sentBytes >= read.size) return refuseOpenRead(id);
-  const position = read.sentBytes;
-  const length = Math.min(PCAD_OPEN_CHUNK_BYTES, read.size - position);
+  if (read.busy || index !== read.nextIndex) return refuseOpenRead(id);
+  const range = openChunkRange(read, args);
+  if (range === null) return refuseOpenRead(id);
+  const [position, length] = range;
   read.busy = true;
   let piece: Uint8Array;
   try {
@@ -940,7 +962,7 @@ async function readOpenChunk(event: IpcMainInvokeEvent, args: readonly unknown[]
   }
   if (openReads.get(id) !== read) throw new Error(OPEN_REQUEST_REFUSED);
   read.nextIndex += 1;
-  read.sentBytes += length;
+  if (read.rangeSelection === undefined) read.sentBytes += length;
   return piece;
 }
 
@@ -959,11 +981,12 @@ async function statThenClose(handle: FileHandle): Promise<{ readonly size: numbe
 /**
  * 終わり。全部を渡したことを確かめ、同じ記述子の大きさと更新時刻が開いた時と同じかを照合してから閉じ、
  * 実パスを未確定の上書き先の候補に結び付けて token を返す(今の「開く」と同じく、確定は文書の検証の後)。
- * 変わっていたら読込中の変化の失敗にし、候補を作らない。
+ * 範囲モードではWorkerの検証を受け取った後に呼ばれ、読込世代と記述子の状態を同じように照合する。
  */
 async function finishOpenRead(event: IpcMainInvokeEvent, args: readonly unknown[]): Promise<string> {
   const { id, read } = ownOpenRead(event, args[0]);
-  if (args.length !== 1 || read.busy || read.sentBytes !== read.size) return refuseOpenRead(id);
+  const complete = read.rangeSelection === undefined ? read.sentBytes === read.size : read.nextIndex > 0;
+  if (args.length !== 1 || read.busy || !complete) return refuseOpenRead(id);
   openReads.delete(id);
   settlingReads.add(read);
   const current = await statThenClose(read.handle).finally(() => { settlingReads.delete(read); });
@@ -973,6 +996,9 @@ async function finishOpenRead(event: IpcMainInvokeEvent, args: readonly unknown[
     // 読み直しは候補を作り直さない。読む間に候補が替わっていたら(次の「開く」・確定・解除)断る。
     if (pendingPaths.get(event.sender.id)?.token !== read.rereadToken) throw new Error(OPEN_REQUEST_REFUSED);
     return read.rereadToken;
+  }
+  if (read.rangeSelection !== undefined && openSelections.get(read.senderId) !== read.rangeSelection) {
+    throw new Error(OPEN_REQUEST_REFUSED);
   }
   return rememberPendingPath(event, read.path, current);
 }
@@ -1018,6 +1044,7 @@ function clearSaveTargets(event: IpcMainInvokeEvent): void {
   clearExportHandoff(event.sender.id);
   watchWindow(event);
   targetRevisions.set(event.sender.id, {});
+  openSelections.delete(event.sender.id);
   lastPaths.delete(event.sender.id);
   pendingPaths.delete(event.sender.id);
 }

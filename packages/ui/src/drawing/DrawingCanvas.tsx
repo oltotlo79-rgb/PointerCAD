@@ -1,5 +1,5 @@
 import { drawingDimensionContext, moveDrawingManufacturing, resolveDrawingGdt, resolveDrawingWelds } from '@pointercad/model';
-import { renderDrawing, renderDrawingElements, resolveStyle, toSvg, type DrawingDocument, type DrawingRenderElement, type Point2 } from '@pointercad/drawing';
+import { paperSizeOf, renderDrawing, renderDrawingElements, resolveStyle, toSvg, type DrawingDocument, type DrawingRenderElement, type Point2 } from '@pointercad/drawing';
 import { resolveDimensionTarget, resolveDrawingDimensions } from '@pointercad/model';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
@@ -122,8 +122,9 @@ function useDrawingCanvas() {
   const resolveFields = useMemo(() => drawing === null ? undefined : drawingNoteFields(drawing, library), [drawing, library]);
   const annotations = useMemo(() => drawing === null || fontStatus !== 'ready' ? []
     : displayDrawingAnnotations(drawing, source ?? { bodyIds: [], center: [0, 0, 0] }, library, drawingFont.outline), [drawing, source, library, fontStatus]);
+  const supportedPaper = drawing === null || paperSizeOf(drawing.sheet.paperSizeId) !== undefined;
   const shown = useMemo(() => {
-    if (drawing === null || fontStatus !== 'ready') return null;
+    if (drawing === null || !supportedPaper || fontStatus !== 'ready') return null;
     const previews = drag.current !== null && drag.current.document === drawing && dragPoint !== null
       ? previewDrawingDimensionsDrag(drag.current, dragPoint) : null;
     const preview = new Map(previews?.map((item) => [item.id, item]));
@@ -168,7 +169,7 @@ function useDrawingCanvas() {
         fill: primitive.fill === null ? null : SELECTION_COLOR } : { ...primitive, fill: SELECTION_COLOR };
     });
     return { svg: toSvg({ ...rendered.document, primitives }), height: rendered.document.heightMm, displays, views, tables, manufacturing };
-  }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library, gdt, welds, repairProjection, resolveFields]);
+  }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library, gdt, welds, repairProjection, resolveFields, supportedPaper]);
   function paperPoint(event: React.PointerEvent): { readonly point: Point2; readonly tolerance: number } | null {
     const svg = container.current?.querySelector('svg');
     const matrix = svg?.getScreenCTM();
@@ -206,14 +207,14 @@ function useDrawingCanvas() {
   return { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
     repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
     noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
-    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library };
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library, supportedPaper };
 }
 
 export function DrawingCanvas(): React.JSX.Element {
   const { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
     repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
     noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
-    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library } = useDrawingCanvas();
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library, supportedPaper } = useDrawingCanvas();
   useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport" ref={viewport}
     data-document-owner={repairDocumentId} data-reference-repair-hover-status={repairProjection.status}
@@ -373,11 +374,12 @@ export function DrawingCanvas(): React.JSX.Element {
       onKeyDown={(event) => { if (event.key === 'Escape') { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null;
         viewSvgPreview.current?.restore(); viewSvgPreview.current = null; viewDrag.current = null;
         drag.current = null; noteDrag.current = null; tableDrag.current = null; gdtDrag.current = null; setDragPoint(null); } }}>
-      {shown?.svg == null ? <p className="pcad-viewport__empty-text">{t(fontStatus === 'failed' ? 'drawing.status.fontUnavailable'
+      {!supportedPaper ? <p role="alert" className="pcad-viewport__empty-text">{t('drawing.error.unsupportedPaper')}</p>
+        : shown?.svg == null ? <p className="pcad-viewport__empty-text">{t(fontStatus === 'failed' ? 'drawing.status.fontUnavailable'
         : fontStatus === 'ready' ? 'drawing.viewport.empty' : 'drawing.status.computing')}</p>
         : <div className="pcad-drawing-svg" dangerouslySetInnerHTML={{ __html: shown.svg }} />}
     </div>
-    {fontStatus === 'failed' ? <div role="alert" className="pcad-drawing-notice"><p>{t('drawing.error.fontFailed')}</p>
+    {supportedPaper && fontStatus === 'failed' ? <div role="alert" className="pcad-drawing-notice"><p>{t('drawing.error.fontFailed')}</p>
       <button type="button" className="pcad-button" title={t('drawing.font.retryHelp')} onClick={() => {
         setFontStatus('loading'); setFontAttempt(attempt => attempt + 1);
       }}>{t('drawing.font.retry')}</button></div> : null}

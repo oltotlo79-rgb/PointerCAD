@@ -7,7 +7,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const exportRule = 'no-restricted-exports';
+const pureArithmeticPaths = [
+  'packages/kernel/src/math/splineInterpolation.ts', 'packages/kernel/src/math/vectorArithmetic.ts',
+  'packages/kernel/src/math/magnitude.ts',
+];
 const productPaths = [
+  ...pureArithmeticPaths,
   'packages/kernel/src/index.ts', 'packages/expression/src/index.ts', 'packages/drawing/src/index.ts',
   'packages/io/src/index.ts', 'packages/model/src/index.ts', 'packages/fem/src/index.ts',
   'packages/ui/src/index.ts', 'apps/web/src/helpChunkPolicy.ts',
@@ -119,6 +124,22 @@ describe('合成後も広い層と狭いモジュールの既存禁止を保持�
       expect(lint(example.path, example.source).some(message => message.ruleId === example.rule)).toBe(true);
     });
   }
+});
+
+it('純数値3入口の実効規則が型と実行時の依存を拒否する', () => {
+  const rejected = [
+    "import './other.js';", "import type { Value } from './other.js';", "type Value = import('./other.js').Value;",
+    "import other = require('./other.js');", "import(target);", "require('./other.js');",
+    "export { value } from './other.js';", "export * from './other.js';", 'new Worker(url);',
+    'WebAssembly.compile(buffer);',
+  ];
+  for (const path of pureArithmeticPaths) {
+    for (const source of rejected) {
+      expect(lint(path, source).map(message => message.ruleId), path).toContain('no-restricted-syntax');
+    }
+    expect(lint(path, 'const value = 1; export { value };')).toEqual([]);
+  }
+  expect(lint('packages/kernel/src/index.ts', "export { value } from './other.js';")).toEqual([]);
 });
 
 it('既存の実資産入口と設定を制限規則が拒否しない', () => {

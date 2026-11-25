@@ -17,14 +17,16 @@ const wasm = new Uint8Array([
 const manifestUrl = 'https://pointercad.example/occt/manifest.json';
 const assetUrl = 'https://pointercad.example/occt/native.bin';
 it('shares an in-flight browser load but releases its rejection for the next explicit call', async () => {
-  const refuse = (): Promise<WebAssembly.Module> => Promise.reject(new Error('unavailable module offer'));
+  const refuse = vi.fn((): Promise<WebAssembly.Module> => Promise.reject(new Error('unavailable module offer')));
   const first = loadOcctForBrowser(refuse);
   expect(loadOcctForBrowser(refuse)).toBe(first);
   await expect(first).rejects.toBeDefined();
+  expect(refuse).toHaveBeenCalledTimes(1);
   const retry = loadOcctForBrowser(refuse);
   expect(retry).not.toBe(first);
   expect(loadOcctForBrowser(refuse)).toBe(retry);
   await expect(retry).rejects.toBeDefined();
+  expect(refuse).toHaveBeenCalledTimes(2);
   // This verifies cache lifetime only, not native instantiation; broker tests verify real WASM bytes.
 });
 const streamUrl = `https://pointercad.example/occt/stream/opencascade.full-${sha256(wasm)}.wasm`;

@@ -44,6 +44,10 @@ node scripts/release/build-release-manifest.mjs desktop-stage-windows desktop-st
 - 計算部: 追加計算部（`exact-math/runtime/pyodide.asm.wasm`）と自動作図の実行部（`assets/quickjs-pcad-*.wasm`）がWebにあり、両OSの候補と同じ内容であること、字体のファイルがあること、全巻のHTMLとPDFがそろっていることを確かめ、SBOMから核・計算部・数式入力の版（`opencascade.js`・`Pyodide`・`sympy`・`mpmath`・`quickjs-pcad.wasm`・`mathlive`）を読んで記録する。
 - 保存済みの`publication-manifest.json`は`verifyPublicationManifest`に同じ入力を渡して作り直し、1か所でも違えば拒否する。`releaseCertified: false`のままで、公開の可否は公開前検査（P13-15）と公開後の確認（P13-20）で決める。
 
+## IGES 対応の形状計算部の対応ソース
+
+同じ配布版について、[Windows の生成・ソース梱包手順](../../vendor/opencascade/iges-build/WINDOWS.md)から対応ソースの ZIP を作成します。公開manifest の Web 復号と Windows・Linux の同梱 WASM を、ZIP の原票の指紋と照合します。リリースの告知に両方の指紋を記録し、同じ版に ZIP を添付します。
+
 ## SBOM・ライセンス一覧の作成（P13-6）
 
 配布に入る直接・推移のnpm依存、数式字体・画面用字体、自動作図(QuickJS-ng)の実行部、追加計算部(Pyodide/SymPy/mpmath等)、はり解析の計算部(`packages/fem/runtime`)の固定資産を、既存の`scripts/vite/mathNotices.mjs`・`runtimeNotices.mjs`・`scriptRuntimeNotices.mjs`・`exactMathAssets.mjs`・`femRuntimeAssets.mjs`の検査結果から集め、デスクトップ版だけに入るElectron(`apps/desktop`が導入した`electron`の`package.json`の版・`MIT`の宣言と、その`LICENSE`の本文・SHA-256)を加えて、1つのCycloneDX形式`sbom.json`にまとめる。生成やビルドは行わず、既存の記録と導入済みのpackageを読むだけ。Electronの`LICENSE.electron.txt`・`LICENSES.chromium.html`はelectron-builderが同じ版のElectronの書庫から実行ファイルの横へ置くもので、リポジトリに固定したバイト列が無いため、名前だけを`pointercad:desktopExecutableNotice`として記録する(hashは記録せず、Web・rendererの照合対象`pointercad:distributedFile`にもしない)。

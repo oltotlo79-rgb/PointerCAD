@@ -1,3 +1,4 @@
+import type { setImmediate as nodeSetImmediate } from 'node:timers';
 import type { Bnd_Box, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import { createAllocations, type OcctDeletable } from '../occt/allocations.js';
@@ -49,6 +50,8 @@ export function snapshotInterferenceRequest(request: InterferenceRequest): Inter
 }
 
 interface PairJob { readonly pair: InterferencePairId; readonly a: InterferenceComponentSpec; readonly b: InterferenceComponentSpec }
+declare const setImmediate: typeof nodeSetImmediate | undefined;
+
 export interface InterferencePreparation {
   readonly jobs: readonly PairJob[];
   readonly skips: readonly InterferenceSkip[];
@@ -426,41 +429,10 @@ function translatedPair(shared: SharedPairResult, a: PreparedComponent, pair: In
     mesh: { positions, normals: shared.pair.mesh.normals.slice(), indices: shared.pair.mesh.indices.slice(), triangleCount: shared.pair.mesh.triangleCount } };
 }
 
-/** 1job内だけの借用snapshot。キャッシュへ書き戻さず全nativeをjob終了時に返す。 */
-export async function checkInterference(
-  request: InterferenceRequest,
-  oc: OpenCascadeInstance,
-  bodies: ReadonlyMap<string, CachedSolid | undefined>,
-  onProgress?: InterferenceProgressCallback,
-  shouldCancel?: SolidCancelToken,
-  callbackDelivery?: 'message',
-  onCheckpoint?: InterferenceCheckpointCallback,
-): Promise<InterferenceResult> {
-  const snapshot = snapshotInterferenceRequest(request);
-  const preparation = prepareInterference(snapshot);
-  let result = initialInterferenceResult(snapshot, preparation);
-  if (result.kind === 'failed') return result;
-  const borrowed = new Map(bodies);
-  const pairs: InterferencePair[] = []; const failures: InterferencePairFailure[] = [];
-  const boxes: OcctDeletable[] = []; const unions: OcctDeletable[] = []; const placed: OcctDeletable[] = [];
-  const components = new Map<string, Prepared>();
-  const localBoxes = new Map<string, Bnd_Box | ComponentFailure>();
-  const validatedBodies = new Map<string, TopoDS_Shape | ComponentFailure>();
-  const combined = new Map<string, TopoDS_Shape | ComponentFailure>();
-  const worldShapes = new Map<string, TopoDS_Shape | ComponentFailure>();
-  // job内の純JS結果だけ。shape/leaseや失敗・取消をcacheへ保持しない。
-  const sharedPairs = new Map<string, SharedPairResult>();
-  const clusters = new Map<string, PairCluster[]>();
-  const boxProofs = new Map<string, InterferenceBoxProof | null>();
-  let checked = 0; let completedComponents = 0; let cancelled = false;
-  let checkpointFailureCode: 'callbackFailed' | 'unexpectedFailure' | undefined;
-  const interruptedCleanup: string[] = [];
+function createInterferenceTaskQueue() {
   let taskQueue: MessageChannel | undefined;
   let pendingTask: { resolve(): void; reject(error: Error): void } | undefined;
   let taskRelayed = false;
-  // Only the combined message callback may be coalesced; direct/legacy callback order stays unchanged.
-  const candidatePacing = callbackDelivery === 'message' && onCheckpoint !== undefined
-    ? createInterferenceCheckpointPacing() : undefined;
   async function queueMacrotask(): Promise<void> {
     if (typeof MessageChannel === 'undefined') return new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (taskQueue === undefined) {
@@ -508,31 +480,33 @@ export async function checkInterference(
       } catch (error) { pendingTask = undefined; reject(error instanceof Error ? error : new Error(detail(error))); }
     });
   }
-  const report = (): InterferenceReport => ({ ...result, pairs, failures, checkedPairCount: checked,
-    pendingPairCount: preparation.jobs.length - checked - failures.length, cancelled });
-  async function checkpoint(phase: InterferenceProgress['phase'], currentPair?: InterferencePairId, afterCommon = false, forceCandidate = false): Promise<boolean> {
-    if (candidatePacing !== undefined && !candidatePacing.shouldDeliver(phase, afterCommon || forceCandidate)) return true;
-    try {
-      // 同期nativeの間にWorkerの取消messageを配送する。microtaskだけでは届かない。
-      // 実Comlink callbackはこの後のawait自体がMessagePort往復。directだけtimerを補う。
-      if ((shouldCancel !== undefined || callbackDelivery === 'message' && onCheckpoint !== undefined)
-        && (callbackDelivery !== 'message' || afterCommon)) await queueMacrotask();
-    } catch (error) { checkpointFailureCode = 'unexpectedFailure'; throw error; }
-    try {
-      const progress: InterferenceProgress = { requestId: snapshot.requestId, phase,
-        completedPairs: checked + failures.length + preparation.skips.length,
-        totalPairs: preparation.total, completedComponents, totalComponents: snapshot.components.length,
-        ...(currentPair === undefined ? {} : { currentPair }) };
-      if (callbackDelivery === 'message' && onCheckpoint !== undefined) {
-        if (await onCheckpoint(progress)) { cancelled = true; return false; }
-        return true;
-      }
-      if (await shouldCancel?.()) { cancelled = true; return false; }
-      await onProgress?.(progress);
-      if (await shouldCancel?.()) { cancelled = true; return false; }
-      return true;
-    } catch (error) { checkpointFailureCode = 'callbackFailed'; throw error; }
+  function close(): string[] {
+    const channel = taskQueue;
+    return channel === undefined ? [] : releaseAll([
+      { delete() { channel.port1.close(); } }, { delete() { channel.port2.close(); } },
+      { delete() { channel.port1.onmessage = null; } }, { delete() { channel.port2.onmessage = null; } },
+    ]);
   }
+  return { wait: queueMacrotask, close };
+}
+
+interface InterferenceComponentResources {
+  readonly boxes: OcctDeletable[];
+  readonly unions: OcctDeletable[];
+  readonly placed: OcctDeletable[];
+  readonly boxProofs: Map<string, InterferenceBoxProof | null>;
+}
+
+type PrepareCheckpoint = (phase: 'prepare', pair?: InterferencePairId) => Promise<boolean>;
+
+/** Own the per-job topology lookups and placed/combined shapes until the job returns its borrows. */
+function createInterferenceComponents(oc: OpenCascadeInstance, borrowed: ReadonlyMap<string, CachedSolid | undefined>,
+  checkpoint: PrepareCheckpoint, resources: InterferenceComponentResources) {
+  const { boxes, unions, placed, boxProofs } = resources;
+  const localBoxes = new Map<string, Bnd_Box | ComponentFailure>();
+  const validatedBodies = new Map<string, TopoDS_Shape | ComponentFailure>();
+  const combined = new Map<string, TopoDS_Shape | ComponentFailure>();
+  const worldShapes = new Map<string, TopoDS_Shape | ComponentFailure>();
   async function prepareComponent(spec: InterferenceComponentSpec): Promise<Prepared | null> {
     if (spec.kind === 'unavailable') return { stage: 'input', code: spec.code, message: spec.message,
       ...(spec.missingKeys === undefined ? {} : { missingKeys: spec.missingKeys }) };
@@ -594,6 +568,65 @@ export async function checkInterference(
     worldShapes.set(component.spec.componentId, world);
     return world;
   }
+  return { prepareComponent, worldShape };
+}
+
+/** 1job内だけの借用snapshot。キャッシュへ書き戻さず全nativeをjob終了時に返す。 */
+export async function checkInterference(
+  request: InterferenceRequest,
+  oc: OpenCascadeInstance,
+  bodies: ReadonlyMap<string, CachedSolid | undefined>,
+  onProgress?: InterferenceProgressCallback,
+  shouldCancel?: SolidCancelToken,
+  callbackDelivery?: 'message',
+  onCheckpoint?: InterferenceCheckpointCallback,
+): Promise<InterferenceResult> {
+  const snapshot = snapshotInterferenceRequest(request);
+  const preparation = prepareInterference(snapshot);
+  let result = initialInterferenceResult(snapshot, preparation);
+  if (result.kind === 'failed') return result;
+  const borrowed = new Map(bodies);
+  const pairs: InterferencePair[] = []; const failures: InterferencePairFailure[] = [];
+  const boxes: OcctDeletable[] = []; const unions: OcctDeletable[] = []; const placed: OcctDeletable[] = [];
+  const components = new Map<string, Prepared>();
+  // job内の純JS結果だけ。shape/leaseや失敗・取消をcacheへ保持しない。
+  const sharedPairs = new Map<string, SharedPairResult>();
+  const clusters = new Map<string, PairCluster[]>();
+  const boxProofs = new Map<string, InterferenceBoxProof | null>();
+  let checked = 0; let completedComponents = 0; let cancelled = false;
+  let checkpointFailureCode: 'callbackFailed' | 'unexpectedFailure' | undefined;
+  const interruptedCleanup: string[] = [];
+  const taskQueue = createInterferenceTaskQueue();
+  // Only the combined message callback may be coalesced; direct/legacy callback order stays unchanged.
+  const candidatePacing = callbackDelivery === 'message' && onCheckpoint !== undefined
+    ? createInterferenceCheckpointPacing() : undefined;
+  const report = (): InterferenceReport => ({ ...result, pairs, failures, checkedPairCount: checked,
+    pendingPairCount: preparation.jobs.length - checked - failures.length, cancelled });
+  async function checkpoint(phase: InterferenceProgress['phase'], currentPair?: InterferencePairId, afterCommon = false, forceCandidate = false): Promise<boolean> {
+    if (candidatePacing !== undefined && !candidatePacing.shouldDeliver(phase, afterCommon || forceCandidate)) return true;
+    try {
+      // 同期nativeの間にWorkerの取消messageを配送する。microtaskだけでは届かない。
+      // 実Comlink callbackはこの後のawait自体がMessagePort往復。directだけtimerを補う。
+      if ((shouldCancel !== undefined || callbackDelivery === 'message' && onCheckpoint !== undefined)
+        && (callbackDelivery !== 'message' || afterCommon)) await taskQueue.wait();
+    } catch (error) { checkpointFailureCode = 'unexpectedFailure'; throw error; }
+    try {
+      const progress: InterferenceProgress = { requestId: snapshot.requestId, phase,
+        completedPairs: checked + failures.length + preparation.skips.length,
+        totalPairs: preparation.total, completedComponents, totalComponents: snapshot.components.length,
+        ...(currentPair === undefined ? {} : { currentPair }) };
+      if (callbackDelivery === 'message' && onCheckpoint !== undefined) {
+        if (await onCheckpoint(progress)) { cancelled = true; return false; }
+        return true;
+      }
+      if (await shouldCancel?.()) { cancelled = true; return false; }
+      await onProgress?.(progress);
+      if (await shouldCancel?.()) { cancelled = true; return false; }
+      return true;
+    } catch (error) { checkpointFailureCode = 'callbackFailed'; throw error; }
+  }
+  const { prepareComponent, worldShape } = createInterferenceComponents(oc, borrowed, checkpoint,
+    { boxes, unions, placed, boxProofs });
   try {
     // 資源を取得した後はfinallyより前に返却値を確定しない。開始前取消も同じ出口へ送る。
     await checkpoint('prepare');
@@ -706,11 +739,7 @@ export async function checkInterference(
   } catch (error) {
     result = interferenceRootFailure(result, { code: checkpointFailureCode ?? 'unexpectedFailure', message: detail(error) });
   } finally {
-    const channel = taskQueue;
-    const taskCleanup = channel === undefined ? [] : releaseAll([
-      { delete() { channel.port1.close(); } }, { delete() { channel.port2.close(); } },
-      { delete() { channel.port1.onmessage = null; } }, { delete() { channel.port2.onmessage = null; } },
-    ]);
+    const taskCleanup = taskQueue.close();
     const cleanupMessages = [...interruptedCleanup, ...taskCleanup, ...releaseAll(boxes), ...releaseAll(placed), ...releaseAll(unions)];
     if (cleanupMessages.length > 0) result = interferenceRootFailure(result, result.kind === 'failed'
       ? { ...result.failure, cleanupMessages: [...(result.failure.cleanupMessages ?? []), ...cleanupMessages] }

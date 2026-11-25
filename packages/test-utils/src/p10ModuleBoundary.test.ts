@@ -18,7 +18,7 @@ const dynamicBaseline = [
     sha256: '9410576e478f5795f45635d5112ae799d57d472dddc3e3e89292548b46b1d2d6',
     expression: 'moduleUrl', reason: 'Loads the shipped pyodide.mjs from the fixed runtime folder.' },
   { consumer: 'packages/test-utils/src/functionSizePolicy.test.ts',
-    sha256: '338b3e6fa1bff50fd5beb29885543ff632cceaffb5cd8e01cd339d56a5c4e401',
+    sha256: 'cbd07949284e3e57eb298ef9fbd11655d75e73c981178a88f48e920a1f38ddc6',
     expression: "new URL('../../../eslint.functionSizeBaseline.js', import.meta.url).href",
     reason: 'Loads the fixed root ESLint function-size baseline.' },
   { consumer: 'packages/test-utils/src/complexityPolicy.test.ts',

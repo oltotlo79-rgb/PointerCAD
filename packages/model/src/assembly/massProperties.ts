@@ -6,7 +6,7 @@ import {
 import { massFromVolume } from '../measure/massProperties.js';
 import type { PartDocument } from '../part/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
-import { catalogItemNominalMass } from './catalog/source.js';
+import { catalogItemNominalMass, catalogItemRow } from './catalog/source.js';
 import { applyPlacementToPoint, type RigidPlacement } from './placementMath.js';
 import type { AssemblyComponent, AssemblyDocument } from './types.js';
 
@@ -21,7 +21,11 @@ export function materialOf(
   component: AssemblyComponent,
   partDocument?: MaterialBearingPartDocument,
 ): string {
-  return partDocument?.materialId ?? component.materialId ?? DEFAULT_DENSITY_MATERIAL_ID;
+  const specifiedMaterial = partDocument?.materialId ?? component.materialId;
+  if (specifiedMaterial !== undefined) return specifiedMaterial;
+  if (component.source.kind === 'standardPart' && component.source.catalog === 'catalogItem'
+    && catalogItemRow(component.source)?.omitDefaultDensity === true) return '';
+  return DEFAULT_DENSITY_MATERIAL_ID;
 }
 
 /** 部品座標で測ったボディ 1 つの質量特性。 */

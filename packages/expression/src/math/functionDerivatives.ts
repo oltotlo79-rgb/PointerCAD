@@ -18,23 +18,8 @@ function inputName(node: MathNode): ScalarInput | null {
     ? node.reference.name : null;
 }
 
-export function expandFunctionDerivatives(source: MathNode, inputs: readonly ScalarInput[], angleUnit: 'degree' | 'radian'):
-  { readonly expression: MathNode; readonly guards: readonly MathNode[] } {
-  const pending = [source];
-  let hasDerivative = false;
-  while (pending.length > 0) {
-    const node = pending.pop();
-    if (node?.kind === 'operation') {
-      if (node.operation === 'differentiate') { hasDerivative = true; break; }
-      pending.push(...node.operands);
-    }
-  }
-  if (!hasDerivative) return { expression: source, guards: [] };
-  const guards: MathNode[] = [];
-  let work = 0;
-  const spend = (): void => {
-    if (++work > 4096) throw new MathInputProblem('budget', '微分後の式が複雑すぎます。式を分けてください。');
-  };
+/** Differentiate a scalar with a fresh memo per variable, sharing only the expansion budget and guards. */
+function createFunctionDifferentiator(guards: MathNode[], spend: () => void, angleUnit: 'degree' | 'radian') {
   const makeOperation = (operation: string, ...operands: MathNode[]): MathNode => {
     spend(); return { kind: 'operation', operation, operands };
   };
@@ -230,6 +215,27 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
     }
     return derivative(expression);
   }
+  return { add, mul, piecewise, differentiate };
+}
+
+export function expandFunctionDerivatives(source: MathNode, inputs: readonly ScalarInput[], angleUnit: 'degree' | 'radian'):
+  { readonly expression: MathNode; readonly guards: readonly MathNode[] } {
+  const pending = [source];
+  let hasDerivative = false;
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node?.kind === 'operation') {
+      if (node.operation === 'differentiate') { hasDerivative = true; break; }
+      pending.push(...node.operands);
+    }
+  }
+  if (!hasDerivative) return { expression: source, guards: [] };
+  const guards: MathNode[] = [];
+  let work = 0;
+  const spend = (): void => {
+    if (++work > 4096) throw new MathInputProblem('budget', '微分後の式が複雑すぎます。式を分けてください。');
+  };
+  const { add, mul, piecewise, differentiate } = createFunctionDifferentiator(guards, spend, angleUnit);
   function visit(node: MathNode, depth: number): MathNode {
     spend();
     if (depth > 64) throw new MathInputProblem('budget', '微分する式の入れ子が深すぎます。');

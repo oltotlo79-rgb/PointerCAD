@@ -10,7 +10,7 @@ import { cancelConstraintTool, chooseConstraintTool } from '../sketch/constraint
 import type { EditToolReadiness } from '../sketch/editCommands.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
-import { activeDocumentKind } from '../store/documentKind.js';
+import { activeDocumentKind, editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS } from '../shell/menus/assemblyMenuItems.js';
 import { assemblyBuildReadiness, chooseAssemblyBuild, chooseAssemblyMate, isMateMenuAction } from '../shell/menus/assemblyToolActions.js';
@@ -39,7 +39,10 @@ export function executeToolbarCommand(id: string): ToolbarCommandExecutionResult
   const ready: EditToolReadiness = { ready: true, reasonKey: null };
   const unavailable: EditToolReadiness = { ready: false, reasonKey: 'command.unavailable.action' };
   if (command === null) return unavailable;
-  if (!command.documentKinds.includes(activeDocumentKind(state))) return { ready: false, reasonKey: 'command.unavailable.document' };
+  const isFile = command.group === 'file' || command.group === 'fileMenu';
+  if (!command.documentKinds.includes(isFile ? activeDocumentKind(state) : editingDocumentKind(state))) {
+    return { ready: false, reasonKey: 'command.unavailable.document' };
+  }
   const source = command.sourceId;
   switch (command.group) {
     case 'view': case 'plane': case 'reference': case 'snap': case 'assemblyUtility':

@@ -88,6 +88,20 @@ export function activeSketchHasRegions(document: PartDocument): boolean {
   return present;
 }
 
+/** 選んだ外周・穴が、今のスケッチでも同じ領域を表すときだけ、その幾何を返す。 */
+export function selectedExtrudeRegion(
+  sketch: SketchDocument, resolved: ResolvedSketch, choice: ExtrudeRegionChoice,
+): SketchRegion | undefined {
+  if (choice.sketchId !== sketch.id
+    || sketch.features.find(feature => feature.id === choice.boundary[0]?.featureId)?.planeId !== choice.planeId) {
+    return undefined;
+  }
+  const holes = choice.holes ?? [];
+  return pickableSketchRegions(sketch, sketchRegionScan(sketch, resolved)).find(region =>
+    sameBoundary(region.boundary, choice.boundary) && region.holes.length === holes.length
+    && holes.every(hole => region.holes.some(candidate => sameBoundary(candidate, hole))));
+}
+
 /** 選んだ領域から面を 1 つ足した文書と、その面の要素 id。境界の要素が消えていたら断る。 */
 export function appendRegionFace(document: PartDocument, region: ExtrudeRegionChoice):
   { readonly ok: true; readonly document: PartDocument; readonly faceElementId: string } | { readonly ok: false; readonly reasonKey: MessageKey } {

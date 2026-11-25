@@ -1,0 +1,42 @@
+
+
+typedef Handle(IMeshTools_Context) Handle_IMeshTools_Context;
+class OCJS {
+public:
+  static Standard_Failure* getStandard_FailureData(intptr_t exceptionPtr) {
+    return reinterpret_cast<Standard_Failure*>(exceptionPtr);
+  }
+};
+EMSCRIPTEN_BINDINGS(Handle_IMeshTools_Context) {
+  class_<Handle_IMeshTools_Context>("Handle_IMeshTools_Context")
+    .function("Nullify", &Handle_IMeshTools_Context::Nullify, allow_raw_pointers())
+    .function("IsNull", &Handle_IMeshTools_Context::IsNull, allow_raw_pointers())
+    .function("reset", &Handle_IMeshTools_Context::reset, allow_raw_pointers())
+    .function("get", &Handle_IMeshTools_Context::get, allow_raw_pointers())
+  ;
+    struct Handle_IMeshTools_Context_1 : public Handle_IMeshTools_Context {
+      Handle_IMeshTools_Context_1() : Handle_IMeshTools_Context() {}
+    };
+    class_<Handle_IMeshTools_Context_1, base<Handle_IMeshTools_Context>>("Handle_IMeshTools_Context_1")
+      .constructor<>()
+    ;
+    struct Handle_IMeshTools_Context_2 : public Handle_IMeshTools_Context {
+      Handle_IMeshTools_Context_2(const IMeshTools_Context * thePtr) : Handle_IMeshTools_Context(thePtr) {}
+    };
+    class_<Handle_IMeshTools_Context_2, base<Handle_IMeshTools_Context>>("Handle_IMeshTools_Context_2")
+      .constructor<const IMeshTools_Context *>()
+    ;
+    struct Handle_IMeshTools_Context_3 : public Handle_IMeshTools_Context {
+      Handle_IMeshTools_Context_3(const Handle_IMeshTools_Context & theHandle) : Handle_IMeshTools_Context(theHandle) {}
+    };
+    class_<Handle_IMeshTools_Context_3, base<Handle_IMeshTools_Context>>("Handle_IMeshTools_Context_3")
+      .constructor<const Handle_IMeshTools_Context &>()
+    ;
+    struct Handle_IMeshTools_Context_4 : public Handle_IMeshTools_Context {
+      Handle_IMeshTools_Context_4(Handle_IMeshTools_Context && theHandle) : Handle_IMeshTools_Context(theHandle) {}
+    };
+    class_<Handle_IMeshTools_Context_4, base<Handle_IMeshTools_Context>>("Handle_IMeshTools_Context_4")
+      .constructor<Handle_IMeshTools_Context &&>()
+    ;
+}
+

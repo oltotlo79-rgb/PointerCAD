@@ -5,7 +5,7 @@ import { commitDrawingDimensionSeries } from '../drawing/dimensionSeriesCommands
 import { contextualHelpTopic } from '../help/helpContext.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
-import { activeDocumentKind } from '../store/documentKind.js';
+import { editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
@@ -73,7 +73,7 @@ function browserRuntimeState(): CommandRuntimeState {
   const state = useAppStore.getState();
   return {
     shortcutAssignments: currentShortcutAssignments(state.displaySettings),
-    documentKind: activeDocumentKind(state),
+    documentKind: editingDocumentKind(state),
     helpOpen: state.helpTopicId !== null,
     canUndo: state.canUndo,
     canRedo: state.canRedo,

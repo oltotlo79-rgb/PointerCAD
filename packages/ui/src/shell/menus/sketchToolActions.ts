@@ -28,6 +28,7 @@ import {
 import { projectionSourcesFromSelection } from '../../sketch/projectionCommands.js';
 import { referenceAxisOptionsOf, workPlaneOnSelectedFace } from '../../sketch/referenceCommands.js';
 import { subShapeBodiesOf } from '../../solid/subShapeSelection.js';
+import { commitWorkingPartDocument } from '../../store/partEditActions.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { blockedInFreeSketch, INITIAL_STEPS } from './sketchToolTables.js';
 import { viewportCenterAnchor } from './toolbarShared.js';
@@ -43,20 +44,20 @@ const FACE_WORK_PLANE_NOTICE: MessageKey = 'sketch.faceWorkPlane.chosen';
  * `setActiveTool` は選ぶ種類が変わると選択を空にするので、道具を切り替える**前**に呼ぶ。
  * 作図面を変えたかを返す(帯の一言は、`setActiveTool` が消すので、切り替えた**後**に立てる)。
  */
-function drawOnSelectedFace(): boolean {
+function drawOnSelectedFace(activate: (onFace: boolean) => void): void {
   const store = useAppStore.getState();
-  if (isFreeWorkPlaneId(store.workPlaneId)) {
-    return false;
-  }
-  const outcome = workPlaneOnSelectedFace(store.document, subShapeBodiesOf(store.bodies), store.selection);
+  const outcome = isFreeWorkPlaneId(store.workPlaneId) ? null
+    : workPlaneOnSelectedFace(store.document, subShapeBodiesOf(store.bodies), store.selection);
   if (outcome === null || outcome.planeId === store.workPlaneId) {
-    return false;
+    activate(false);
+    return;
   }
-  if (outcome.document !== store.document) {
-    store.applyDocument(outcome.document);
-  }
-  store.setWorkPlane(outcome.planeId);
-  return true;
+  const finish = (): void => {
+    store.setWorkPlane(outcome.planeId);
+    activate(true);
+  };
+  if (outcome.document === store.document) finish();
+  else void commitWorkingPartDocument(store, outcome.document, finish);
 }
 
 export function activateTool(id: SketchToolId, pressed: boolean): void {
@@ -66,20 +67,17 @@ export function activateTool(id: SketchToolId, pressed: boolean): void {
   const store = useAppStore.getState();
   const next: SketchToolId = pressed && id !== 'select' ? 'select' : id;
   const step = INITIAL_STEPS[next];
-  // 描く道具(最初の段を持つ点・線分・円弧・点の配列)だけ、選んだ面を作図面にする。
-  const onFace = step !== null && drawOnSelectedFace();
-  // 道具を変えると入力中のポップアップは閉じるので、開き直すのはこの後。
-  store.setActiveTool(next);
-  if (onFace) {
-    store.setEditNotice(FACE_WORK_PLANE_NOTICE);
-  }
-  if (step !== null) {
-    store.openNumericInput(createNumericInput(next, step), viewportCenterAnchor());
+  if (step === null) {
+    store.setActiveTool(next);
+    // 面の選択後に Enter を使えるように、一覧からビューポートへ焦点を戻す。
+    store.requestViewportFocus();
     return;
   }
-  // 選択と面はクリックとキーで進める道具。押した直後の焦点はボタンに残るので、
-  // ビューポートへ戻してもらう。そうしないと面を選んだ直後の Enter が効かない(NFR-UX-4)。
-  store.requestViewportFocus();
+  drawOnSelectedFace(onFace => {
+    store.setActiveTool(next);
+    if (onFace) store.setEditNotice(FACE_WORK_PLANE_NOTICE);
+    store.openNumericInput(createNumericInput(next, step), viewportCenterAnchor());
+  });
 }
 
 /**
@@ -98,13 +96,12 @@ export function activateShapeTool(id: ShapeToolId | 'text', pressed: boolean): v
     store.requestViewportFocus();
     return;
   }
-  const onFace = drawOnSelectedFace();
-  store.setActiveTool(id);
-  if (onFace) {
-    store.setEditNotice(FACE_WORK_PLANE_NOTICE);
-  }
-  if (id === 'text') { store.setShapeError(t('text.status.pickOrigin')); store.requestViewportFocus(); return; }
-  store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
+  drawOnSelectedFace(onFace => {
+    store.setActiveTool(id);
+    if (onFace) store.setEditNotice(FACE_WORK_PLANE_NOTICE);
+    if (id === 'text') { store.setShapeError(t('text.status.pickOrigin')); store.requestViewportFocus(); return; }
+    store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
+  });
 }
 
 /**

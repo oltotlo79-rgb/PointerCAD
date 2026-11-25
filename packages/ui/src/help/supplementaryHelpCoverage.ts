@@ -31,7 +31,7 @@ export const OUTPUT_HELP_BINDINGS = {
   pcadt: ['template'], pcadscript: ['script-tools'], zip: ['joint', 'explode'],
   // 操作の割り当ての設定ファイル(B-09 3-1)は、操作の割り当ての窓の章。
   pcadinput: ['shortcuts'],
-  step: ['export', 'cam'], stl: ['export', 'print-check', 'cam'], '3mf': ['export', 'cam'],
+  step: ['export', 'cam'], iges: ['export', 'import'], stl: ['export', 'print-check', 'cam'], '3mf': ['export', 'cam'],
   obj: ['export'], glb: ['export'], dxf: ['dxf', 'drawing-export', 'sheet-metal-flat'],
   svg: ['drawing-export', 'sheet-metal-flat'], pdf: ['drawing-export'],
   png: ['drawing-export', 'explode'], jpg: ['drawing-export'],

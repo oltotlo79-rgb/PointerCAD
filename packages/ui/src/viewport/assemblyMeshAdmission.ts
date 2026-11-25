@@ -1,6 +1,7 @@
 import type { AssemblyDocument, AssemblyKernelBridge, EmbeddedPartAttachments,
   PartDocument, PartLibrary, PartRecomputeResult, SolidBody } from '@pointercad/model';
 import type { AppState } from '../store/appState.js';
+import { assemblyBackgroundLibrary, assemblyCalculation } from '../store/partEditActions.js';
 import type { AssemblyGeometryBundle } from './createAssemblyLayer.js';
 import type { MeshBodyLayout } from '../store/recomputeSlice.js';
 
@@ -117,12 +118,13 @@ function sourceCurrent(source: AssemblySourceMeshOwner, receipt: LedgerReceipt):
  * The producer must still acquire fresh issued evidence and recheck this boundary after each await. */
 export function currentAssemblyMeshPublication(owner: AssemblyMeshOwnership, state: AppState): boolean {
   const view = state.assemblyView;
+  const calculation = assemblyCalculation(state);
   if (view === null || view.meshOwnership !== owner || state.assembly !== owner.document
-    || view.sourceDocument !== owner.document || state.assemblyLibrary !== owner.library
+    || view.sourceDocument !== owner.document || assemblyBackgroundLibrary(state) !== owner.library
     || state.activeDocumentId !== owner.activeDocumentId || state.documentVersion !== owner.documentVersion
-    || state.requestedGeneration !== owner.generation || state.completedGeneration !== owner.generation
-    || state.lastOutcome !== owner.outcome || state.timelineIndex !== owner.timelineIndex
-    || state.cancelRequestCount !== owner.cancelRequestCount || state.recomputeCancelled
+    || calculation.requestedGeneration !== owner.generation || calculation.completedGeneration !== owner.generation
+    || calculation.lastOutcome !== owner.outcome || calculation.timelineIndex !== owner.timelineIndex
+    || calculation.cancelRequestCount !== owner.cancelRequestCount || calculation.recomputeCancelled
     || state.drawing !== null || view.bodies !== owner.bodies || !owner.publicationCurrent()) return false;
   for (const [key, source] of owner.sources) {
     if (owner.bodies.get(key) !== source.bodies || !source.current() || !layoutsCurrent(source)

@@ -96,6 +96,8 @@ export interface SketchProjectionRequestItem {
    * 面・辺は指紋で渡し、選び直しはカーネルの中で行う。
    */
   readonly source: SubShapeRef | null;
+  /** Request the original planar face's analytic outer and inner wires. */
+  readonly faceBoundaries?: true;
   /** 投影先・切り口の作図面。 */
   readonly plane: WorkPlane;
 }
@@ -104,6 +106,7 @@ export interface SketchProjectionRequestItem {
 export interface SketchProjectionEntry {
   readonly featureId: string;
   readonly curves: readonly ResolvedCurve[];
+  readonly holes?: readonly (readonly ResolvedCurve[])[];
 }
 
 /** 投影・交差を 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */

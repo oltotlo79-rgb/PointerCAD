@@ -1,11 +1,13 @@
+import type { ArchiveReadSource } from './archiveReadSource.js';
 /** 図面の参照元を既存の部品・アセンブリ保存形式で抱き込む。投影結果は保存しない。 */
 import { createAssemblyDocumentBundle, createPartDocumentBundle, partLibraryOfBundle,
   type DrawingDocument, type DrawingSourceInput } from '@pointercad/model';
 import { IO_LIMITS } from '../limits.js';
-import { documentBundleEntries, FIXED_ENTRY_MTIME, isPcaddArchiveEntry, PCAD_DOCUMENT_ENTRY, pcaddEntries,
-  readDocumentBundleEntries, readPcaddFile, zipPcadEntries, type PcadZipEntries, type ReadPcadFileOptions,
+import { bundleEntriesWithMeshes, encodeImportedMeshBytes, FIXED_ENTRY_MTIME, isPcaddArchiveEntry, PCAD_DOCUMENT_ENTRY, pcaddEntries,
+  nativeArchiveFailure, readDocumentBundleEntries, readPcaddEntries, readPcaddFile, zipPcadEntries, type ImportedMeshBytes, type PcadZipEntries, type ReadPcadFileOptions,
   type ReadPcaddFileResult, type WritePcaddFileOptions } from './pcadFile.js';
-import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive, type ArchiveReadLimits } from './readArchive.js';
+import type { ZipChunkedBytes } from './zipSteps.js';
+import { ARCHIVE_TOO_LARGE_MESSAGE, openArchiveSource, readArchive, type ArchiveReadLimits } from './readArchive.js';
 
 /**
  * 図面の束では、図面の項目も参照元の項目も同じ強さで圧縮する。以前の版(参照元を一度 ZIP に
@@ -27,7 +29,7 @@ function sourceEntryName(ref: string): string {
  * 読み手の 2 回の取り出し(図面の項目と、参照元の名前空間)と同じ数え方にする。
  * 以前の版は途中の ZIP を展開し直す際に同じ上限で断っていたので、その断りを明示の検査で保つ。
  */
-function assertReopenable(entries: PcadZipEntries, ref: string, limits: ArchiveReadLimits): void {
+function assertReopenable(entries: PcadZipEntries<ZipChunkedBytes>, ref: string, limits: ArchiveReadLimits): void {
   if (entries.size > limits.archiveEntryCount) throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
   const sourceEntry = sourceEntryName(ref), prefix = sourcePrefix(ref);
   let drawingBytes = 0, sourceBytes = 0;
@@ -55,8 +57,15 @@ export async function writeDrawingBundle(document: DrawingDocument, options: Wri
 }
 
 /** 同期APIと保存専用エンコーダーが共有する、圧縮前の図面一式。 */
-export async function drawingBundleEntries(document: DrawingDocument, options: WritePcaddFileOptions,
+export function drawingBundleEntries(document: DrawingDocument, options: WritePcaddFileOptions,
   limits: ArchiveReadLimits = IO_LIMITS): Promise<PcadZipEntries> {
+  return drawingEntriesWithMeshes<never>(document, options, encodeImportedMeshBytes, limits);
+}
+
+export async function drawingEntriesWithMeshes<Extra extends ZipChunkedBytes>(document: DrawingDocument,
+  options: WritePcaddFileOptions, encodeMesh: (mesh: ImportedMeshBytes) => Uint8Array | Extra | null,
+  limits: ArchiveReadLimits = IO_LIMITS,
+  digestAttachments?: Parameters<typeof bundleEntriesWithMeshes>[3]): Promise<PcadZipEntries<Extra>> {
   if (document.source.sourceKind !== options.source.sourceKind) throw new Error('Drawing source kind mismatch');
   const ref = document.source.sourceRef;
   const prefix = sourcePrefix(ref);
@@ -65,8 +74,8 @@ export async function drawingBundleEntries(document: DrawingDocument, options: W
   const bundle = source.sourceKind === 'part'
     ? createPartDocumentBundle(source.document, source.attachments)
     : createAssemblyDocumentBundle(source.document, source.library);
-  const native = await documentBundleEntries(bundle, { savedAt });
-  const entries: PcadZipEntries = new Map();
+  const native = await bundleEntriesWithMeshes(bundle, { savedAt }, encodeMesh, digestAttachments);
+  const entries: PcadZipEntries<Extra> = new Map();
   for (const [name, [bytes]] of pcaddEntries(document, { ...options, savedAt })) {
     entries.set(name, [bytes, { level: BUNDLE_LEVEL, mtime: FIXED_ENTRY_MTIME }]);
   }
@@ -96,20 +105,49 @@ export async function readDrawingBundle(bytes: Uint8Array, options: ReadDrawingB
     const archive = readArchive(bytes, { shouldExtract: (name) => name === sourceEntry || name.startsWith(prefix),
       limits: options.limits });
     if (!archive.ok) return { ok: false, error: { code: 'notZip', message: archive.error.reason } };
-    const entries = new Map<string, Uint8Array>();
-    for (const [name, value] of archive.entries) {
-      entries.set(name === sourceEntry ? PCAD_DOCUMENT_ENTRY : name.slice(prefix.length), value);
-    }
-    // 形式の検査を複製せず、部品・アセンブリの読み手へ戻して原本まで検査する。
-    const parsed = await readDocumentBundleEntries(entries, drawing.source.sourceKind);
-    if (!parsed.ok) return parsed;
-    const bundle = parsed.bundle;
-    const source: DrawingSourceInput = bundle.kind === 'part'
-      ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,
-          ...(drawing.document.source.flatSheet === undefined ? {} : { flatSheet: drawing.document.source.flatSheet }) }
-      : { sourceKind: 'assembly', document: bundle.document, library: partLibraryOfBundle(bundle) };
-    return { ...drawing, source };
+    return await applyDrawingSource(drawing, archive.entries, prefix, sourceEntry);
   } catch (error) {
-    return { ok: false, error: { code: 'invalidField', message: error instanceof Error ? error.message : 'Invalid drawing source' } };
+    return drawingSourceFailure(error);
   }
+}
+
+function drawingSourceFailure(error: unknown): ReadPcaddFileResult {
+  return { ok: false, error: { code: 'invalidField', message: error instanceof Error ? error.message : 'Invalid drawing source' } };
+}
+
+async function applyDrawingSource(drawing: Extract<ReadPcaddFileResult, { ok: true }>,
+  extracted: ReadonlyMap<string, Uint8Array>, prefix: string, sourceEntry: string): Promise<ReadPcaddFileResult> {
+  const entries = new Map<string, Uint8Array>();
+  for (const [name, value] of extracted) {
+    entries.set(name === sourceEntry ? PCAD_DOCUMENT_ENTRY : name.slice(prefix.length), value);
+  }
+  // 形式の検査を複製せず、部品・アセンブリの読み手へ戻して原本まで検査する。
+  const parsed = await readDocumentBundleEntries(entries, drawing.source.sourceKind);
+  if (!parsed.ok) return parsed;
+  const bundle = parsed.bundle;
+  const source: DrawingSourceInput = bundle.kind === 'part'
+    ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,
+        ...(drawing.document.source.flatSheet === undefined ? {} : { flatSheet: drawing.document.source.flatSheet }) }
+    : { sourceKind: 'assembly', document: bundle.document, library: partLibraryOfBundle(bundle) };
+  return { ...drawing, source };
+}
+
+export async function readDrawingFromSource(source: ArchiveReadSource): Promise<ReadPcaddFileResult> {
+  const opened = await openArchiveSource(source);
+  if (!opened.ok) return nativeArchiveFailure(opened.error);
+  const envelopes = await opened.archive.extract({ shouldExtract: isPcaddArchiveEntry });
+  if (!envelopes.ok) return nativeArchiveFailure(envelopes.error);
+  const drawing = readPcaddEntries(envelopes.entries);
+  if (!drawing.ok) return drawing;
+  const ref = drawing.document.source.sourceRef;
+  if (!/^[A-Za-z0-9_-]+$/u.test(ref)) {
+    return { ok: false, error: { code: 'invalidField', message: 'Invalid drawing source reference' } };
+  }
+  const prefix = sourcePrefix(ref), sourceEntry = sourceEntryName(ref);
+  const attachments = await opened.archive.extract({ shouldExtract: (name) => name.startsWith(prefix) });
+  if (!attachments.ok) return nativeArchiveFailure(attachments.error);
+  const entries = new Map(attachments.entries);
+  const document = envelopes.entries.get(sourceEntry);
+  if (document !== undefined) entries.set(sourceEntry, document);
+  return applyDrawingSource(drawing, entries, prefix, sourceEntry).catch(drawingSourceFailure);
 }

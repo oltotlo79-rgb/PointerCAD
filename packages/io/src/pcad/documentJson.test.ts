@@ -5985,6 +5985,17 @@ describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、
     expect(roundTrip(document)).toEqual(document);
   });
 
+  it('IGESの由来情報を文書の保存と読み戻しで保持する', () => {
+    const feature = allSolidFeatures().importedSolid;
+    const document = documentWithSolid({
+      ...feature,
+      source: { format: 'iges', fileName: 'shape.igs', unit: 'inch', byteLength: 1 },
+    });
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(text).toContain('"format": "iges"');
+    expect(expectOk(parseDocument(text))).toEqual(document);
+  });
+
   it('知らない形式・単位は既存の invalidField で断る(エラーコードを増やさない)', () => {
     /** 素性の欄を 1 つだけ壊した読み込んだ形を持つファイル。 */
     function brokenSource(overrides: Record<string, unknown>): string {
@@ -6010,7 +6021,7 @@ describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、
         }),
       });
     }
-    const badFormat = expectError(parseDocument(brokenSource({ format: 'iges' })));
+    const badFormat = expectError(parseDocument(brokenSource({ format: 'unsupported-format' })));
     expect(badFormat.code).toBe('invalidField');
     expect(badFormat.message).toContain('format');
     const badUnit = expectError(parseDocument(brokenSource({ unit: 'cm' })));

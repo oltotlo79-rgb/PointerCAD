@@ -17,6 +17,7 @@ import {
 import { beginRecompute, waitForRecompute, waitForRecomputeOutcome } from './recompute.js';
 import { commitPlacePartDialog, startNewAssemblyCapture } from './assemblyCaptureSupport.js';
 import { disableFilePickers } from './filePickers.js';
+import { uiMessage } from './uiMessages.js';
 
 
 function fileAction(page: Page, name: string): Locator {
@@ -445,11 +446,15 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     const before = await readAssemblyStats(page);
     await installAssemblyFileGateway(page, { parts: [{ fileName: '差し替え球.pcad', bytes: replacement }] });
     await selectComponent(page, 0);
-    await chooseComponentAction(page, '置換する');
-    const preview = page.getByRole('dialog', { name: '置換する' });
+    const label = uiMessage('assembly', 'assembly.tool.replacePart');
+    const confirmLabel = uiMessage('assembly', 'assembly.replace.confirm');
+    expect(label).toBe('差し替え');
+    expect(confirmLabel).toBe('差し替え');
+    await chooseComponentAction(page, label);
+    const preview = page.getByRole('dialog', { name: label, exact: true });
     await expect(preview).toContainText('合致 2 本のうち 1 本');
     const token = await beginRecompute(page);
-    await preview.getByRole('button', { name: '差し替える', exact: true }).click();
+    await preview.getByRole('button', { name: confirmLabel, exact: true }).click();
     await waitForRecomputeOutcome(page, token, 'failed');
     const after = await readAssemblyStats(page);
     expect(after.mateIds).toEqual(['mate-1', 'mate-2']);

@@ -79,70 +79,10 @@ function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
  * `HoleStepSpec` 等)で欄の名前と形をそろえてあるので、指紋(`face` / `targets`)だけ
  * `toSubShapeQuery` で詰め替え、残りはそのまま渡す。
  */
-function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
+type MachiningStepKind = 'hole' | 'thread' | 'fillet' | 'chamfer';
+
+function machiningStepSpec(plan: Extract<SolidStepPlan, { kind: MachiningStepKind }>): SolidStepSpec {
   switch (plan.kind) {
-    case 'sheetBody': return { kind: 'sheetBody', panels: plan.panels.map((panel) => ({ thickness: panel.thickness, normal: panel.normal,
-      reversed: panel.reversed, outer: panel.outer.map(toCurveSpec), holes: panel.holes.map((loop) => loop.map(toCurveSpec)) })),
-      bends: plan.bends.map((bend) => bend.kind === 'rectangle' ? bend : { ...bend, outer: bend.outer.map(toCurveSpec),
-        holes: bend.holes.map((loop) => loop.map(toCurveSpec)) }) };
-    case 'sheetJoin': return { kind: 'sheetJoin', targetKey: plan.targetKey, toolKey: plan.toolKey };
-    case 'sheetBase': return { kind: 'sheetBase', outer: plan.outer.map(toCurveSpec), holes: plan.holes.map((loop) => loop.map(toCurveSpec)),
-      thickness: plan.thickness, normal: plan.normal, reversed: plan.reversed };
-    case 'sheetFlange': return { kind: 'sheetFlange', targetKey: plan.targetKey, flanges: plan.flanges.map((flange) => {
-      const common = { frame: flange.frame, width: flange.width, thickness: flange.thickness, radius: flange.radius, angle: flange.angle };
-      switch (flange.kind) {
-        case 'rectangle': return { ...common, kind: 'rectangle' as const, secondLength: flange.secondLength };
-        case 'profile': return { ...common, kind: 'profile' as const, outer: flange.outer.map(toCurveSpec), holes: flange.holes.map((loop) => loop.map(toCurveSpec)) };
-      }
-    }) };
-    case 'extrude':
-      // 後から足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
-      // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、
-      // 従来の押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
-      return {
-        kind: 'extrude',
-        ...extrudeProfileRequest(plan),
-        ...(plan.profileOrigin === undefined ? {} : { profileOrigin: plan.profileOrigin }),
-        direction: plan.direction,
-        distance: plan.distance,
-        ...(plan.end === undefined ? {} : { end: plan.end }),
-        ...(plan.taperAngle === undefined
-          ? {}
-          : { taperAngle: plan.taperAngle, taperOutward: plan.taperOutward ?? false }),
-        ...(plan.thin === undefined || plan.thin === null ? {} : { thin: plan.thin }),
-        ...(plan.targetKey === undefined || plan.targetKey === null
-          ? {}
-          : { targetKey: plan.targetKey }),
-      };
-    case 'revolve':
-      return {
-        kind: 'revolve',
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
-        axisOrigin: plan.axisOrigin,
-        axisDirection: plan.axisDirection,
-        angle: plan.angle,
-      };
-    case 'sew':
-      if (plan.faces !== undefined) {
-        return {
-          kind: 'sew',
-          faces: plan.faces.map(face => ({ targetKey: face.targetKey, query: toSubShapeQuery(face.query) })),
-          tolerance: plan.tolerance,
-        };
-      }
-      return {
-        kind: 'sew',
-        profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
-        tolerance: plan.tolerance,
-      };
-    case 'boolean':
-      return {
-        kind: 'boolean',
-        operation: plan.operation,
-        targetKey: plan.targetKey,
-        ...booleanToolRequest(plan),
-        ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
-      };
     case 'hole':
       return {
         kind: 'hole',
@@ -200,6 +140,82 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         size: plan.size,
         swapReferenceFace: plan.swapReferenceFace,
       };
+  }
+}
+
+type SheetStepKind = 'sheetBody' | 'sheetJoin' | 'sheetBase' | 'sheetFlange';
+
+function sheetStepSpec(plan: Extract<SolidStepPlan, { kind: SheetStepKind }>): SolidStepSpec {
+  switch (plan.kind) {
+    case 'sheetBody': return { kind: 'sheetBody', panels: plan.panels.map((panel) => ({ thickness: panel.thickness, normal: panel.normal,
+      reversed: panel.reversed, outer: panel.outer.map(toCurveSpec), holes: panel.holes.map((loop) => loop.map(toCurveSpec)) })),
+      bends: plan.bends.map((bend) => bend.kind === 'rectangle' ? bend : { ...bend, outer: bend.outer.map(toCurveSpec),
+        holes: bend.holes.map((loop) => loop.map(toCurveSpec)) }) };
+    case 'sheetJoin': return { kind: 'sheetJoin', targetKey: plan.targetKey, toolKey: plan.toolKey };
+    case 'sheetBase': return { kind: 'sheetBase', outer: plan.outer.map(toCurveSpec), holes: plan.holes.map((loop) => loop.map(toCurveSpec)),
+      thickness: plan.thickness, normal: plan.normal, reversed: plan.reversed };
+    case 'sheetFlange': return { kind: 'sheetFlange', targetKey: plan.targetKey, flanges: plan.flanges.map((flange) => {
+      const common = { frame: flange.frame, width: flange.width, thickness: flange.thickness, radius: flange.radius, angle: flange.angle };
+      switch (flange.kind) {
+        case 'rectangle': return { ...common, kind: 'rectangle' as const, secondLength: flange.secondLength };
+        case 'profile': return { ...common, kind: 'profile' as const, outer: flange.outer.map(toCurveSpec), holes: flange.holes.map((loop) => loop.map(toCurveSpec)) };
+      }
+    }) };
+  }
+}
+
+function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
+  switch (plan.kind) {
+    case 'sheetBody': case 'sheetJoin': case 'sheetBase': case 'sheetFlange': return sheetStepSpec(plan);
+    case 'extrude':
+      // 後から足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
+      // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、
+      // 従来の押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
+      return {
+        kind: 'extrude',
+        ...extrudeProfileRequest(plan),
+        ...(plan.profileOrigin === undefined ? {} : { profileOrigin: plan.profileOrigin }),
+        direction: plan.direction,
+        distance: plan.distance,
+        ...(plan.end === undefined ? {} : { end: plan.end }),
+        ...(plan.taperAngle === undefined
+          ? {}
+          : { taperAngle: plan.taperAngle, taperOutward: plan.taperOutward ?? false }),
+        ...(plan.thin === undefined || plan.thin === null ? {} : { thin: plan.thin }),
+        ...(plan.targetKey === undefined || plan.targetKey === null
+          ? {}
+          : { targetKey: plan.targetKey }),
+      };
+    case 'revolve':
+      return {
+        kind: 'revolve',
+        profile: plan.profile.map((curve) => toCurveSpec(curve)),
+        axisOrigin: plan.axisOrigin,
+        axisDirection: plan.axisDirection,
+        angle: plan.angle,
+      };
+    case 'sew':
+      if (plan.faces !== undefined) {
+        return {
+          kind: 'sew',
+          faces: plan.faces.map(face => ({ targetKey: face.targetKey, query: toSubShapeQuery(face.query) })),
+          tolerance: plan.tolerance,
+        };
+      }
+      return {
+        kind: 'sew',
+        profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
+        tolerance: plan.tolerance,
+      };
+    case 'boolean':
+      return {
+        kind: 'boolean',
+        operation: plan.operation,
+        targetKey: plan.targetKey,
+        ...booleanToolRequest(plan),
+        ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
+      };
+    case 'hole': case 'thread': case 'fillet': case 'chamfer': return machiningStepSpec(plan);
     case 'spring':
       // ばねは対象ボディを持たないので targetKey が無い。
       return {

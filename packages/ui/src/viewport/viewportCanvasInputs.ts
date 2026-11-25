@@ -3,7 +3,7 @@ import { executeCommand } from '../commands/commandRegistry.js';
 import { EMPTY_MOUSE_BUTTON_COMMANDS } from '../commands/pointerCommandGesture.js';
 import { getSixDofAccess, subscribeSixDofChange } from '../settings/sixDofAccess.js';
 import { currentViewControls, viewZoomCenter } from '../settings/viewControlSettings.js';
-import { activeAssemblyDocument } from '../store/documentKind.js';
+import { editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
 import { attachCameraControls, type CameraControls, type ViewCenterResolver } from './attachCameraControls.js';
@@ -43,6 +43,10 @@ interface ViewportInputDependencies {
   readonly setControlsReady: (ready: boolean) => void;
 }
 
+function viewingAssembly(): boolean {
+  return editingDocumentKind(useAppStore.getState()) === 'assembly';
+}
+
 /**
  * 回転の中心・拡大の中心の点(B-08d)。押した所の形の上の点は scene の当たりの面と光線の交点、選んだ物の中心は
  * 「選択に合わせる」と同じ外接箱の中心。形に当たらない所の拡大は、注視点の深さの面の上の点へ向ける。
@@ -54,11 +58,10 @@ function createViewCenters(scene: Pick<ViewportScene, 'viewFitSource' | 'pointer
     const rect = canvas.getBoundingClientRect();
     return [clientX - rect.left, clientY - rect.top];
   };
-  const assemblyMode = (): boolean => activeAssemblyDocument(useAppStore.getState()) !== null;
   const surface = (x: number, y: number) => {
     const ray = scene.pointerRay(x, y);
     if (ray === null) return { ray, point: null };
-    if (assemblyMode()) {
+    if (viewingAssembly()) {
       const hit = scene.pickAssemblyFace(x, y), source = scene.viewFitSource('assembly');
       return { ray, point: hit === null || source.kind !== 'assembly' ? null : assemblySurfacePoint(source.assembly, hit, ray) };
     }
@@ -68,7 +71,7 @@ function createViewCenters(scene: Pick<ViewportScene, 'viewFitSource' | 'pointer
   return {
     orbitPivot: (center, clientX, clientY) => {
       if (center === 'selection') {
-        const bounds = viewFitBounds(scene.viewFitSource(assemblyMode() ? 'assembly' : 'part'), 'selection', useAppStore.getState().selection);
+        const bounds = viewFitBounds(scene.viewFitSource(viewingAssembly() ? 'assembly' : 'part'), 'selection', useAppStore.getState().selection);
         return bounds === null ? null : boundsCenter(bounds);
       }
       const at = canvasPoint(clientX, clientY);
@@ -93,7 +96,7 @@ function createViewCameraController(controls: CameraControls, isAlive: () => boo
     previous: () => isAlive() && controls.previousView(),
     fit: (scope, selection) => {
       if (!isAlive()) return false;
-      const source = scene.viewFitSource(activeAssemblyDocument(useAppStore.getState()) === null ? 'part' : 'assembly');
+      const source = scene.viewFitSource(viewingAssembly() ? 'assembly' : 'part');
       const bounds = viewFitBounds(source, scope, selection);
       const fitted = bounds === null ? null
         : fitOrbitToBounds(controls.getOrbit(), bounds, canvas.clientWidth / Math.max(1, canvas.clientHeight));

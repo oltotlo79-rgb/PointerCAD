@@ -12,6 +12,14 @@ Web版ではアプリのフォルダー、デスクトップ版ではresources/a
 - licenses/fem/index.html: はり解析の計算部の利用部品・原文・ソースと、確認が残る配布条件
 - fonts/LICENSES.txt: 画面・図面用の字体
 
+形状計算部 OpenCascade.js / Open CASCADE Technology の対応ソース
+WASM SHA-256 d98f42dd4b9b631516b391b551cbe390225dfeb8520d4d3c4d7552b3a5964c47
+配布版に対応するソースは、リリース一覧でこの指紋を記した版の添付
+pointercad-occt-source-d98f42dd4b9b6315.zip から入手できます。
+https://github.com/oltotlo79-rgb/PointerCAD/releases
+オフラインでは取得済みの ZIP を任意の場所に保存し、展開した README.md と
+source-manifest.json を参照してください。
+
 デスクトップ版の実行ファイルと同じフォルダー:
 - LICENSE.electron.txt（またはLICENSE）: Electron
 - LICENSES.chromium.html: Chromiumと同梱部品

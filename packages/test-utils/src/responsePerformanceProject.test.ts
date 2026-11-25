@@ -17,14 +17,20 @@ const root = new URL('../../../', import.meta.url);
 const execFileAsync = promisify(execFile);
 const LIST_TIMEOUT_MS = 60_000;
 const PROJECT = 'response-performance';
-/** 組み替えの前(functional 30 件・electron 15 件)と同じ件数(2026-11-17 の --list)。 */
+/** 組み替えの前(functional 30 件・electron 15 件)に、両版で共通試料を開く A-14 の1件を加える。 */
 const RESPONSE_SPECS: Readonly<Record<string, number>> = {
-  'read-response.spec.ts': 9, 'firefox-read-response.spec.ts': 9, 'electron-read-response.spec.ts': 9,
+  'read-response.spec.ts': 9, 'firefox-read-response.spec.ts': 9, 'electron-read-response.spec.ts': 10,
   'save-performance.spec.ts': 6, 'firefox-save-performance.spec.ts': 6, 'electron-save-performance.spec.ts': 6,
 };
 const RESPONSE_FILE = /^(?:electron-|firefox-)?(?:read-response|save-performance)\.spec\.ts$/u;
 
-interface ListedCase { readonly project: string; readonly file: string; readonly key: string }
+const VIEWPORT_PROJECT = 'viewport-performance';
+const VIEWPORT_SPECS = [
+  'assembly.spec.ts', 'drawing-performance.spec.ts', 'p8-drawing.spec.ts',
+  'script-performance.spec.ts', 'sheet-performance.spec.ts',
+];
+
+interface ListedCase { readonly project: string; readonly file: string; readonly key: string; readonly specKey: string }
 
 function field(value: unknown, name: string): unknown {
   return typeof value === 'object' && value !== null ? Reflect.get(value, name) : undefined;
@@ -44,7 +50,7 @@ function collectCases(suite: unknown, cases: ListedCase[]): void {
     for (const test of listItems(field(spec, 'tests'))) {
       const project = field(test, 'projectName');
       if (typeof project !== 'string') throw new Error('Playwright の一覧の test に projectName がありません');
-      cases.push({ project, file, key: JSON.stringify([project, file, line, column, title]) });
+      cases.push({ project, file, key: JSON.stringify([project, file, line, column, title]), specKey: JSON.stringify([file, line, column, title]) });
     }
   }
   for (const child of listItems(field(suite, 'suites'))) collectCases(child, cases);
@@ -67,7 +73,7 @@ describe('入力の応答を測る検査は専用の project で1本ずつ流す
     expect(files).toEqual(Object.keys(RESPONSE_SPECS).sort());
   });
 
-  it('6本の検査は response-performance にだけ、組み替えの前と同じ件数で1回ずつあり、ほかの spec は入らない', async () => {
+  it('応答6本とソフトウェア描画5本を専用projectに1回ずつ登録する', async () => {
     const cases = await listAllCases();
     expect(cases.length).toBeGreaterThan(300);
     expect(new Set(cases.map(row => row.key)).size).toBe(cases.length);
@@ -76,5 +82,10 @@ describe('入力の応答を測る検査は専用の project で1本ずつ流す
     const counts = Object.fromEntries(Object.keys(RESPONSE_SPECS).map(file => [file, response.filter(row => row.file === file).length]));
     expect(counts).toEqual(RESPONSE_SPECS);
     expect(cases.filter(row => row.project === PROJECT && !(row.file in RESPONSE_SPECS)).map(row => row.key)).toEqual([]);
+
+    const viewport = cases.filter(row => row.project === VIEWPORT_PROJECT);
+    expect(viewport.map(row => row.file).sort()).toEqual(VIEWPORT_SPECS);
+    const viewportKeys = new Set(viewport.map(row => row.specKey));
+    expect(cases.filter(row => row.project !== VIEWPORT_PROJECT && viewportKeys.has(row.specKey)).map(row => row.key)).toEqual([]);
   }, LIST_TIMEOUT_MS + 10_000);
 });

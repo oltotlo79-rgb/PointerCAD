@@ -853,7 +853,11 @@ try {
                     # never are. A backslash-escaped "\." plus trailing "$" used to be matched
                     # literally, so the "$" never matched any real path and the run reported
                     # "No tests found." (observed 2026-09-28, gate 20260928-065436).
+                    # response-performance holds the read/save input-response specs (Chromium, Firefox and
+                    # Electron) one at a time (A-20, 2026-11-17); without it a changed response spec would
+                    # not be selected here.
                     $e2eArgs += @('--project=startup-firefox', '--project=startup-electron', '--project=functional', '--project=electron',
+                        '--project=response-performance',
                         'e2e/tests/smoke.spec.ts', 'e2e/tests/firefox-graphics.spec.ts', 'e2e/tests/electron-startup.spec.ts') + $localE2EFilters
                 } elseif ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.

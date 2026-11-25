@@ -1,5 +1,5 @@
 {
-  "actualTime": "2026-11-25T14:53:09.078430+09:00",
+  "actualTime": "2026-11-26T01:42:37.765547+09:00",
   "format": "pointercad-fem-application-source/1",
   "files": {
     "LICENSE": {
@@ -25873,8 +25873,8 @@
       "source": "scripts/check-release-ready.ps1"
     },
     "scripts/check.ps1": {
-      "sha256": "ef840695c02bf69cb5ec1bdb44745165837649af20d6381c19f9057cb88a51bc",
-      "bytes": 69443,
+      "sha256": "52bb16656c2894e730760b7fe791fc91b385434e59be45f7b3ca6fc28898da53",
+      "bytes": 68780,
       "source": "scripts/check.ps1"
     },
     "scripts/check.selftest.ps1": {
@@ -26008,8 +26008,8 @@
       "source": "scripts/lint.mjs"
     },
     "scripts/local-change-scope.selftest.py": {
-      "sha256": "261e16fa99d49add24a1a48e5e82d3e5007d210ae12ddc6c38f9461cf916300d",
-      "bytes": 82376,
+      "sha256": "bf7260b95146bdf54ed2b1dd8a3320789151339a7ad7086ee4e239738ccbde23",
+      "bytes": 81145,
       "source": "scripts/local-change-scope.selftest.py"
     },
     "scripts/manual/capture-html.mjs": {
@@ -26343,7 +26343,7 @@
       "source": "tsconfig.tools.json"
     }
   },
-  "archiveSha256": "eddd171748445da3e45ef591ca79ec1798a4b6fb4e64a4e39802e84b60cf8388",
+  "archiveSha256": "9fbdd0c456dd591596ee2add8b69364cd7e816e5e8d1208d5d4813239812ce4d",
   "scope": "Exact integrated application/bridge/tests/build source; native rebuild and legal clearance remain incomplete",
   "excluded": [
     "fixed upstream runtime closure",
@@ -26353,7 +26353,7 @@
   ],
   "correspondingSourceComplete": false,
   "nativeRebuildExecuted": false,
-  "derivedFrom": "f4173e4f0c7febaad23c954e35a6c7b948632ff5a2f65041035179d30818ddc4",
+  "derivedFrom": "94c4629a4e3120edbdb7c24b1e2226f4a0c51e73563c9d82855d73a12ba4b965",
   "timestampMeaning": "Actual private source archive regeneration from the current working tree (every selected tracked or untracked-not-ignored file) by the r5 successor; native/legal/release acceptance remain separate",
   "proposedUnion": {
     "materializer": {
@@ -26369,12 +26369,12 @@
       "sha256": "09739bab7fc7a94f6a671022dab4e9a918861cd2474a8a87410b10255a82c66d"
     },
     "previousIndex": {
-      "sha256": "1abd558f24ef15deecdff1ac9da6045fd6e5c4fe3fbef6bc0ef50c764accf77c",
-      "bytes": 1255988
+      "sha256": "0a99d84bf0bd47d432010909b18321e174418f01a6b36abb6056e786d9c84651",
+      "bytes": 1263979
     },
     "previousArchive": {
-      "sha256": "beed2e6229f99197ab50e055d42dcca28658cc61a99ee5a9872d22af614c66a8",
-      "bytes": 17080919
+      "sha256": "eddd171748445da3e45ef591ca79ec1798a4b6fb4e64a4e39802e84b60cf8388",
+      "bytes": 17202572
     },
     "r5ProposedUnion": {
       "source": {
@@ -26432,27 +26432,27 @@
         "path": "scratchpad/claude/agents/cl-v103-delivery-env-1101/regen_index.py",
         "sha256": "6bca734ffd2629f714ab0cfc55d43836ec36490e601ada73802ebbf2d9a86972"
       },
-      "actualTime": "2026-11-24T09:06:45.286899+09:00",
-      "derivedFrom": "efb04e284240bd4dd0bd8716ad73afeb5be016c1ce8b7616f4be9d3cad0e6e4e",
+      "actualTime": "2026-11-25T14:53:09.078430+09:00",
+      "derivedFrom": "f4173e4f0c7febaad23c954e35a6c7b948632ff5a2f65041035179d30818ddc4",
       "delta": {
-        "updated": 4268,
-        "new": 21,
-        "removed": 0,
+        "updated": 247,
+        "new": 35,
+        "removed": 2,
         "sourceFieldChanged": 0
       }
     },
     "domain": {
       "rule": "git ls-files -co --exclude-standard; existing regular files; archivePattern selected()",
-      "gitHead": "7844f26599da7765559519b516b2fa142aaff6c9",
+      "gitHead": "ab55b97f0036c7d9078f10fd013502a7a22a2b67",
       "members": 5268,
-      "membersSha256": "a52fd76890862d614159e4c5370db6971037dd0e1545a4997a9ee9a7649ca208"
+      "membersSha256": "dab2895ad3526629f5e37d5eac809c243ac49c01f86e07d1d8fd09c28c735e6d"
     },
     "delta": {
-      "updated": 247,
-      "new": 35,
-      "removed": 2,
+      "updated": 2,
+      "new": 0,
+      "removed": 0,
       "sourceFieldChanged": 0
     },
-    "deltaSha256": "35a6e913ca0328c1510a6ac645fdde77dc85f74c316e574100c1ea4d4ca956f9"
+    "deltaSha256": "89048a9d8c8319828aab3c9f163e5818e999fc59e3083ef95faf46e6ef7214c5"
   }
 }

@@ -713,8 +713,8 @@ class ScopeHookTests(unittest.TestCase):
     # "$" never matched any real file path and the run reported "No tests found."
     # (gate 20260928-065436).
     LIGHT_E2E = ('run test:e2e --project=startup-firefox --project=startup-electron --project=functional '
-                 '--project=electron e2e/tests/smoke.spec.ts e2e/tests/firefox-graphics.spec.ts '
-                 'e2e/tests/electron-startup.spec.ts')
+                 '--project=electron --project=response-performance e2e/tests/smoke.spec.ts '
+                 'e2e/tests/firefox-graphics.spec.ts e2e/tests/electron-startup.spec.ts')
 
     def install_operations(self):
         fixture = self.fixture

@@ -5,9 +5,8 @@ import type { SaveResultIssueReport } from './saveResultIssue.js';
 
 /**
  * 保存 Worker の中だけで使う(E24)。Worker が受け取る入力は全て転送か複製で来た Worker 自身の写しで、
- * 文書の原本は Worker に存在しない。三角形は項目を作る時に `meshes/*.bin` 用の新しいバイト列へ符号化されるので、
- * 項目ができた後は生の配列の写しを持ち続ける理由がない。圧縮の前に手放し、生の写し・符号化済みの項目・
- * 圧縮の出力が同時に生きないようにする(128MiB の保存で同時に生きる大きなコピーを1つ減らす)。
+ * 文書の原本は Worker に存在しない。大きな三角形は圧縮する区切りだけを符号化する。
+ * 項目を作り終えた成分の生の写しは、その領域を読む物が無くなった時点で手放す。
  * 形状・画像・サムネイルは項目がその写しをそのまま参照するので手放さず、それらと領域を共有する三角形も手放さない。
  */
 interface OwnedMesh { readonly positions: Float32Array; readonly normals: Float32Array; readonly indices: Uint32Array }
@@ -102,7 +101,7 @@ interface OwnedSavePartsEncoding {
   readonly analysisResultIssues: readonly SaveResultIssueReport[];
 }
 
-/** 全体の道と部分の並びの道で同じ手放し方をする。項目ができた直後(圧縮の前)に三角形の写しを手放す。 */
+/** 全体と部分のどちらの出力でも、成功・取消・例外で残った三角形の写しを手放す。 */
 async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage: SaveEncodingStage) => void,
   encode: (input: SaveDocumentInput, control: OwnedSaveEncodingControl) => Promise<Encoded>,
 ): Promise<{ readonly encoded: Encoded; readonly releasedMeshBytes: number;
@@ -110,10 +109,13 @@ async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage
   let releasedMeshBytes = 0;
   const analysisResultIssues: SaveResultIssueReport[] = [];
   const releaseComponent = componentReleaser(input);
-  const encoded = await encode(input, { onProgress,
-    onMeshComponentWritten: component => { releasedMeshBytes += releaseComponent(component); },
-    onEntriesBuilt: () => { releasedMeshBytes += releaseOwnedMeshCopies(input); },
-    onAnalysisResultIssue: (analysisId, issue) => { analysisResultIssues.push({ analysisId, issue }); } });
+  let encoded: Encoded;
+  try {
+    encoded = await encode(input, { onProgress, streamMeshEntries: true,
+      onMeshComponentWritten: component => { releasedMeshBytes += releaseComponent(component); },
+      onEntriesBuilt: () => { releasedMeshBytes += releaseOwnedMeshCopies(input); },
+      onAnalysisResultIssue: (analysisId, issue) => { analysisResultIssues.push({ analysisId, issue }); } });
+  } finally { releasedMeshBytes += releaseOwnedMeshCopies(input); }
   return { encoded, releasedMeshBytes, analysisResultIssues };
 }
 

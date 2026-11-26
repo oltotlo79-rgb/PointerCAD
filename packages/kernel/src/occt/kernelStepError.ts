@@ -6,6 +6,33 @@
  */
 export type KernelStepFailureCode = 'missingSubShape' | 'nothingLeft';
 
+/** Reasons carried alongside the legacy sketch Worker message. */
+type SketchStaticReason =
+  | 'faceNoCurves' | 'notConnected' | 'faceOpen' | 'faceNotPlanar' | 'faceSelfIntersection'
+  | 'holeBuild' | 'holeArea' | 'segmentEdge' | 'arcEdge'
+  | 'offsetNoCurves' | 'offsetDistance' | 'offsetInside' | 'offsetBuild' | 'offsetEmpty' | 'offsetCurve';
+
+export type SketchGeometryReason =
+  | { readonly code: SketchStaticReason }
+  | { readonly code: 'holeNotPlanar' | 'holeIntersection' | 'holeOutside' | 'holeNested'; readonly index: string }
+  | { readonly code: 'arcRadius'; readonly radius: string }
+  | { readonly code: 'internal' };
+
+type SketchInputReason = Exclude<SketchGeometryReason, { readonly code: 'internal' }>;
+
+// Shared geometry callers still receive an ordinary Error with the original message.
+const sketchInputReasons = new WeakMap<Error, SketchInputReason>();
+
+export function sketchInputError(reason: SketchInputReason, message: string): Error {
+  const error = new Error(message);
+  sketchInputReasons.set(error, reason);
+  return error;
+}
+
+export function sketchInputReason(error: Error): SketchInputReason | undefined {
+  return sketchInputReasons.get(error);
+}
+
 /** 符号を持つ計算部の段の誤り(makeSurfaceCut.ts の SurfaceCutError と同じ形)。Worker が符号を SolidStepFailure へ写す。 */
 export class KernelStepError extends Error {
   constructor(readonly code: KernelStepFailureCode, message: string, options?: ErrorOptions) {

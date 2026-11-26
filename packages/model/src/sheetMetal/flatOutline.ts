@@ -17,7 +17,7 @@ const normal: Vec3 = [0, 0, 1];
 
 export function classifySheetOutline(curves: readonly ResolvedCurve[]): SheetGeometryResult<readonly SheetClippedLoop[]> {
   const collected = collectSheetCurveLoops(curves, normal); if (!collected.ok) return collected;
-  if (collected.value.length === 0) return { ok: false, message: '展開形状に閉じた切断輪郭がありません。' };
+  if (collected.value.length === 0) return { ok: false, message: '展開形状に閉じた切断輪郭がありません。', text: { key: 'sheetMetal.flatOutlineEmpty', parameters: {} } };
   const loops: SheetClippedLoop[] = [];
   for (const [i, loop] of collected.value.entries()) {
     let depth = 0;
@@ -31,7 +31,7 @@ export function classifySheetOutline(curves: readonly ResolvedCurve[]): SheetGeo
     // OCCT断面の向きは分類根拠にしない。入れ子の深さで穴を決めてから向きをそろえる。
     const kind = depth % 2 === 0 ? 'outer' : 'hole';
     const oriented = orientSheetLoop(loop.curves, normal, kind === 'hole');
-    if (oriented === null) return { ok: false, message: '展開輪郭の向きをそろえられませんでした。' };
+    if (oriented === null) return { ok: false, message: '展開輪郭の向きをそろえられませんでした。', text: { key: 'sheetMetal.flatOutlineOrientation', parameters: {} } };
     loops.push({ kind, curves: oriented });
   }
   return { ok: true, value: loops };
@@ -39,19 +39,23 @@ export function classifySheetOutline(curves: readonly ResolvedCurve[]): SheetGeo
 
 export async function resolveSheetFlatOutline(bridge: Pick<KernelBridge, 'sectionSketchCurves'>,
   bodyKey: string, thickness: number, shouldCancel: () => boolean = () => false): Promise<SheetGeometryResult<SheetFlatOutline>> {
-  if (shouldCancel()) return { ok: false, message: '展開輪郭の書き出しを中止しました。' };
-  if (!Number.isFinite(thickness) || thickness <= 0) return { ok: false, message: '展開輪郭の板厚が不正です。' };
+  function invalidOutline(message: string, detail: string | number): SheetGeometryResult<never> {
+    console.error('PointerCAD sheet flat outline', message, detail);
+    return { ok: false, message, text: { key: 'assembly.error.internal', parameters: {} } };
+  }
+  if (shouldCancel()) return { ok: false, message: '展開輪郭の書き出しを中止しました。', text: { key: 'sheetMetal.flatOutlineCancelled', parameters: {} } };
+  if (!Number.isFinite(thickness) || thickness <= 0) return invalidOutline('展開輪郭の板厚が不正です。', thickness);
   const result = await bridge.sectionSketchCurves([{ featureId: 'sheet-cut-outline', bodyKey, source: null,
     curveToleranceMm: SHEET_OUTLINE_TOLERANCE_MM,
     plane: { id: 'sheet-cut-plane', origin: [0, 0, thickness / 2], normal, axisU: [1, 0, 0], axisV: [0, 1, 0] } }]);
-  if (shouldCancel()) return { ok: false, message: '展開輪郭の書き出しを中止しました。' };
+  if (shouldCancel()) return { ok: false, message: '展開輪郭の書き出しを中止しました。', text: { key: 'sheetMetal.flatOutlineCancelled', parameters: {} } };
   if (result.failures.length > 0) return { ok: false, message: result.failures[0].message };
   const curves: ResolvedCurve[] = [];
   for (const curve of result.results[0]?.curves ?? []) {
     // 精密断面の橋は直線・円弧だけを返す。補間や二度目の標本化を許さない。
     if (curve.kind === 'segment') curves.push({ ...curve, from: [curve.from[0], curve.from[1], 0], to: [curve.to[0], curve.to[1], 0] });
     else if (curve.kind === 'arc') curves.push({ ...curve, center: [curve.center[0], curve.center[1], 0] });
-    else return { ok: false, message: '展開輪郭の精密な線分・円弧が得られませんでした。' };
+    else return invalidOutline('展開輪郭の精密な線分・円弧が得られませんでした。', curve.kind);
   }
   const loops = classifySheetOutline(curves);
   return loops.ok ? { ok: true, value: { loops: loops.value, toleranceMm: SHEET_OUTLINE_TOLERANCE_MM } } : loops;

@@ -63,7 +63,7 @@ import {
   type DxfPoint2d,
   type DxfSplineGeometry,
 } from './dxfCurves.js';
-import { DXF_UNSUPPORTED_FORMAT_MESSAGE, type DxfTag } from './dxfTags.js';
+import { DxfDataError, DXF_UNSUPPORTED_FORMAT_MESSAGE, type DxfTag } from './dxfTags.js';
 import { decodeDxfString } from './dxfDrawingTypes.js';
 
 /** すべての実体が持つ欄。 */
@@ -222,7 +222,7 @@ interface PolylineVertex {
 }
 
 function unsupported(): Error {
-  return new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+  return new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
 }
 
 /** `-0` を `0` へ寄せる(`dxfTags.ts` / `dxfCurves.ts` の決めと揃える)。 */
@@ -360,7 +360,7 @@ function similarityScale(transform: DxfTransform): number | null {
 function transformArc(entity: DxfArcEntity, transform: DxfTransform): DxfArcEntity {
   const scale = similarityScale(transform);
   if (scale === null) {
-    throw new Error(DXF_NON_UNIFORM_SCALE_MESSAGE);
+    throw new DxfDataError('nonUniformScale', DXF_NON_UNIFORM_SCALE_MESSAGE);
   }
   const center = applyTransform(transform, entity.center);
   // 始点の像から開始角を測り直す。回転角を足し算で求めるより、鏡像も同じ 1 本の式で扱える。
@@ -380,7 +380,7 @@ function transformArc(entity: DxfArcEntity, transform: DxfTransform): DxfArcEnti
 function transformEllipse(entity: DxfEllipseEntity, transform: DxfTransform): DxfEllipseEntity {
   const scale = similarityScale(transform);
   if (scale === null) {
-    throw new Error(DXF_NON_UNIFORM_SCALE_MESSAGE);
+    throw new DxfDataError('nonUniformScale', DXF_NON_UNIFORM_SCALE_MESSAGE);
   }
   const center = applyTransform(transform, entity.center);
   const majorEnd = applyTransform(
@@ -802,7 +802,7 @@ function pushEntities(
   for (const entity of entities) {
     state.entities.push(transformEntity(entity, transform));
     if (state.entities.length > DXF_MAX_ENTITY_COUNT) {
-      throw new Error(DXF_TOO_MANY_ENTITIES_MESSAGE);
+      throw new DxfDataError('tooManyEntities', DXF_TOO_MANY_ENTITIES_MESSAGE);
     }
   }
 }
@@ -876,7 +876,7 @@ function expandRecords(
       case 'INSERT': {
         if (depth + 1 > DXF_MAX_BLOCK_NESTING_DEPTH) {
           // 自分自身を置くブロックもここで止まる(段数だけを見るので無限に回らない)。
-          throw new Error(DXF_BLOCK_NESTING_MESSAGE);
+          throw new DxfDataError('blockNesting', DXF_BLOCK_NESTING_MESSAGE);
         }
         const name = (firstTagValue(record.tags, 2) ?? '').trim().toUpperCase();
         const block = state.blocks.get(name);

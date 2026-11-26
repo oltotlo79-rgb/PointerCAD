@@ -1,4 +1,6 @@
 /** exchange data exchanged through the model's kernel bridge. Types only; no Worker lifetime. */
+import type { ShapeExportDiagnostic } from '@pointercad/kernel';
+import type { ShapeImportDiagnostic } from '@pointercad/kernel';
 import type {
   ExportMeshQuality,
 } from '../exchange/types.js';
@@ -55,6 +57,8 @@ export interface ShapeExportOptions {
   readonly partId?: string;
   /** Caller-owned cancellation only; omitted from the serializable kernel request. */
   readonly signal?: AbortSignal;
+  /** The exchange panel resolves STEP/STL diagnostic codes in its message resources. */
+  readonly reportDiagnostics?: boolean;
   readonly format: ShapeExportFormat;
   /** Optional IGES output unit. The standard export panel uses mm. */
   readonly igesUnit?: 'mm' | 'inch';
@@ -127,7 +131,8 @@ export type ShapeExportOutcome =
     }
   | { readonly kind: 'meshes'; readonly bodies: readonly ExportedMeshBody[] }
   | { readonly kind: 'cancelled' }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { readonly kind: 'failed'; readonly message: string;
+      readonly diagnostic?: ShapeExportDiagnostic | { readonly code: 'workerBroken' } };
 
 /** Read-only result for one saved B-rep attachment. */
 export type ImportedBrepInspection =
@@ -191,4 +196,5 @@ export type ShapeImportOutcome =
       readonly bodies: readonly ImportedBody[];
       readonly unit: 'mm' | 'inch' | 'other';
     }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { readonly kind: 'failed'; readonly message: string; readonly diagnostic?: ShapeImportDiagnostic }
+  | { readonly kind: 'cancelled' };

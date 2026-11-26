@@ -12,6 +12,7 @@ import './statusBar.css';
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
 import { nestedBoltedJointRefusalKey } from '../assembly/nestedBoltedJointDisplay.js';
 import { documentLabel } from '../file/partFile.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { mathGeometryToolGuide, mathGeometryToolGuideText } from '../math/mathGeometryToolGuide.js';
 import { LENGTH_UNIT_LABEL_KEYS, nextLengthUnit } from '../settings/settings.js';
@@ -535,9 +536,8 @@ export function StatusBar(): React.JSX.Element {
    */
   const constraintErrorMessage = useAppStore((state) => state.constraintErrorMessage);
   const constraintPickMessage = useAppStore((state) => constraintPickGuide(state));
-  const constraintSummaryText = useAppStore(
-    (state) => state.constraintDiagnosis?.summary ?? null,
-  );
+  const constraintSummary = useAppStore((state) => state.constraintDiagnosis?.summary);
+  const constraintSummaryText = constraintSummary === undefined ? null : failureMessage(constraintSummary);
   // 引っぱり(FR-313)。掴めなかった理由と、引っぱっている最中の案内。
   const dragRefusalKey = useAppStore((state) => state.dragRefusalKey);
   const dragging = useAppStore((state) => state.sketchDrag !== null);

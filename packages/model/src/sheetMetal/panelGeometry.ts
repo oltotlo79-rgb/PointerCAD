@@ -1,3 +1,4 @@
+import type { FailureText } from '../failureText.js';
 /** 板金パネルの安定境界と接線座標。OCCTの面番号や表示メッシュへ依存しない。 */
 import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
@@ -21,7 +22,9 @@ export interface SheetBoundaryEdge {
 export interface SheetTangentFrame {
   readonly origin: Vec3; readonly xAxis: Vec3; readonly yAxis: Vec3; readonly normal: Vec3;
 }
-export type SheetGeometryResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly message: string };
+export type SheetGeometryResult<T> = { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly message: string; readonly text?: FailureText };
+// message は既存の補助API用。画面に渡す箇所は text を優先する。
 const TOLERANCE_MM = 1e-7;
 
 function validFrame(frame: SheetTangentFrame): boolean {

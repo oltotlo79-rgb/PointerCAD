@@ -18,10 +18,10 @@ import { zipDirectory } from './zipDirectory.js';
 export const ZIP_STEP_BYTES = 1024 * 1024;
 
 /** 中身と圧縮の指定。指定された先頭は、残りと辞書を共有しない非圧縮ブロックにする。 */
-export interface ZipChunkedBytes {
-  readonly length: number;
-  readonly pending: (Uint8Array | undefined)[];
-}
+export type ZipChunkedBytes = { readonly length: number } & (
+  | { readonly pending: (Uint8Array | undefined)[] }
+  | { readonly chunks: () => Iterable<Uint8Array> }
+);
 
 export type ZipStepEntry<Bytes = Uint8Array> = readonly [bytes: Bytes, options: ZipOptions, storedPrefixLength?: number];
 type OwnedZipEntry = ZipStepEntry<Uint8Array | ZipChunkedBytes>;
@@ -139,6 +139,16 @@ function* packZipBytes(bytes: Uint8Array, options: ZipOptions, compression: 0 | 
   return { crc, data };
 }
 
+function* ownedMeshChunks(source: ZipChunkedBytes): Generator<Uint8Array, void, void> {
+  if ('chunks' in source) { yield* source.chunks(); return; }
+  for (let index = 0; index < source.pending.length; index += 1) {
+    const chunk = source.pending[index];
+    if (chunk === undefined) throw new Error('Invalid mesh ZIP chunk');
+    source.pending[index] = undefined;
+    yield chunk;
+  }
+}
+
 /** A PCM1 entry owns full independent pieces, starting at the entry's first byte. */
 function* packMeshChunks(source: ZipChunkedBytes, options: ZipOptions, compression: 0 | 8, storedPrefixLength: number,
   control: ZipStepsControl): Generator<void, PackedZipData, void> {
@@ -149,21 +159,24 @@ function* packMeshChunks(source: ZipChunkedBytes, options: ZipOptions, compressi
   const deflate = new Deflate(options, chunk => { data.push(chunk); });
   let crc = startZipCrc32();
   try {
-    if (source.pending.length !== Math.ceil(source.length / ZIP_STEP_BYTES)) throw new Error('Invalid mesh ZIP length');
-    for (let index = 0; index < source.pending.length; index += 1) {
-      const chunk = source.pending[index];
-      const expected = Math.min(ZIP_STEP_BYTES, source.length - index * ZIP_STEP_BYTES);
-      if (chunk === undefined || chunk.length !== expected) throw new Error('Invalid mesh ZIP chunk');
-      const last = index === source.pending.length - 1;
+    let remaining = source.length;
+    if ('pending' in source && source.pending.length !== Math.ceil(remaining / ZIP_STEP_BYTES)) {
+      throw new Error('Invalid mesh ZIP length');
+    }
+    for (const chunk of ownedMeshChunks(source)) {
+      const expected = Math.min(ZIP_STEP_BYTES, remaining);
+      if (expected <= 0 || chunk.length !== expected) throw new Error('Invalid mesh ZIP chunk');
+      remaining -= expected;
+      const last = remaining === 0;
       crc = updateZipCrc32(crc, chunk);
       deflate.push(chunk, last);
       const buffer = chunk.buffer;
       if (buffer instanceof ArrayBuffer && !data.some(part => part.buffer === buffer)) detachScratchBuffer(buffer);
-      source.pending[index] = undefined;
       if (!last) { yield; abortCheck(control); }
     }
+    if (remaining !== 0) throw new Error('Invalid mesh ZIP length');
     return { crc: finishZipCrc32(crc), data };
-  } finally { source.pending.length = 0; }
+  } finally { if ('pending' in source) source.pending.length = 0; }
 }
 
 function* packZipEntries(entries: ReadonlyMap<string, OwnedZipEntry>,
@@ -261,7 +274,7 @@ export async function packOwnedZipEntries(entries: ReadonlyMap<string, OwnedZipE
     };
   } finally {
     for (const [bytes] of entries.values()) {
-      if (!(bytes instanceof Uint8Array)) bytes.pending.length = 0;
+      if (!(bytes instanceof Uint8Array) && 'pending' in bytes) bytes.pending.length = 0;
     }
   }
 }

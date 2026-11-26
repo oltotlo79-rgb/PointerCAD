@@ -454,6 +454,54 @@ const magnitudeComparisonRule = {
 /** Packages where the magnitude comparison rule applies to product TypeScript. */
 const TOLERANCE_RULE_PACKAGES = ['kernel', 'model', 'ui', 'io', 'fem', 'drawing', 'expression', 'test-utils'];
 
+const vitestConfigProfiles = {
+  'apps/desktop': 'desktop',
+  'apps/web': 'default',
+  'packages/drawing': 'default',
+  'packages/expression': 'performance-serial',
+  'packages/fem': 'performance-serial',
+  'packages/help-content': 'default',
+  'packages/io': 'performance-strict',
+  'packages/kernel': 'kernel',
+  'packages/model': 'performance-serial',
+  'packages/test-utils': 'serial',
+  'packages/ui': 'performance-strict',
+};
+
+/** @type {import('eslint').Rule.RuleModule} */
+const vitestConfigWiringRule = {
+  meta: {
+    type: 'problem',
+    schema: [{ type: 'string' }, { type: 'string' }],
+    messages: {
+      factoryImport: 'パッケージの Vitest 設定には共通の createPackageVitestConfig を読み込んでください。',
+      factoryExport: 'このパッケージの既定 export は createPackageVitestConfig({{profile}}, options) の戻り値にしてください。',
+      ownedPolicy: 'Vitest の worker・順序・待機上限は共通設定で決めます。',
+    },
+  },
+  create(context) {
+    const [source, profile] = context.options;
+    const factory = 'createPackageVitestConfig';
+    const validImport = `ImportDeclaration[importKind='value'][source.value=${JSON.stringify(source)}][specifiers.length=1]`
+      + ` > ImportSpecifier[importKind='value'][imported.name='${factory}'][local.name='${factory}']`;
+    const validExport = `ExportDefaultDeclaration > CallExpression[callee.type='Identifier'][callee.name='${factory}']`
+      + `[arguments.length=2][arguments.0.type='Literal'][arguments.0.value=${JSON.stringify(profile)}][arguments.1.type='Identifier'][arguments.1.name='options']`;
+    const reserved = '/^(fileParallelism|sequence|testTimeout)$/';
+    const property = ':matches(Property, TSPropertySignature)';
+    return {
+      [`Program:not(:has(${validImport}))`](node) {
+        context.report({ node, messageId: 'factoryImport' });
+      },
+      [`Program:not(:has(${validExport}))`](node) {
+        context.report({ node, messageId: 'factoryExport', data: { profile: JSON.stringify(profile) } });
+      },
+      [`${property}[computed=false][key.name=${reserved}], ${property}[key.value=${reserved}]`](node) {
+        context.report({ node, messageId: 'ownedPolicy' });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -946,10 +994,19 @@ export default tseslint.config(
     // 狭いoverrideの既存規則を置き換えない独立した表記規則。
     files: ['**/*.{ts,tsx,js,mjs}'],
     plugins: { 'module-style': { rules: { 'node-prefix': nodeBuiltinPrefixRule,
-      'relative-js-extension': relativeJavaScriptImportRule, 'vitest-it': vitestItImportRule } } },
+      'relative-js-extension': relativeJavaScriptImportRule, 'vitest-it': vitestItImportRule,
+      'vitest-config-wiring': vitestConfigWiringRule } } },
     rules: { 'module-style/node-prefix': 'error',
       'module-style/relative-js-extension': 'error', 'module-style/vitest-it': 'error' },
   },
+
+  ...Object.entries(vitestConfigProfiles).map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ([directory, profile]) => {
+    const specifier = posix.relative(directory, 'packages/test-utils/src/vitest.package.testSupport.js');
+    return {
+      files: [`${directory}/vitest.config.ts`],
+      rules: { 'module-style/vitest-config-wiring': ['error', specifier.startsWith('../') ? specifier : `./${specifier}`, profile] },
+    };
+  }),
   // A separate rule preserves narrower no-restricted-imports overrides.
   ...layerRules.filter(({ files }) => files.length === 1 &&
     /^packages\/(expression|kernel|drawing|model)\/[*]/.test(files[0])).map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ({ files, forbidden }) => ({

@@ -1,5 +1,5 @@
 /** Editor lifecycle independent of its renderer. A result applies only to the exact input and document generation. */
-import { validateMathSource, decodeMathDeclarations, sameMathDeclarations, type MathDeclaration,
+import { MathInputProblem, validateMathSource, decodeMathDeclarations, sameMathDeclarations, type MathDeclaration, type MathInputDiagnostic,
   type MathEvaluation, type StoredMathExpression } from '@pointercad/expression/math/contracts';
 import { sameMathIdentity, type MathRequestIdentity } from '@pointercad/expression/math/client';
 export interface MathEditorInput {
@@ -18,7 +18,7 @@ export type MathEditorState =
   | { readonly status: 'editing'; readonly input: MathEditorInput }
   | { readonly status: 'calculating'; readonly input: MathEditorInput }
   | { readonly status: 'evaluated'; readonly input: MathEditorInput; readonly output: MathEditorOutput; readonly canApply: boolean }
-  | { readonly status: 'rejected'; readonly input: MathEditorInput; readonly reason: 'source' | 'worker' };
+  | { readonly status: 'rejected'; readonly input: MathEditorInput; readonly reason: 'source' | 'worker'; readonly diagnostic?: MathInputDiagnostic };
 export interface MathEditorSessionOptions {
   readonly initial: MathEditorInput;
   /** Must perform its work off the UI thread and honour AbortSignal via the Worker client. */
@@ -110,7 +110,13 @@ export class MathEditorSession {
   }
   private schedule(): void {
     try { validateMathSource(this.current.source); }
-    catch { this.publish({status:'rejected',input:this.current,reason:'source'});return; }
+    catch (error) {
+      if (!(error instanceof MathInputProblem)) console.error('PointerCAD math source validation', error);
+      const diagnostic: MathInputDiagnostic | undefined = error instanceof MathInputProblem ? error.diagnostic
+        : { key: 'assembly.error.internal', parameters: {} };
+      this.publish({status:'rejected',input:this.current,reason:'source',...(diagnostic === undefined ? {} : { diagnostic })});
+      return;
+    }
     this.timer=setTimeout(()=>{this.timer=null;void this.run();},120);
   }
   private async run(): Promise<void> {

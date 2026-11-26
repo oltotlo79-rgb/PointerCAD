@@ -1,7 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CATALOG_ITEM_REJECTION_CODES, SUB_ASSEMBLY_DEPTH_TEXT, mathGeometryUnresolvedMessage, plainText, type FailureText } from '@pointercad/model';
+import { expressionValueFromNumber as num } from '@pointercad/expression';
+import {
+  absoluteCoordinate, buildResidualReport, CATALOG_ITEM_REJECTION_CODES, collectVariables,
+  mathGeometryUnresolvedMessage, plainText, resolveSketch, SUB_ASSEMBLY_DEPTH_TEXT,
+  variableComponentKey, WORK_PLANES, type FailureText, type SketchConstraint, type SketchDocument,
+} from '@pointercad/model';
 import { InputIssue } from '@pointercad/model/beam-analysis';
 import { buildStandardPartFromSourceWithReason, steelMessageRejectionSourcesForUi } from '@pointercad/model/testing/ui-fixtures';
 import { describe, expect, it } from 'vitest';
@@ -25,7 +30,86 @@ function collectKeys(text: FailureText, into: Set<string>): void {
   for (const value of Object.values(text.parameters)) if (typeof value !== 'string') collectKeys(value, into);
 }
 
+// residuals.test.ts の縮退事例と同じ要素・拘束・変数の配置を使う。
+function collapsedSketchResiduals() {
+  const point = (pointId: string) => ({ kind: 'point' as const, pointId });
+  const curve = (featureId: string) => ({ kind: 'curve' as const, element: { featureId } });
+  const a = curve('line-1');
+  const b = curve('line-2');
+  const p = point('point-1');
+  const q = point('point-2');
+  const circle = curve('circle-1');
+  const otherCircle = curve('circle-2');
+  const constraints: SketchConstraint[] = [
+    { id: 'k1', name: '一致1', kind: 'coincident', a: p, b: q },
+    { id: 'k2', name: '水平1', kind: 'horizontal', target: a },
+    { id: 'k3', name: '垂直1', kind: 'vertical', target: a },
+    { id: 'k4', name: '平行1', kind: 'parallel', a, b },
+    { id: 'k5', name: '直角1', kind: 'perpendicular', a, b },
+    { id: 'k6', name: '接線1', kind: 'tangent', line: a, circle },
+    { id: 'k7', name: '同心1', kind: 'concentric', a: circle, b: otherCircle },
+    { id: 'k8', name: '等しい1', kind: 'equal', a, b },
+    { id: 'k9', name: '等しい2', kind: 'equal', a: circle, b: otherCircle },
+    { id: 'k10', name: '対称1', kind: 'symmetric', a: p, b: q, axis: a.element },
+    { id: 'k11', name: '距離1', kind: 'distance', a: p, b: q, length: num(10) },
+    { id: 'k12', name: '角度1', kind: 'angle', a, b, angle: num(30) },
+    { id: 'k13', name: '半径1', kind: 'radius', target: circle, size: num(8) },
+    { id: 'k14', name: '直径1', kind: 'diameter', target: circle, size: num(20) },
+    { id: 'k15', name: '固定1', kind: 'fix', target: point('point-3') },
+  ];
+  const document: SketchDocument = {
+    id: 'sketch-1', name: 'スケッチ1', constraints,
+    features: [
+      { id: 'point-1', name: 'point-1', kind: 'point', planeId: 'xy', at: absoluteCoordinate(3, 4, 0) },
+      { id: 'point-2', name: 'point-2', kind: 'point', planeId: 'xy', at: absoluteCoordinate(7, 1, 0) },
+      { id: 'point-3', name: 'point-3', kind: 'point', planeId: 'xy', at: absoluteCoordinate(-5, -5, 0) },
+      { id: 'line-1', name: 'line-1', kind: 'line', planeId: 'xy', construction: false,
+        from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(6, 8, 0) },
+      { id: 'line-2', name: 'line-2', kind: 'line', planeId: 'xy', construction: false,
+        from: absoluteCoordinate(1, 2, 0), to: absoluteCoordinate(9, 4, 0) },
+      { id: 'circle-1', name: 'circle-1', kind: 'arc', planeId: 'xy', construction: false,
+        center: absoluteCoordinate(2, 3, 0), radius: num(5), startAngle: num(0), endAngle: num(360) },
+      { id: 'circle-2', name: 'circle-2', kind: 'arc', planeId: 'xy', construction: false,
+        center: absoluteCoordinate(11, -4, 0), radius: num(7), startAngle: num(0), endAngle: num(360) },
+      { id: 'arc-1', name: 'arc-1', kind: 'arc', planeId: 'xy', construction: false,
+        center: absoluteCoordinate(20, 0, 0), radius: num(4), startAngle: num(0), endAngle: num(90) },
+    ],
+  };
+  const set = collectVariables(document, resolveSketch(document), WORK_PLANES.xy);
+  const collapsed: Readonly<Record<string, number>> = {
+    'line-1:end.u': 0, 'line-1:end.v': 0, 'line-2:end.u': 1, 'line-2:end.v': 2,
+    'circle-1.r': 0, 'point-2.u': 3, 'point-2.v': 4,
+  };
+  const x = set.variables.map((variable, index) => collapsed[variableComponentKey(variable)] ?? set.initial[index]);
+  return buildResidualReport(constraints, set, x);
+}
+
 describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', () => {
+  it('縮退で見送った7件は、鍵へ移す前と同じ日本語で表示する', () => {
+    const { skipped } = collapsedSketchResiduals();
+    // 期待する全文は、鍵へ移す前の buildResidualReport が実際に返した文。
+    expect(skipped.map(({ constraintId, text }) => [constraintId, failureMessage(text)])).toEqual([
+      ['k4', '平行1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k5', '直角1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k6', '接線1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k8', '等しい1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k10', '対称1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k11', '距離1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+      ['k12', '角度1は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。'],
+    ]);
+  });
+  it('面とオフセットは理由を操作名で包み、旧応答と共通の内部エラーも表示する', () => {
+    const show = (key: string, reason: FailureText) => failureMessage({ key, parameters: { reason } });
+    expect(show('partError.sketchKernel.face', { key: 'partError.sketchFaceHole.outsideOuter',
+      parameters: { label: { key: 'partError.sketchKernel.holeLabel', parameters: { index: '2' } } } }))
+      .toBe('面を作れませんでした: 穴2が外周の外にはみ出しています。');
+    expect(show('partError.sketchKernel.offset', { key: 'partError.sketchKernel.offsetInside', parameters: {} }))
+      .toBe('ずらした線を作れませんでした: これ以上内側にはオフセットできません。');
+    expect(show('partError.sketchKernel.face', plainText('旧応答 {index}')))
+      .toBe('面を作れませんでした: 旧応答 {index}');
+    expect(failureMessage({ key: 'assembly.error.internal', parameters: {} })).toBe('内部の誤りが起きました。');
+  });
+
   it('鍵の文へ値を差し込み、値が鍵と値なら入れ子で作る', () => {
     expect(failureMessage(SUB_ASSEMBLY_DEPTH_TEXT)).toBe('組の入れ子が深すぎます(8 段まで)。');
     expect(failureMessage({ key: 'assembly.steel.rejection.pipe-outside-scope', parameters: {
@@ -183,5 +267,16 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
     expect(messageText({ key: 'assembly.error.subAssemblyDepth', parameters: { max: '8' } })).toBe(failureMessage(SUB_ASSEMBLY_DEPTH_TEXT));
     expect(messageText({ key: 'assembly.error.subAssemblyDepth', parameters: { max: '8' } })).not.toContain('{max}');
     expect(messageText({ key: 'file.error.corrupted' })).toBe(t('file.error.corrupted'));
+  });
+});
+
+describe('文字式から係数再計算へ伝わる診断', () => {
+  it('鍵の日本語と位置、入力値、上限を表示する', () => {
+    expect(failureMessage({ key: 'math.input.unsupportedFunction', parameters: { name: 'NoSuchFn', position: '1' } }))
+      .toBe('関数「NoSuchFn」を確認してください。係数はcoef("名前")で挿入します（1文字目）。');
+    expect(failureMessage({ key: 'math.input.decimalExponent', parameters: { value: '10001', limit: '10000' } }))
+      .toBe('指数が大きすぎます（入力 10001、絶対値の上限 10000）。');
+    expect(failureMessage({ key: 'assembly.error.internal', parameters: {} }))
+      .toBe('内部の誤りが起きました。');
   });
 });

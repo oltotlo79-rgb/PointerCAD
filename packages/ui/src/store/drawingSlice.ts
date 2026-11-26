@@ -4,6 +4,7 @@ import { createUndoStack, drawingSourceInputOf, emptyDrawingSourceLibrary, pushU
   type SuggestedDimensionKind, type UndoStack, type ImportedShapeBytes } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { AppState } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
 import { documentSessionId, type PreparedDocumentSession } from './documentIdentity.js';
@@ -188,8 +189,10 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
   setDrawingMessage: (drawingMessage) => set(drawingMessage === null ? { drawingMessage } : { drawingMessage, fileMessage: null }),
   setDrawingResolution: (drawing, drawingResolution, drawingSourceResolution) => {
     if (get().drawing !== drawing) return;
+    const drawingMessage = drawingResolution.ok ? null
+      : drawingResolution.text === undefined ? drawingResolution.message : failureMessage(drawingResolution.text);
     set({ drawingResolution, drawingSourceResolution, drawingBusy: false,
-      drawingMessage: drawingResolution.ok ? null : drawingResolution.message });
+      drawingMessage });
   },
   setDrawingFileState: (drawingFileName, savedDrawing, sources) => set({ drawingFileName, savedDrawing,
     savedDrawingSources: savedDrawing === null ? null : sources ?? get().drawingSources }),

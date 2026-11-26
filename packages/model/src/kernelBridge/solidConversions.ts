@@ -359,6 +359,7 @@ export function toSolidOutcome(
     featureId: failure.id,
     message: failure.message,
     ...(failure.code === undefined ? {} : { code: failure.code }),
+    ...(failure.parameters === undefined ? {} : { parameters: failure.parameters }),
   }));
 
   // Returned and intentionally suppressed bodies both preserve the kernel's failure facts.

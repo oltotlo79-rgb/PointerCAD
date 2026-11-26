@@ -239,7 +239,16 @@ export function flatPlateProfile(dims: FlatPlateDimensions): (ProfileLoops & { r
 /** 平板のブラケットの形(厚さ t を Z へ押し出し、穴を引く)。形が成り立たない時は null。 */
 export function buildFlatPlatePart(dims: FlatPlateDimensions): PartDocument | null {
   const profile = flatPlateProfile(dims);
-  return profile === null ? null : buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
+  if (profile === null) return null;
+  const document = buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
+  // 板は z = 0 から厚さ分だけ押し出す。穴の工具は ±2 倍の厚さまで伸ばし、工具の端面が板の表裏と重ならないようにする。
+  // 円弧・形の順と鍵を保ち、材料を取り除けなかった切抜きは失敗として扱う。
+  const toolLength = expressionValueFromNumber(4 * dims.thickness);
+  return { ...document, solids: document.solids.map((feature, index) => {
+    if (index !== 0 && feature.kind === 'extrude') return { ...feature, distance: toolLength, symmetric: true };
+    if (feature.kind === 'boolean' && feature.operation === 'subtract') return { ...feature, requireRemoval: true as const };
+    return feature;
+  }) };
 }
 
 /** キャップの板の形(厚さ t を Z へ押し出す)。形が成り立たない時は null。 */

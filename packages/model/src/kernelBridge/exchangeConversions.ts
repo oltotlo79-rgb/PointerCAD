@@ -1,5 +1,5 @@
 /** Pure file-exchange conversion. Transport and cancellation remain at the bridge. */
-import type { ShapeExportItem, ShapeExportRequest, ShapeExportResult, ShapeImportBody, ShapeImportRequest, ShapeImportResult } from '@pointercad/kernel';
+import type { ShapeExportItem, ShapeExportDiagnosticRequest, ShapeExportReply, ShapeExportRequest, ShapeImportBody, ShapeImportReply, ShapeImportRequest } from '@pointercad/kernel';
 import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from '../exchange/types.js';
 import { importedShapeOf } from '../part/types.js';
 import type { ResolvedSolidStep } from '../part/resolvePart.js';
@@ -53,15 +53,17 @@ function meshQualityOf(options: ShapeExportOptions): ExportMeshQuality {
 export function toShapeExportRequest(
   items: readonly ShapeExportItem[],
   options: ShapeExportOptions,
-): ShapeExportRequest {
+): ShapeExportRequest | ShapeExportDiagnosticRequest {
+  const diagnosticMode = options.reportDiagnostics ? { reportDiagnostics: true as const } : {};
   switch (options.format) {
     case 'step':
-      return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors };
+      return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors, ...diagnosticMode };
     case 'iges':
       return { format: 'iges', partId: options.partId, bodies: items, withColors: options.withColors, unit: options.igesUnit };
     case 'stl':
       return {
         format: 'stl',
+        ...diagnosticMode,
         partId: options.partId,
         bodies: items,
         ascii: options.ascii,
@@ -90,9 +92,13 @@ export function toShapeExportRequest(
  * 名前のまま全部保存する」——を STEP でも同じにしておく。
  */
 export function toShapeExportOutcome(
-  result: ShapeExportResult,
+  result: ShapeExportReply,
   options: ShapeExportOptions,
 ): ShapeExportOutcome {
+  if ('kind' in result) return result;
+  if (usesShapeExportDiagnostics(options) && result.format !== options.format) {
+    return unexpectedShapeExportFailure(options, result);
+  }
   switch (result.format) {
     case 'step':
     case 'iges':
@@ -136,6 +142,15 @@ export function toShapeExportOutcome(
     case 'brep':
       return { kind: 'failed', message: EXPORT_UNEXPECTED_FORMAT_MESSAGE };
   }
+}
+
+export function usesShapeExportDiagnostics(options: ShapeExportOptions): boolean {
+  return options.reportDiagnostics === true && (options.format === 'step' || options.format === 'stl');
+}
+
+export function unexpectedShapeExportFailure(options: ShapeExportOptions, cause: unknown): ShapeExportOutcome {
+  console.error('PointerCAD exchange', options.format.toUpperCase(), cause);
+  return { kind: 'failed', message: '', diagnostic: { code: 'internal' } };
 }
 
 /** 読み込みの依頼を kernel の言葉へ詰め替える(網羅 `switch`)。 */
@@ -182,7 +197,8 @@ function toImportedBody(body: ShapeImportBody): ImportedBody {
 }
 
 /** 読み込みの結果を model の言葉へ詰め替える。 */
-export function toShapeImportOutcome(result: ShapeImportResult): ShapeImportOutcome {
+export function toShapeImportOutcome(result: ShapeImportReply): ShapeImportOutcome {
+  if ('kind' in result) return result;
   return {
     kind: 'imported',
     bodies: result.bodies.map((body) => toImportedBody(body)),

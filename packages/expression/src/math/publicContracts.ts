@@ -1,3 +1,4 @@
+export type { MathInputDiagnostic } from './mathInputDiagnostics.js';
 export { formatMathText } from './formatMathText.js';
 export { decodeMathDeclarations, MATH_DECLARATION_LIMITS, sameMathDeclarations, referencedMathDeclarations } from './mathDeclarations.js';
 export type { MathDeclaration, MathDeclaredType } from './mathDeclarations.js';

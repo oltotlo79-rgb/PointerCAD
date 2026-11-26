@@ -1,6 +1,6 @@
 import type { OfflineAssetManifest, OfflineAssetRecord } from '@pointercad/ui/offline-protocol';
 import { offlineAssetRequestUrl } from './offlineNetwork.js';
-import { inspectPreparedOfflineEdition, type OfflineReadStoragePort } from './offlineReady.js';
+import { inspectPreparedOfflineEdition, inspectPreparedOfflineNavigation, type OfflineReadStoragePort } from './offlineReady.js';
 import { verifyOfflineAssetResponse } from './offlineTransfer.js';
 
 export class OfflineServingError extends Error {
@@ -21,6 +21,18 @@ export interface PreparedOfflineResponder {
 export async function loadPreparedOfflineResponder(baseUrl: URL, cacheName: string,
   storage: OfflineReadStoragePort, signal: AbortSignal): Promise<PreparedOfflineResponder> {
   const ready = await inspectPreparedOfflineEdition(baseUrl, cacheName, storage, signal);
+  return createPreparedOfflineResponder(baseUrl, storage, ready);
+}
+
+export async function loadPreparedOfflineNavigation(baseUrl: URL, cacheName: string, storage: OfflineReadStoragePort,
+  signal: AbortSignal, navigation: URL): Promise<{ responder: PreparedOfflineResponder; response?: Response }> {
+  const { ready, response } = await inspectPreparedOfflineNavigation(baseUrl, cacheName, storage, signal, navigation);
+  return { responder: createPreparedOfflineResponder(baseUrl, storage, ready), response };
+}
+
+function createPreparedOfflineResponder(baseUrl: URL, storage: OfflineReadStoragePort,
+  ready: Pick<PreparedOfflineResponder, 'cacheName' | 'manifest'>): PreparedOfflineResponder {
+  const { cacheName } = ready;
   const routes = new Map<string, OfflineAssetRecord>();
   for (const asset of ready.manifest.assets) {
     routes.set(offlineAssetRequestUrl(baseUrl, asset.url).href, asset);

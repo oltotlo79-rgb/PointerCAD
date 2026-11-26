@@ -1,3 +1,5 @@
 {
-  "drawing.error.unsupportedPaper": "この図面の用紙サイズは使えません。用紙と向きを選び直してください。"
+  "drawing.error.unsupportedPaper": "この図面の用紙サイズは使えません。用紙と向きを選び直してください。",
+  "drawing.error.breakIntervalCount": "破断区間は{count}つだけ指定してください。",
+  "drawing.error.breakIntervalInvalid": "破断区間の端と、残す隙間を正しく指定してください。"
 }

@@ -15,7 +15,9 @@ import {
   DEFAULT_LINEAR_DEFLECTION,
   makeSketchChamfer,
   makeSketchFillet,
-  type createKernelApi,
+  ShapeImportError,
+  type WorkerKernelApi,
+  type ShapeExportReply,
   type FaceMeshData,
   type KernelApi,
   type ManagedKernelApi,
@@ -33,7 +35,7 @@ import * as Comlink from 'comlink';
 import type { AnalysisBoundaryReply } from './geometry/analysisMesh.js';
 import { HOST_RECORD_BYTES, MeshHostRetention } from './kernelBridge/meshHostRetention.js';
 import type { MaterialComparisonBridge, MaterialComparisonResult } from './kernelBridge/materialComparisonContracts.js';
-import { readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
+import { internalMaterialComparisonFailure, readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
 import { askSheetRecognition, unavailableSheetReplies, type SheetRecognitionReply } from './kernelBridge/sheetRecognition.js';
 export type { MaterialComparisonBridge, MaterialComparisonResult, MaterialComparisonGeometry, MaterialDifferenceRegion } from './kernelBridge/materialComparisonContracts.js';
 import { readFunctionCurveGeometry, type FunctionKernelBridge } from './functionGeometry/functionCurveGeometry.js';
@@ -52,13 +54,16 @@ import type {
 
 import { toFaceRequest } from './kernelBridge/curveConversions.js';
 import {
+  modelSketchFailure,
+  unreportedSketchFailures,
   toOffsetItem, toOffsetResult, toProjectionItem, toSectionItem, toProjectionResult,
 } from './kernelBridge/sketchConversions.js';
 export { toOffsetResult, fromPlaneCurve, toProjectionResult } from './kernelBridge/sketchConversions.js';
 import { toMeasureRequest, toMeasureOutcome } from './kernelBridge/measureConversions.js';
 import { toShapeInspectRequest, toShapeInspectItems, printabilityProgressOf, toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
 export { toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
-import { toShapeExportItems, toShapeExportRequest, toShapeExportOutcome, toShapeImportRequest, toShapeImportOutcome } from './kernelBridge/exchangeConversions.js';
+import { toShapeExportItems, toShapeExportRequest, toShapeExportOutcome, toShapeImportRequest, toShapeImportOutcome, unexpectedShapeExportFailure,
+  usesShapeExportDiagnostics } from './kernelBridge/exchangeConversions.js';
 import { captureSolidRecomputeContext, toSolidRecomputeRequest, toSolidOutcome } from './kernelBridge/solidConversions.js';
 export { toAppearanceQueries, toAppearanceMatches, toSolidOutcome } from './kernelBridge/solidConversions.js';
 import type {
@@ -116,7 +121,7 @@ import type {
   PrintabilityProgressCallback,
   PrintabilityOutcome,
 } from './kernelBridge/analysisContracts.js';
-import type { ImportedBrepInspection, ShapeExportOutcome, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
+import type { ImportedBrepInspection, ShapeExportOptions, ShapeExportOutcome, ShapeImportOptions, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
 export type {
   MeasureTarget,
   MeasureOutcome,
@@ -264,6 +269,35 @@ const EXPORT_MISSING_SHAPE_MESSAGE = 'もとになるソリッドが見つかり
 /** カーネルが投げた理由を、そのまま画面へ出せる 1 行にする(文言の正本はカーネル側)。 */
 function toFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function missingShapeExport(options: ShapeExportOptions): ShapeExportOutcome {
+  return usesShapeExportDiagnostics(options)
+    ? { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE, diagnostic: { code: 'missingShape' } }
+    : { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+}
+
+async function readShapeExport(options: ShapeExportOptions, read: () => Promise<ShapeExportReply>): Promise<ShapeExportOutcome> {
+  try {
+    const reply = await read();
+    return options.signal?.aborted ? { kind: 'cancelled' } : toShapeExportOutcome(reply, options);
+  } catch (error) {
+    if (options.signal?.aborted) return { kind: 'cancelled' };
+    if (!usesShapeExportDiagnostics(options)) return { kind: 'failed', message: toFailureMessage(error) };
+    if (error instanceof Error && error.name === 'MissingBodiesError') return missingShapeExport(options);
+    return unexpectedShapeExportFailure(options, error);
+  }
+}
+
+/** 直呼出しの診断と、旧 Worker の文言付き拒否を公開結果へつなぐ。 */
+function toShapeImportFailure(format: ShapeImportOptions['format'], error: unknown): ShapeImportOutcome {
+  if ((format === 'step' || format === 'stl') && error instanceof Error && error.name === 'AbortError') {
+    return { kind: 'cancelled' };
+  }
+  if (error instanceof ShapeImportError) {
+    return { kind: 'failed', message: error.message, diagnostic: error.diagnostic };
+  }
+  return { kind: 'failed', message: toFailureMessage(error) };
 }
 
 /* ------------------------------------------------------------------ *
@@ -532,18 +566,11 @@ function toOutcome(
   }));
 
   const reported = new Set<string>(built.map((mesh) => mesh.featureId));
-  const collected: SketchFaceFailure[] = failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-  }));
+  const collected: SketchFaceFailure[] = failures.map(modelSketchFailure);
   for (const failure of collected) {
     reported.add(failure.featureId);
   }
-  for (const face of faces) {
-    if (!reported.has(face.featureId)) {
-      collected.push({ featureId: face.featureId, message: MISSING_FACE_MESSAGE });
-    }
-  }
+  collected.push(...unreportedSketchFailures(faces, reported, MISSING_FACE_MESSAGE));
 
   return { mesh: { faces: built }, failures: collected };
 }
@@ -613,7 +640,7 @@ interface WorkerCancellation<T> {
 
 interface KernelConnection {
   readonly worker: Worker;
-  readonly remote: Comlink.Remote<ReturnType<typeof createKernelApi>>;
+  readonly remote: Comlink.Remote<WorkerKernelApi>;
   readonly waiters: Set<() => void>;
   readonly counts: Record<KernelOperationStatus, number>;
   readonly results: WeakMap<object, KernelOperationStatus>;
@@ -674,7 +701,7 @@ function createKernelConnection(
   const connection: KernelConnection = {
     worker,
     beforeRequest,
-    remote: Comlink.wrap<ReturnType<typeof createKernelApi>>(endpoint),
+    remote: Comlink.wrap<WorkerKernelApi>(endpoint),
     waiters: new Set(),
     counts,
     results,
@@ -1504,13 +1531,28 @@ function createBridgeDrawingOperations(transport: BridgeTransport): Pick<BridgeW
   return {
     async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
       const active = transport.connection, callbacks = callbackScope();
-      const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
-        ? { kind: 'cancelled' } : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE };
-      return raceWithBroken(active, async () => {
-        try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
-          toCancelProxy(shouldCancel, callbacks))); }
-        catch (error) { return { kind: 'failed' as const, message: toFailureMessage(error) }; }
-      }, failed, callbacks);
+      const faults: { stage: string; cause: unknown }[] = [];
+      const failed = (): MaterialComparisonResult => {
+        if (active.interruption === 'cancelled') return { kind: 'cancelled' };
+        faults.push({ stage: 'worker interrupted', cause: KERNEL_BROKEN_MESSAGE });
+        return internalMaterialComparisonFailure();
+      };
+      let result: MaterialComparisonResult;
+      try {
+        result = await raceWithBroken(active, async (): Promise<MaterialComparisonResult> => {
+          try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
+            toCancelProxy(shouldCancel, callbacks))); }
+          catch (cause) {
+            faults.push({ stage: 'worker request', cause });
+            return internalMaterialComparisonFailure();
+          }
+        }, failed, callbacks);
+      } catch (cause) {
+        faults.push({ stage: 'worker comparison completion', cause });
+        result = internalMaterialComparisonFailure();
+      }
+      if (result.kind === 'failed' && faults.length > 0) console.error('PointerCAD material comparison bridge', faults);
+      return result;
     },
     async hiddenLineViews(request, options = {}) {
       if (health.broken && !transport.disposed) restart();
@@ -1919,7 +1961,7 @@ function createBridgeExchangeOperations(transport: BridgeTransport, ledger: Brid
       const items = toShapeExportItems(steps, options.bodies);
       if (items === null) {
         // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
-        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+        return missingShapeExport(options);
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !transport.disposed) {
@@ -1928,19 +1970,17 @@ function createBridgeExchangeOperations(transport: BridgeTransport, ledger: Brid
       const active = transport.connection;
       return raceWithBroken(
         active,
-        () => active.remote.exportShapes(toShapeExportRequest(items, options)).then(
-          (result) => toShapeExportOutcome(result, options),
-          // カーネルが断ったとき(鍵が消えていた・書けなかった)は理由をそのまま持ち回る。
-          // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
-          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
-        ),
-        // 書き出しの結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
-        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        () => readShapeExport(options, () => active.remote.exportShapes(toShapeExportRequest(items, options))),
+        () => usesShapeExportDiagnostics(options)
+          ? { kind: 'failed', message: KERNEL_BROKEN_MESSAGE, diagnostic: { code: 'workerBroken' } }
+          : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE },
         undefined,
         {
           milliseconds: EXPORT_TIMEOUT_MS,
-          refuse: () => ({ kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE }),
+          refuse: () => usesShapeExportDiagnostics(options)
+            ? { kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE,
+                diagnostic: { code: 'deadline', limit: EXPORT_TIMEOUT_MS } }
+            : { kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE },
           terminateAndRestart: () => { if (!transport.disposed && transport.connection === active) restart(); },
         },
         options.signal === undefined ? undefined : {
@@ -1977,8 +2017,8 @@ function createBridgeExchangeOperations(transport: BridgeTransport, ledger: Brid
       return raceWithBroken(
         active,
         () => active.remote.importShape(toShapeImportRequest(options)).then(
-          (result) => toShapeImportOutcome(result),
-          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+          toShapeImportOutcome,
+          (error: unknown) => toShapeImportFailure(options.format, error),
         ),
         () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
       );
@@ -2257,7 +2297,10 @@ export function createDirectMaterialComparisonBridge(api: MaterialComparisonKern
       if (disposed) return { kind: 'cancelled' };
       try { return readMaterialComparison(await api.compareMaterials({ beforeKeys, afterKeys },
         () => disposed || (shouldCancel?.() ?? false))); }
-      catch (error) { return { kind: 'failed', message: toFailureMessage(error) }; }
+      catch (cause) {
+        console.error('PointerCAD material comparison bridge', [{ stage: 'direct request', cause }]);
+        return internalMaterialComparisonFailure();
+      }
     },
     dispose() { disposed = true; bridge.dispose(); },
   };
@@ -2383,16 +2426,9 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
       const items = toShapeExportItems(steps, options.bodies);
       if (items === null) {
         // 鍵が引けない立体があるので、カーネルを呼ばずここで断る(NFR-UX-5)。
-        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+        return missingShapeExport(options);
       }
-      try {
-        const result = await api.exportShapes(toShapeExportRequest(items, options));
-        return options.signal?.aborted ? { kind: 'cancelled' } : toShapeExportOutcome(result, options);
-      } catch (error) {
-        if (options.signal?.aborted) return { kind: 'cancelled' };
-        // Worker 版と同じく、断りは投げずに理由つきの失敗で返す(NFR-RE-1)。
-        return { kind: 'failed', message: toFailureMessage(error) };
-      }
+      return readShapeExport(options, () => api.exportShapes(toShapeExportRequest(items, options)));
     },
 
     async supportsIges() {
@@ -2403,7 +2439,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
       try {
         return toShapeImportOutcome(await api.importShape(toShapeImportRequest(options)));
       } catch (error) {
-        return { kind: 'failed', message: toFailureMessage(error) };
+        return toShapeImportFailure(options.format, error);
       }
     },
 

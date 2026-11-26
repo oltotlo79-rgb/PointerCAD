@@ -11,6 +11,7 @@ export function namedSavePointLabels(): NamedSavePointsLabels {
     before: t('savePoint.before'), after: t('savePoint.after'), close: t('savePoint.close'),
     cancel: t('savePoint.cancel'), empty: t('savePoint.empty'), busy: t('savePoint.busy'),
     cancelled: t('savePoint.cancelled'), restored: t('savePoint.restored'), limits: t('savePoint.limits'),
+    cloneListingFailed: t('savePoint.cloneListingFailed'),
     kinds: { part: t('savePoint.kind.part'), assembly: t('savePoint.kind.assembly'), drawing: t('savePoint.kind.drawing') },
     hints: {
       close: t('savePoint.hint.close'), name: t('savePoint.hint.name'), create: t('savePoint.hint.create'),

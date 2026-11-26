@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, mathScalarExpression, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import {
@@ -9,6 +9,7 @@ import {
 
 import {
   CANDIDATE_MATH_BY_ID,
+  MATH_INPUT_LIMITS,
   decodeMathWorkReply,
 } from '@pointercad/expression/math/contracts';
 
@@ -91,8 +92,18 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
     const changed = { ...document, parameters: [row('A', legacy('5'))] };
     expect(evaluatedDocumentMathValue(changed, coordinate)).toBeNull();
     expect(evaluatedDocumentMathValue(structuredClone(document), coordinate)).toBeNull();
-    await evaluateDocumentMath(document, context(document, { client: { evaluate: () => { throw new Error('Stopped worker'); } } }));
-    expect(evaluatedDocumentMathValue(document, coordinate)).toBeNull();
+    const cause = new Error('Stopped worker');
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failed = await evaluateDocumentMath(document, context(document, { client: { evaluate: () => { throw cause; } } }));
+      expect(failed).toMatchObject({ ok: false, cancelled: false, failures: [{
+        ownerId: document.id, text: { key: 'assembly.error.internal', parameters: {} },
+      }] });
+      expect(diagnostic).toHaveBeenCalledWith('PointerCAD document math', 'recomputation', cause);
+      expect(evaluatedDocumentMathValue(document, coordinate)).toBeNull();
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
   it('旧係数→数学係数→旧係数→数学座標を表の逆順でも評価し、原文書と原式を維持する', async () => {
     const middle = math('coef("A") / 3', [{ id: 'A', label: 'A', decimal: '9' }]);
@@ -152,6 +163,22 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
     const document = part([], withDefinition(value, { ...value.mathDefinition, expression: { kind: 'number', decimal: '999' } }));
     expect((await evaluateDocumentMath(document, context(document))).ok).toBe(false);
   });
+  it.each([
+    ['1+', 'math.input.missingOperand', { position: '3' }],
+    ['NoSuchFn(1)', 'math.input.unsupportedFunction', { name: 'NoSuchFn', position: '1' }],
+    [`1e${MATH_INPUT_LIMITS.decimalExponent + 1}`, 'math.input.decimalExponent',
+      { value: String(MATH_INPUT_LIMITS.decimalExponent + 1), limit: String(MATH_INPUT_LIMITS.decimalExponent) }],
+    [' '.repeat(MATH_INPUT_LIMITS.sourceCodeUnits + 1), 'math.input.sourceLength',
+      { count: String(MATH_INPUT_LIMITS.sourceCodeUnits + 1), limit: String(MATH_INPUT_LIMITS.sourceCodeUnits) }],
+  ] as const)('係数の再読込・再計算で %s の失敗を鍵と引数で伝える', async (source, key, parameters) => {
+    const value = math('1+2');
+    if (value.mathDefinition === undefined) throw new Error('Expected definition');
+    const document = structuredClone(part([row('A', { ...value, source, mathDefinition: { ...value.mathDefinition, source } })]));
+    const result = await evaluateDocumentMath(document, context(document));
+    expect(result).toMatchObject({ ok: false, cancelled: false, failures: [{ ownerId: 'A', source, text: { key, parameters } }] });
+    expect(result).not.toHaveProperty('document');
+  });
+
   it('外側だけ変更した原式も拒否する', async () => {
     const document = part([], { ...math('1+2'), source: '8' });
     expect((await evaluateDocumentMath(document, context(document))).ok).toBe(false);

@@ -14,6 +14,7 @@ import type { PlacementSpec } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { makePlacementTransform } from './placeBodies.js';
+import { ShapeExportError } from './shapeExportDiagnostic.js';
 import type { FaceColorMap } from './xcafFaceColors.js';
 import { applyFaceColors, checkExportColor, checkFaceColors } from './xcafFaceColors.js';
 
@@ -381,7 +382,7 @@ export function buildXcafDocument(
   options: XcafDocumentOptions = {},
 ): XcafDocument {
   if (entries.length === 0) {
-    throw new Error(NO_SHAPE_MESSAGE);
+    throw new ShapeExportError({ code: 'noShape' }, NO_SHAPE_MESSAGE);
   }
   // 形へ 1 つも触れないうちに色の値を全部確かめる(途中まで組んでから断らない)。
   for (const entry of entries) {

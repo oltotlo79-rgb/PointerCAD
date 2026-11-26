@@ -3,7 +3,7 @@ import { bindOfflineClient, inheritOfflineClient, readOfflineClientBinding, OFFL
   OfflineBindingError, type OfflineBindingStorage, type OfflineClientBinding } from './offlineClientBindings.js';
 import { OFFLINE_PREPARATION_HEADER, offlineAssetRequestUrl } from './offlineNetwork.js';
 import { OFFLINE_CACHE_PREFIX } from './offlinePreparation.js';
-import { loadPreparedOfflineResponder, type PreparedOfflineResponder } from './offlineServing.js';
+import { loadPreparedOfflineNavigation, loadPreparedOfflineResponder, type PreparedOfflineResponder } from './offlineServing.js';
 
 export const OFFLINE_USAGE_LOCK = 'pointercad-offline-usage-v1';
 export interface OfflineFetchInput {
@@ -89,35 +89,43 @@ export class OfflineRouter {
         ? await readOfflineClientBinding(this.base, previousId, this.options.storage) : undefined;
       if (manual && previousId !== '' && parent === undefined) throw new OfflineBindingError('missing');
       if (explicit !== null && parent !== undefined && explicit !== parent.cacheName) throw new OfflineBindingError('conflict');
-      const cacheName = explicit ?? parent?.cacheName ?? await this.latestCompleteEdition(input.request.signal);
-      const binding = { clientId: input.resultingClientId, ownerClientId: input.resultingClientId, cacheName };
       const assetUrl = new URL(url);
       if (explicit !== null) assetUrl.searchParams.delete(OFFLINE_MANUAL_EDITION_QUERY);
+      const inherited = explicit ?? parent?.cacheName;
+      const selected = inherited === undefined ? await this.latestCompleteEdition(assetUrl, input.request.signal)
+        : { cacheName: inherited };
+      const binding = { clientId: input.resultingClientId, ownerClientId: input.resultingClientId, cacheName: selected.cacheName };
       // An explicit old edition must still exist and pass verification before a new reader is bound.
-      const response = await this.respondForBinding(binding, input.request, assetUrl);
-      await bindOfflineClient(this.base, binding, this.options.storage, this.options.locks);
-      return response;
+      const response = selected.response ?? await this.respondForBinding(binding, input.request, assetUrl);
+      try {
+        input.request.signal.throwIfAborted();
+        await bindOfflineClient(this.base, binding, this.options.storage, this.options.locks);
+        return response;
+      } catch (error) {
+        void response.body?.cancel().catch(() => undefined);
+        throw error;
+      }
     });
   }
 
   /** Cache names have insertion order. Preparation creates them serially and publishes the marker last.
    * A partial/broken newer cache cannot displace a complete older edition on a new navigation.
    */
-  private async latestCompleteEdition(signal: AbortSignal): Promise<string> {
+  private async latestCompleteEdition(url: URL, signal: AbortSignal): Promise<{ cacheName: string; response?: Response }> {
     const names = await this.options.storage.keys();
     for (const name of names.reverse()) {
       if (!name.startsWith(OFFLINE_CACHE_PREFIX)) continue;
       signal.throwIfAborted();
       try {
-        const responder = await loadPreparedOfflineResponder(this.base, name, this.options.storage, signal);
+        const { responder, response } = await loadPreparedOfflineNavigation(this.base, name, this.options.storage, signal, url);
         this.responders.set(name, { promise: Promise.resolve(responder), users: 0, settled: true });
-        return name;
+        return { cacheName: name, response };
       } catch (error) {
         if (signal.aborted) throw error;
         // Keep the bytes for recovery; neither missing nor invalid storage is deleted here.
       }
     }
-    return OFFLINE_NETWORK_EDITION;
+    return { cacheName: OFFLINE_NETWORK_EDITION };
   }
 
   private async respondForBinding(binding: OfflineClientBinding, request: Request, assetUrl = new URL(request.url)): Promise<Response> {

@@ -101,18 +101,25 @@ type Vector = readonly [number, number, number];
 type Planar = readonly [number, number];
 const finite = (a: readonly number[]): boolean => a.every(Number.isFinite);
 
-/** Nonuniform three-point derivative at index `node` of values on `knots` (end nodes use the same parabola). */
-function derivative(values: readonly Vector[], knots: readonly number[], node: number): Vector {
-  const count = values.length;
+/** Nonuniform three-point derivatives along one grid line. Adjacent nodes share their interval's slope. */
+function derivatives(values: readonly Vector[], knots: readonly number[]): Vector[] {
+  const last = values.length - 1;
   const slope = (a: number, b: number) => scale(subtract(values[b], values[a]), 1 / (knots[b] - knots[a]));
-  if (count === 2) return slope(0, 1);
-  if (node === 0 || node === count - 1) {
-    const [end, near, far] = node === 0 ? [0, 1, 2] : [count - 1, count - 2, count - 3];
-    const first = knots[near] - knots[end], second = knots[far] - knots[near];
-    return scale(subtract(scale(slope(end, near), 2 * first + second), scale(slope(near, far), first)), 1 / (first + second));
-  }
-  const left = knots[node] - knots[node - 1], right = knots[node + 1] - knots[node];
-  return scale(add(scale(slope(node - 1, node), right), scale(slope(node, node + 1), left)), 1 / (left + right));
+  const forward = values.slice(1).map((_, index) => slope(index, index + 1));
+  return values.map((_, node) => {
+    if (last === 1) return forward[0];
+    if (node === 0 || node === last) {
+      const left = node === 0;
+      const near = left ? 1 : last - 1, far = left ? 2 : last - 2;
+      const first = knots[near] - knots[node], second = knots[far] - knots[near];
+      // Keep the right endpoint's original reverse subtraction and signed division.
+      const nearSlope = left ? forward[0] : slope(node, near);
+      const farSlope = left ? forward[1] : slope(near, far);
+      return scale(subtract(scale(nearSlope, 2 * first + second), scale(farSlope, first)), 1 / (first + second));
+    }
+    const left = knots[node] - knots[node - 1], right = knots[node + 1] - knots[node];
+    return scale(add(scale(forward[node - 1], right), scale(forward[node], left)), 1 / (left + right));
+  });
 }
 
 /** Pole index along one direction -> (node, signed offset as a fraction of the adjacent span). */
@@ -139,15 +146,17 @@ function controls(knots: readonly number[], s: number, r: number): readonly (rea
 }
 
 /** The 4 x 4 Bezier net of grid cell (i, j), indexed [u control][v control]. */
-function cellNet(spline: Pick<FunctionSurfaceSpline, 'uKnots' | 'vKnots' | 'poles'>, i: number, j: number): Vector[][] {
-  const columns = 2 * spline.vKnots.length;
-  const u = [0, 1, 2, 3].map(r => controls(spline.uKnots, i, r));
-  const v = [0, 1, 2, 3].map(s => controls(spline.vKnots, j, s));
+function cellControls(knots: readonly number[], cell: number): readonly ReturnType<typeof controls>[] {
+  return [0, 1, 2, 3].map(index => controls(knots, cell, index));
+}
+
+function cellNet(poles: readonly FunctionPoint[], columns: number,
+  u: ReturnType<typeof cellControls>, v: ReturnType<typeof cellControls>): Vector[][] {
   return u.map(uc => v.map(vc => {
     // Same pole order and multiply/add grouping, without intermediate scaled vectors.
     let x = 0, y = 0, z = 0;
     for (const [p, a] of uc) for (const [q, b] of vc) {
-      const pole = spline.poles[p * columns + q], weight = a * b;
+      const pole = poles[p * columns + q], weight = a * b;
       x += pole[0] * weight; y += pole[1] * weight; z += pole[2] * weight;
     }
     return [x, y, z] as Vector;
@@ -215,11 +224,17 @@ class PolygonWorkspace {
 
   rectangleArea(triangle: readonly Planar[], u0: number, v0: number, u1: number, v1: number): number {
     this.count = triangle.length;
+    const width = u1 - u0, height = v1 - v0;
+    let inside = true;
     for (let index = 0; index < triangle.length; index++) {
-      const point = triangle[index]; this.put(this.points, index, point[0] - u0, point[1] - v0);
+      const point = triangle[index], x = point[0] - u0, y = point[1] - v0;
+      this.put(this.points, index, x, y);
+      inside &&= x >= 0 && width - x >= 0 && y >= 0 && height - y >= 0;
     }
+    // All four original half-plane predicates pass. Each clip would only copy the same points.
+    if (inside && this.count >= 3) return this.area();
     for (let edge = 0; edge < 4; edge++) {
-      this.clip(edge < 2 ? 0 : 1, edge < 2 ? u1 - u0 : v1 - v0, edge % 2 === 0 ? 1 : -1);
+      this.clip(edge < 2 ? 0 : 1, edge < 2 ? width : height, edge % 2 === 0 ? 1 : -1);
       if (this.count < 3) { this.count = 0; return 0; }
     }
     return this.area();
@@ -369,12 +384,15 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
     if (pieces < polygonArea(planar) * (1 - AREA_TOLERANCE)) return rejected('coverage');
   }
   let splineToMesh = 0, coveredCells = 0, outsideCells = 0, curved = false;
+  const vControls: ReturnType<typeof cellControls>[] = [];
   for (let i = 0; i < nu - 1; i++) {
     if (stop()) return stopped();
+    const u = cellControls(uKnots, i);
     for (let j = 0; j < nv - 1; j++) {
       yield;
       visitedCells++;
-      const net = cellNet(spline, i, j);
+      const v = vControls[j] ??= cellControls(vKnots, j);
+      const net = cellNet(poles, 2 * nv, u, v);
       const cell = i * (nv - 1) + j, full = (uKnots[i + 1] - uKnots[i]) * (vKnots[j + 1] - vKnots[j]);
       const c00 = net[0][0], c10 = net[3][0], c01 = net[0][3], c11 = net[3][3];
       const netDiff = bilinearGap(net);
@@ -518,27 +536,29 @@ export function smoothFunctionSurface(source: SmoothSurfaceSource, leaves: reado
   const du: Vector[][] = values.map(() => []), dv: Vector[][] = values.map(() => []), duv: Vector[][] = values.map(() => []);
   for (let j = 0; j < nv; j++) {
     if (options.stop()) return stopped();
-    const column = values.map(row => row[j]);
-    for (let i = 0; i < nu; i++) du[i][j] = derivative(column, uKnots, i);
+    const column = derivatives(values.map(row => row[j]), uKnots);
+    for (let i = 0; i < nu; i++) du[i][j] = column[i];
   }
   for (let i = 0; i < nu; i++) {
     if (options.stop()) return stopped();
-    for (let j = 0; j < nv; j++) dv[i][j] = derivative(values[i], vKnots, j);
+    dv[i] = derivatives(values[i], vKnots);
   }
   for (let j = 0; j < nv; j++) {
     if (options.stop()) return stopped();
-    const column = dv.map(row => row[j]);
-    for (let i = 0; i < nu; i++) duv[i][j] = derivative(column, uKnots, i);
+    const column = derivatives(dv.map(row => row[j]), uKnots);
+    for (let i = 0; i < nu; i++) duv[i][j] = column[i];
   }
   if ([du, dv, duv].some(field => field.some(row => row.some(vector => !finite(vector))))) return declined('samples');
   const hermite = (i: number, j: number, offsetU: number, offsetV: number): Vector =>
     add(add(add(values[i][j], scale(du[i][j], offsetU)), scale(dv[i][j], offsetV)), scale(duv[i][j], offsetU * offsetV));
   const rows = 2 * nu, columns = 2 * nv, poles: FunctionPoint[] = [];
+  const vSources: ReturnType<typeof poleSource>[] = [];
   for (let p = 0; p < rows; p++) {
     if (options.stop()) return stopped();
     const a = poleSource(p, uKnots);
     for (let q = 0; q < columns; q++) {
-      const b = poleSource(q, vKnots), pole = hermite(a.node, b.node, a.offset, b.offset);
+      const b = vSources[q] ??= poleSource(q, vKnots);
+      const pole = hermite(a.node, b.node, a.offset, b.offset);
       if (!finite(pole)) return declined('samples');
       poles.push(Object.freeze(pole));
     }

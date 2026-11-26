@@ -19,6 +19,8 @@ import {
 } from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
 import { FramePanelDetails } from './FramePanelDetails.js';
+import { FrameMemberTools } from './FrameMemberTools.js';
+import { PlacePointButton } from './PlacePointButton.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
@@ -129,6 +131,24 @@ it('注文寸法の板だけ枠への配置を表示し、材質の変更に追�
 });
 
 describe('選ぶ窓の機械要素', () => {
+  it('族を選び直すと以前の置く点の指定を閉じ、線材の欄を出さない', async () => {
+    await loadAll();
+    const nodes = mechanical();
+    const control = one(nodes, (element) => element.type === PlacePointButton);
+    const createPlacement = control.props.placement as NonNullable<React.ComponentProps<typeof PlacePointButton>['placement']>;
+    const placement = createPlacement();
+    if (!placement.ok) throw new Error(placement.reason);
+    const state = useAppStore.getState();
+    state.toggleComponentPick('placementPoint', [], placement.value);
+    expect(useAppStore.getState().assemblyComponentPick?.placement).toBe(placement.value);
+    const form = one(nodes, (element) => element.type === 'form');
+    (form.props.onChangeCapture as () => void)();
+    const updated = change(select(nodes, 'catalog.mechanical.kindGuide'), 'wrapped-bush');
+    expect(updated.some((element) => element.type === FrameMemberTools)).toBe(false);
+    expect(useAppStore.getState().answerComponentPickPoint([20, 40, 0])).toBe(false);
+    expect(useAppStore.getState().assembly).toBe(state.assembly);
+  });
+
   it('分類の欄の最後に「機械要素」があり、選ぶと機械要素の窓に替わり、分類を戻すと今の窓に戻る', () => {
     const categories = options(select(render(), 'assembly.guide.standardCategory'));
     expect(categories.at(-1)?.props.value).toBe(MECHANICAL_PICKER_CATEGORY);

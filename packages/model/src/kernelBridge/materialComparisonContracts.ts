@@ -1,4 +1,5 @@
 import type { PartCancelToken } from './solidContracts.js';
+import type { FailureText } from '../failureText.js';
 
 export interface MaterialComparisonMesh {
   readonly positions: Float32Array;
@@ -19,7 +20,7 @@ export interface MaterialComparisonGeometry {
 export type MaterialComparisonResult =
   | { readonly kind: 'compared'; readonly result: MaterialComparisonGeometry }
   | { readonly kind: 'cancelled' }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { readonly kind: 'failed'; readonly message: string; readonly text?: FailureText };
 export interface MaterialComparisonBridge {
   compareMaterials(beforeKeys: readonly string[], afterKeys: readonly string[], shouldCancel?: PartCancelToken): Promise<MaterialComparisonResult>;
 }

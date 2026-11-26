@@ -180,7 +180,7 @@ describe('自由度(FR-313、P4b タスク7)', () => {
     expect(diagnosis.equations).toBe(0);
     expect(diagnosis.rank).toBe(0);
     expect(diagnosis.degreesOfFreedom).toBe(4);
-    expect(diagnosis.messages[0].text).toBe('あと 4 か所決まっていません');
+    expect(diagnosis.messages[0].text).toEqual({ key: 'partError.sketchConstraint.remaining', parameters: { count: '4' } });
   });
 
   it('水平を足すと自由度 3(4 − 1)', () => {
@@ -252,8 +252,8 @@ describe('自由度(FR-313、P4b タスク7)', () => {
     expect(diagnosis.equations).toBe(4);
     expect(diagnosis.rank).toBe(4);
     expect(diagnosis.degreesOfFreedom).toBe(0);
-    expect(diagnosis.messages[0].text).toBe('すべて決まりました');
-    expect(diagnosis.summary).toBe('すべて決まりました。');
+    expect(diagnosis.messages[0].text).toEqual({ key: 'partError.sketchConstraint.solved', parameters: {} });
+    expect(diagnosis.summary).toEqual({ key: 'partError.sketchConstraint.sentence', parameters: { text: { key: 'partError.sketchConstraint.solved', parameters: {} } } });
   });
 
   it('全周の円は自由度 3(中心 2 + 半径 1)、半径拘束を足すと 2', () => {
@@ -388,7 +388,7 @@ describe('矩形の自由度(実測して固定した値。P4b タスク7 手順
     expect(diagnosis.equations).toBe(14);
     expect(diagnosis.rank).toBe(14);
     expect(diagnosis.degreesOfFreedom).toBe(2);
-    expect(diagnosis.messages[0].text).toBe('あと 2 か所決まっていません');
+    expect(diagnosis.messages[0].text).toEqual({ key: 'partError.sketchConstraint.remaining', parameters: { count: '2' } });
   });
 
   it('さらに角を 1 つ固定すると自由度 0', () => {
@@ -446,9 +446,10 @@ describe('足しすぎ(冗長)の見分け方', () => {
     expect(diagnosis.conflicting).toEqual([]);
     expect(diagnosis.redundantDetails[0].reason).toBe('duplicate');
     expect(diagnosis.redundantDetails[0].dependsOn).toEqual(['c1']);
-    expect(diagnosis.redundantDetails[0].message).toBe(
-      '距離2 は、ほかの拘束(距離1)ですでに決まっています。',
-    );
+    expect(diagnosis.redundantDetails[0].text).toEqual({
+      key: 'partError.sketchConstraint.duplicateWithPartners',
+      parameters: { label: '距離2', partners: { key: 'partError.sketchConstraint.literal', parameters: { value: '距離1' } } },
+    });
   });
 
   it('付けすぎの件数は「あと N か所」とは別に数える', () => {
@@ -459,8 +460,13 @@ describe('足しすぎ(冗長)の見分け方', () => {
     expect(diagnosis.excess).toBe(1);
     expect(diagnosis.messages.map((message) => message.kind)).toContain('excess');
     const excess = diagnosis.messages.find((message) => message.kind === 'excess');
-    expect(excess?.text).toBe('付けすぎの拘束が 1 件あります');
-    expect(diagnosis.summary).toBe('あと 3 か所決まっていません。付けすぎの拘束が 1 件あります。');
+    expect(excess?.text).toEqual({ key: 'partError.sketchConstraint.excess', parameters: { count: '1' } });
+    expect(diagnosis.summary).toEqual({
+      key: 'partError.sketchConstraint.sentence', parameters: { text: {
+        key: 'partError.sketchConstraint.joinSummary',
+        parameters: { first: { key: 'partError.sketchConstraint.remaining', parameters: { count: '3' } }, next: excess?.text },
+      } },
+    });
   });
 
   it('同じ線分に水平を 2 つ付けると 2 つ目が冗長', () => {
@@ -491,9 +497,7 @@ describe('足しすぎ(冗長)の見分け方', () => {
     expect(diagnosis.degreesOfFreedom).toBe(0);
     expect(diagnosis.redundant).toEqual(['c1']);
     expect(diagnosis.redundantDetails[0].reason).toBe('noVariable');
-    expect(diagnosis.redundantDetails[0].message).toBe(
-      '水平1 が指している要素は動かせないので、この拘束は形に効きません。',
-    );
+    expect(diagnosis.redundantDetails[0].text).toEqual({ key: 'partError.sketchConstraint.noVariable', parameters: { label: '水平1' } });
     expect(diagnosis.conflicting).toEqual([]);
   });
 });
@@ -526,13 +530,25 @@ describe('矛盾(同時には成り立たない)の見分け方', () => {
     // 階数を増やさない行なので「足しすぎ」にも数える(計画書 §2.2 の表)。
     expect(diagnosis.redundant).toEqual(['c2']);
     expect(diagnosis.excess).toBe(1);
-    expect(diagnosis.conflictDetails[0].message).toBe('距離2 と 距離1 は同時には成り立ちません。');
+    expect(diagnosis.conflictDetails[0].text).toEqual({
+      key: 'partError.sketchConstraint.conflictWithPartners',
+      parameters: { partners: { key: 'partError.sketchConstraint.joinPartners', parameters: {
+        first: { key: 'partError.sketchConstraint.literal', parameters: { value: '距離2' } },
+        next: { key: 'partError.sketchConstraint.literal', parameters: { value: '距離1' } },
+      } } },
+    });
+    expect(diagnosis.conflictDetails[1].text).toEqual(diagnosis.conflictDetails[0].text);
     expect(diagnosis.satisfied).toBe(false);
     // 矛盾している拘束については、助言が食い違わないよう矛盾の 1 文だけを出す。
     expect(diagnosis.messages.filter((message) => message.kind === 'redundant')).toEqual([]);
-    expect(diagnosis.summary).toBe(
-      '同時に成り立たない拘束が 2 件あります。付けすぎの拘束が 1 件あります。',
-    );
+    expect(diagnosis.summary).toEqual({
+      key: 'partError.sketchConstraint.sentence', parameters: { text: {
+        key: 'partError.sketchConstraint.joinSummary', parameters: {
+          first: { key: 'partError.sketchConstraint.conflictCount', parameters: { count: '2' } },
+          next: { key: 'partError.sketchConstraint.excess', parameters: { count: '1' } },
+        },
+      } },
+    });
   });
 
   it('両端が式で書かれた線分に水平を付けると、動かせないので矛盾', () => {
@@ -547,7 +563,7 @@ describe('矛盾(同時には成り立たない)の見分け方', () => {
     expect(diagnosis.frozen.get('line-1:start')).toBe('expression');
     expect(diagnosis.frozen.get('line-1:end')).toBe('expression');
     expect(diagnosis.conflicting).toEqual(['c1']);
-    expect(diagnosis.conflictDetails[0].message).toBe('水平1 は、いまの形では成り立ちません。');
+    expect(diagnosis.conflictDetails[0].text).toEqual({ key: 'partError.sketchConstraint.conflict', parameters: { label: '水平1' } });
     // 動かせる数を 1 つも含まない行も階数を増やさないので「足しすぎ」に数える。
     expect(diagnosis.redundant).toEqual(['c1']);
     expect(diagnosis.redundantDetails[0].reason).toBe('noVariable');
@@ -724,9 +740,7 @@ describe('材料が足りない拘束と、要素が多すぎる場合', () => {
     expect(diagnosis.messages).toEqual([
       { kind: 'tooMany', text: CONSTRAINT_TOO_MANY_MESSAGE, constraintIds: [] },
     ]);
-    expect(CONSTRAINT_TOO_MANY_MESSAGE).toBe(
-      '拘束を付けられる要素が多すぎます(上限 1000 点)。スケッチを分けてください。',
-    );
+    expect(CONSTRAINT_TOO_MANY_MESSAGE).toEqual({ key: 'partError.sketchConstraint.tooMany', parameters: { limit: '1000' } });
   });
 });
 

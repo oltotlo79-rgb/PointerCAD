@@ -1054,7 +1054,7 @@ describe('KernelApi', () => {
     expect(result.faces.map((face) => face.id)).toEqual(['ok']);
     expect(result.faces[0].triangleCount).toBe(2);
     expect(result.failures).toEqual([
-      { id: 'ng', message: '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。' },
+      { id: 'ng', message: '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。', reason: { code: 'notConnected' } },
     ]);
   });
 
@@ -1117,7 +1117,7 @@ describe('KernelApi', () => {
     });
 
     expect(result.failures).toEqual([
-      { id: 'ng', message: 'これ以上内側にはオフセットできません。' },
+      { id: 'ng', message: 'これ以上内側にはオフセットできません。', reason: { code: 'offsetInside' } },
     ]);
     expect(result.results.map((entry) => entry.id)).toEqual(['ok']);
     const arc = result.results[0].contours[0].curves[0];

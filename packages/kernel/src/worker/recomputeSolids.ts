@@ -82,6 +82,9 @@ import { meshBackingBytes, meshBackingFailureReason, type MeshBufferSnapshot, ty
 import { createSheetBodyReuse } from './sheetBodyReuse.js';
 import { createPrimitiveReuse } from './primitiveReuse.js';
 import { OriginCacheBudget, originBytes as measuredOriginBytes, originRows, withinBodyOriginBudget, withinReplyOriginBudget } from './originBudget.js';
+import { EdgeTreatmentFailure } from '../occt/edgeTreatmentFailure.js';
+import { HoleFailure } from '../occt/holeFailure.js';
+import { SolidSweepFailure } from '../occt/solidSweepFailure.js';
 import { KernelStepError } from '../occt/kernelStepError.js';
 
 const originCacheBudgets = new WeakMap<ShapeCache<CachedSolid>, OriginCacheBudget>();
@@ -324,7 +327,19 @@ function toFailureMessage(error: unknown): string {
 }
 
 /** 符号を持つ計算部の誤り(面による切断・面の厚み付け・つなぎ面・加工のもとが無い/立体が残らない)の符号。無ければ空。 */
-function failureCode(error: unknown): Pick<SolidStepFailure, 'code'> {
+function failureCode(error: unknown): Pick<SolidStepFailure, 'code' | 'parameters'> {
+  if (error instanceof SolidSweepFailure) {
+    if (error.code === 'sweep-internal') console.error('PointerCAD solid sweep', error.cause);
+    return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
+  }
+  if (error instanceof EdgeTreatmentFailure) {
+    if (error.code === 'edge-treatment-internal') console.error('PointerCAD edge treatment', error);
+    return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
+  }
+  if (error instanceof HoleFailure) {
+    if (error.code === 'hole-internal') console.error('PointerCAD hole', error);
+    return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
+  }
   if (error instanceof SewFacesError) return { code: error.reason };
   return error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError
     || error instanceof KernelStepError || error instanceof EdgeDistanceHoleError ? { code: error.code } : {};
@@ -493,18 +508,6 @@ function createThruSectionsSolid(
 }
 
 /**
- * 「次の面まで」の押し出し(FR-415)なのに、相手の立体の鍵が入っていないとき(FR-504)。
- * `end.kind === 'toNext'` と `targetKey` は必ず組で来る約束(`ExtrudeStepSpec` の注釈)なので、
- * ここへ来るのは組み立て側の取りこぼしだが、画面を止めずに理由を出す(NFR-RE-1)。
- */
-const MISSING_EXTRUDE_TARGET_MESSAGE =
-  '「次の面まで」の相手になるソリッドが見つかりません。相手のソリッドを選び直してください。';
-
-/** 「対象を貫く」押し出し(輪郭による貫通切断)に、貫く対象の鍵が入っていないとき(FR-504)。 */
-const MISSING_THROUGH_TARGET_MESSAGE =
-  '貫いて切る対象のソリッドが見つかりません。切るソリッドを選び直してください。';
-
-/**
  * 薄板押し出し(FR-416)に、終端の指定やテーパ角が一緒に来たとき(FR-504)。
  *
  * 薄板は輪郭をオフセットして帯を押し出す別の作り方(`occt/makeThinExtrude.ts`)で、
@@ -553,7 +556,7 @@ function createExtrudeSolid(
   let target: TopoDS_Shape | null = null;
   if (spec.end?.kind === 'toNext' || spec.end?.kind === 'throughTarget') {
     if (spec.targetKey === undefined || spec.targetKey === null) {
-      throw new Error(spec.end.kind === 'toNext' ? MISSING_EXTRUDE_TARGET_MESSAGE : MISSING_THROUGH_TARGET_MESSAGE);
+      throw new SolidSweepFailure(spec.end.kind === 'toNext' ? 'extrude-next-target' : 'extrude-through-target');
     }
     // どちらも相手を消費しない(長さを決めるために形を読むだけ)。
     target = findStepInput(cache, failedLabels, spec.targetKey).shape;

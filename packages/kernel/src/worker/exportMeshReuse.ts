@@ -1,5 +1,5 @@
 import type { ExportMesh } from '../occt/exportMesh.js';
-import { TESSELLATION_ADMISSION_MESSAGE } from '../occt/tessellate.js';
+import { checkTessellationCapacity, type TessellationAdmission } from '../occt/tessellate.js';
 import { checkedExportAdd, checkedExportMultiply, type ExportWorkBudget } from './exportWorkLimits.js';
 
 /** Identity reuse is local to this synchronous request, never to a body key or another quality.
@@ -10,6 +10,7 @@ export function buildRequestExportMeshes<Shape extends object>(
   shapes: readonly Shape[],
   work: ExportWorkBudget,
   build: (shape: Shape) => ExportMesh,
+  rejectLimit?: TessellationAdmission['rejectLimit'],
 ): ExportMesh[] {
   const originals = new Map<Shape, ExportMesh>();
   const meshes: ExportMesh[] = [];
@@ -27,10 +28,11 @@ export function buildRequestExportMeshes<Shape extends object>(
           checkedExportMultiply(original.faceRanges?.length ?? 0, 64)),
       );
       // Preserve tessellation admission's refusal before allocating this occurrence.
-      if (work.remainingTriangles <= 0 || work.remainingJsBytes <= 0 ||
-          original.triangleCount > work.remainingTriangles || bytes > work.remainingJsBytes) {
-        throw new Error(TESSELLATION_ADMISSION_MESSAGE);
-      }
+      checkTessellationCapacity({
+        remainingTriangles: work.remainingTriangles,
+        remainingJsBytes: work.remainingJsBytes,
+        rejectLimit,
+      }, original.triangleCount, bytes);
       mesh = {
         positions: original.positions.slice(),
         normals: original.normals.slice(),

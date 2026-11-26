@@ -62,7 +62,8 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
-import type { MessageKey } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
+import { dxfFailureMessage, ExchangeExportError, ExchangeImportError, shapeExportFailureMessage, shapeImportFailureMessage, threeMfFailureMessage } from './exchangeFailureMessage.js';
 import { hasSaveRecoveryCopy } from './saveFailure.js';
 import type { ThreeMfWorkControl } from './pcadSaveWorker.js';
 import {
@@ -585,6 +586,10 @@ export async function prepareExport(
     outcome = deadlineAt === null ? await pending : await awaitThreeMfWork(pending, deadlineAt, control);
   } catch (error) {
     if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+    if (request.format === 'step' || request.format === 'stl') {
+      if (error instanceof DOMException && error.name === 'AbortError') return { ok: false, cancelled: true };
+      if (error instanceof ExchangeExportError) return { ok: false, message: shapeExportFailureMessage(request.format, error) };
+    }
     return { ok: false, message: messageOfError(error) };
   }
   if (request.format === '3mf' && outcome.meshes !== undefined && outcome.meshes.length > 0) {
@@ -630,7 +635,7 @@ export async function consumePreparedExport(
     } else files = outcome.files;
   } catch (error) {
     if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
-    return { ok: false, message: messageOfError(error) };
+    return { ok: false, message: request.format === '3mf' ? threeMfFailureMessage(error) : messageOfError(error) };
   }
   if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
   if (files.length === 0) {
@@ -735,8 +740,7 @@ export async function runExportDxf(
     written = writeDxfDocument(converted.entities);
   } catch (error) {
     if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
-    // 書けない値(有限でない座標など)は io が日本語の理由で断る。そのまま見せる。
-    return { ok: false, message: messageOfError(error) };
+    return { ok: false, message: dxfFailureMessage(error) };
   }
 
   const bytes = new TextEncoder().encode(written.text);
@@ -907,8 +911,8 @@ function readThreeMfBodies(bytes: Uint8Array): ExchangeImportOutcome | string {
 /**
  * 立体を読み込む(FR-802)。形式は**拡張子で決める**(利用者が窓で選んだ種類の中から)。
  *
- * 断りの文はすべて下の層(カーネル / `packages/io`)が日本語で持っているものをそのまま返す
- * (「文言の正本の層」)。読めなかったからといって今の文書は変えない(NFR-RE-1)。
+ * STEP / STL の読込診断は画面の文言に換える。旧 Worker の断り文もそのまま受け取れる。
+ * 読めなかったからといって今の文書は変えない(NFR-RE-1)。
  */
 export async function runImportBody(
   deps: ExchangeDeps,
@@ -956,6 +960,14 @@ export async function importPickedBody(
       outcome = await deps.kernel.importShape(format, picked.fileName, picked.bytes);
     } catch (error) {
       if (igesIsStale()) return { ok: false, cancelled: true };
+      if (format === 'step' || format === 'stl') {
+        if (deps.importIsCurrent?.() === false || (error instanceof Error && error.name === 'AbortError')) {
+          return { ok: false, cancelled: true };
+        }
+        if (error instanceof ExchangeImportError) {
+          return { ok: false, message: shapeImportFailureMessage(format, error) };
+        }
+      }
       return { ok: false, message: messageOfError(error) };
     }
   }
@@ -1000,10 +1012,6 @@ export type DxfImportOutcome =
   | { readonly ok: false; readonly message: string }
   | { readonly ok: false; readonly cancelled: true };
 
-/** DXF を文字として読めなかったとき(「読めませんでした」と同じ扱い)。 */
-export const DXF_NOT_TEXT_MESSAGE =
-  'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。';
-
 /**
  * DXF をいま編集しているスケッチへ取り込む(FR-813)。
  *
@@ -1037,14 +1045,14 @@ export async function importPickedDxf(
 ): Promise<DxfImportOutcome> {
   const text = decodeText(picked.bytes);
   if (text === null) {
-    return { ok: false, message: DXF_NOT_TEXT_MESSAGE };
+    return { ok: false, message: t('exchangeError.dxf.notText') };
   }
 
   let read;
   try {
     read = readDxf(parseDxfTags(text));
   } catch (error) {
-    return { ok: false, message: messageOfError(error) };
+    return { ok: false, message: dxfFailureMessage(error) };
   }
 
   const unit = await resolveImportUnit(deps, read.unit);

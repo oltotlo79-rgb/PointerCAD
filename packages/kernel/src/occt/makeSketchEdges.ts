@@ -6,6 +6,7 @@ import {
   type TessellationOptions,
   type Vec3Tuple,
 } from '../types.js';
+import { sketchInputError } from './kernelStepError.js';
 import { createAllocations } from './allocations.js';
 import { makeEllipseEdge } from './makeEllipseEdge.js';
 import { makeSplineEdge } from './makeSplineEdge.js';
@@ -33,7 +34,7 @@ export function makeSegmentEdge(
     const start = keep(new oc.gp_Pnt_3(from[0], from[1], from[2]));
     const end = keep(new oc.gp_Pnt_3(to[0], to[1], to[2]));
     const maker = keep(new oc.BRepBuilderAPI_MakeEdge_3(start, end));
-    if (!maker.IsDone()) { throw new Error('線分の稜線を作れませんでした。2 点が重なっている可能性があります。'); }
+    if (!maker.IsDone()) { throw sketchInputError({ code: 'segmentEdge' }, '線分の稜線を作れませんでした。2 点が重なっている可能性があります。'); }
     const edge = keep(maker.Edge());
     return { edge, delete: release };
   } catch (error) {
@@ -52,7 +53,7 @@ export function makeSegmentEdge(
  */
 export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHandle {
   if (!(arc.radius > 0)) {
-    throw new Error(`円弧の半径は正の数である必要があります: ${String(arc.radius)}`);
+    throw sketchInputError({ code: 'arcRadius', radius: String(arc.radius) }, `円弧の半径は正の数である必要があります: ${String(arc.radius)}`);
   }
   const { keep, release } = createAllocations();
   try {
@@ -65,7 +66,7 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
     const maker = keep(sweep >= FULL_TURN - FULL_TURN_EPSILON
       ? new oc.BRepBuilderAPI_MakeEdge_8(circle)
       : new oc.BRepBuilderAPI_MakeEdge_9(circle, Math.min(arc.startAngle, arc.endAngle), Math.max(arc.startAngle, arc.endAngle)));
-    if (!maker.IsDone()) { throw new Error('円弧の稜線を作れませんでした。半径か角度を確かめてください。'); }
+    if (!maker.IsDone()) { throw sketchInputError({ code: 'arcEdge' }, '円弧の稜線を作れませんでした。半径か角度を確かめてください。'); }
     const edge = keep(maker.Edge());
     // Create an ascending interval, then reverse topology for a clockwise arc.
     if (arc.endAngle < arc.startAngle) edge.Reverse();

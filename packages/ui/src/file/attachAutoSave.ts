@@ -321,7 +321,7 @@ export async function loadAutoSavePrompt(
         savedAt: record.savedAt,
         documentName: record.documentName,
         unrecoverable: true,
-        ...openErrorReason(outcome.error.code),
+        ...openErrorReason(outcome.error),
       });
     }
     return;
@@ -408,7 +408,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
       savedAt: record.savedAt,
       documentName: record.documentName,
       unrecoverable: true,
-      ...openErrorReason(outcome.error.code),
+      ...openErrorReason(outcome.error),
     });
     return;
   }

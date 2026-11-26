@@ -148,7 +148,11 @@ export { makeRib, type RibInput } from './occt/makeRib.js';
 export { makeShell } from './occt/makeShell.js';
 export { makeBlendSurface } from './occt/makeBlendSurface.js';
 export { BlendSurfaceError } from './occt/blendBoundary.js';
+export { ShapeImportError } from './occt/exchangeShared.js';
 export type { KernelStepFailureCode } from './occt/kernelStepError.js';
+export type { HoleFailureCode } from './occt/holeFailure.js';
+export type { EdgeTreatmentFailureCode } from './occt/edgeTreatmentFailure.js';
+export type { SolidSweepFailureCode } from './occt/solidSweepFailure.js';
 export { makeSurface, isShellShape } from './occt/makeSurface.js';
 export { thickenSurfaceBody, offsetSurfaceBody, SurfaceThickenError } from './occt/makeSurfaceThicken.js';
 export type { ThickenStepSpec, OffsetSurfaceBodyStepSpec } from './types.js';
@@ -342,7 +346,7 @@ export {
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
 export { createKernelApi, type KernelApi, type ManagedKernelApi, type MaterialComparisonKernelApi } from './worker/kernelApi.js';
-export type { AnalysisBoundaryKernelApi } from './worker/kernelApi.js';
+export type { AnalysisBoundaryKernelApi, WorkerKernelApi } from './worker/kernelApi.js';
 export { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './worker/runtimePhaseJournal.js';
 export type { MaterialComparisonRequest } from './worker/compareCachedMaterials.js';
 export type { MaterialComparisonOutcome } from './worker/compareMaterialBodies.js';
@@ -481,9 +485,14 @@ export type {
   ShapeExportMeshQuality,
   ShapeExportRequest,
   ShapeExportResult,
+  ShapeExportDiagnostic,
+  ShapeExportDiagnosticRequest,
+  ShapeExportReply,
   ShapeImportBody,
   ShapeImportRequest,
   ShapeImportResult,
+  ShapeImportDiagnostic,
+  ShapeImportReply,
 } from './types.js';
 // 読み込んだ形のベースボディの段(FR-802)。model 側が
 // `shapeRef` を鍵にしてこの段を組み立てる。

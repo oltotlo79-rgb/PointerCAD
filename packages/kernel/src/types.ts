@@ -14,7 +14,10 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceThickenError, thickenSurfaceBody } from './occt/makeSurfaceThicken.js';
 import type { BlendSurfaceError } from './occt/blendBoundary.js';
-import type { KernelStepFailureCode } from './occt/kernelStepError.js';
+import type { EdgeTreatmentFailureCode } from './occt/edgeTreatmentFailure.js';
+import type { HoleFailureCode } from './occt/holeFailure.js';
+import type { KernelStepFailureCode, SketchGeometryReason } from './occt/kernelStepError.js';
+import type { SolidSweepFailureCode } from './occt/solidSweepFailure.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
 import type { SewFacesReason } from './occt/sewSolid.js';
@@ -163,7 +166,9 @@ export interface FaceMeshData {
 /** 面を作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
 export interface SketchTessellationFailure {
   readonly id: string;
+  /** Kept for older reply readers. */
   readonly message: string;
+  readonly reason?: SketchGeometryReason;
 }
 
 /** スケッチ 1 つ分のテッセレーションの結果。 */
@@ -208,7 +213,9 @@ export interface SketchOffsetResult {
 /** オフセットを作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
 export interface SketchOffsetFailure {
   readonly id: string;
+  /** Kept for older reply readers. */
   readonly message: string;
+  readonly reason?: SketchGeometryReason;
 }
 
 /** オフセットの結果。1 件失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
@@ -835,7 +842,8 @@ export interface SolidBodyMesh {
 export interface SolidStepFailure {
   readonly id: string;
   readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance'
-    | KernelStepFailureCode | SewFacesReason | EdgeDistanceHoleReason;
+    | KernelStepFailureCode | SewFacesReason | EdgeDistanceHoleReason | HoleFailureCode | EdgeTreatmentFailureCode | SolidSweepFailureCode;
+  readonly parameters?: Readonly<Record<string, string>>;
   /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。code を持つ物は符号の文字で、文は画面の側が持つ(0b-2)。 */
   readonly message: string;
 }
@@ -2158,6 +2166,21 @@ export type ShapeExportRequest =
     };
 
 /** 書き出した立体 1 つぶんの三角形(`format: 'mesh'`)。 */
+/** STEP/STL callers can opt into data-only failure replies over the Worker boundary. */
+export type ShapeExportDiagnosticRequest = Extract<ShapeExportRequest, { format: 'step' | 'stl' }> & {
+  readonly reportDiagnostics: true;
+};
+
+export type ShapeExportDiagnostic =
+  | { readonly code: 'noShape' | 'missingShape' | 'noTriangle' | 'internal' }
+  | { readonly code: 'deadline' | 'triangleLimit' | 'memoryLimit'; readonly limit: number };
+
+export type ShapeExportReply = ShapeExportResult | {
+  readonly kind: 'failed';
+  readonly message: string;
+  readonly diagnostic: ShapeExportDiagnostic;
+};
+
 export interface ShapeExportMeshBody {
   /** 依頼の `bodyKey` をそのまま返す。並びも依頼のまま。 */
   readonly bodyKey: string;
@@ -2400,6 +2423,19 @@ export interface ShapeImportResult {
   /** STEP が持つ共有定義と配置木。ほかの形式では省略する。 */
   readonly assembly?: ShapeImportAssembly;
 }
+
+/** 利用者が直せる入力の理由と、実装側で調べる診断。 */
+export type ShapeImportDiagnostic =
+  | { readonly code: 'unreadable' | 'noShape' | 'noSolid' | 'missingComponent' | 'assemblyCycle' | 'noFace' }
+  | { readonly code: 'triangleLimit'; readonly count: number; readonly limit: number }
+  | { readonly code: 'internal'; readonly detail: string };
+
+/** Worker で複製できる失敗の応答。成功と旧 Worker の応答は従来の形を保つ。 */
+export type ShapeImportReply = ShapeImportResult | {
+  readonly kind: 'failed';
+  readonly message: string;
+  readonly diagnostic: ShapeImportDiagnostic;
+};
 
 /**
  * 向きを表す四元数 `(x, y, z, w)`。

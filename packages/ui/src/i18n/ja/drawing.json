@@ -322,6 +322,8 @@
   "drawing.template.saved": "図面ひな形を保存しました。",
   "drawing.template.cancelled": "ひな形の保存を中止しました。",
   "drawing.template.invalid": "用紙・縮尺・文字高さ・表題欄の設定を確認してください。",
+  "drawing.template.missingSettings": "図面ひな形の設定が見つからず、いまの文書はそのままです。別の図面用の .pcadt を選んでください。",
+  "drawing.template.invalidUtf8": "図面ひな形の文字が壊れていて読めず、いまの文書はそのままです。以前の控えか、別の図面用の .pcadt を選んでください。",
   "drawing.template.invalidFile": "図面用のひな形を読み取れませんでした。図面用の .pcadt を選んでください。",
   "drawing.template.saveFailed": "図面ひな形を保存できませんでした。",
   "drawing.sheet.paper": "用紙と向き",

@@ -380,7 +380,7 @@ export function readTemplateBytes(bytes: Uint8Array): ReadTemplateOutcome {
   const result = readPcadFile(bytes);
   if (!result.ok) {
     // 読めなかった理由の言い換えは `partFile.ts` の表 1 つだけが持つ(写しを作らない)。
-    return { ok: false, messageKey: openErrorMessageKey(result.error.code) };
+    return { ok: false, messageKey: openErrorMessageKey(result.error) };
   }
   const opened = openTemplate({
     // ひな形かどうかは**封筒の種別**で決める(拡張子は名前を変えれば何とでもなる)。

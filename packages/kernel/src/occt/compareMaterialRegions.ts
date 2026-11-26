@@ -25,13 +25,18 @@ export interface MaterialComparisonOptions {
 export class MaterialComparisonCancelled extends Error {
   constructor() { super('形の比較を中止しました。'); this.name = 'MaterialComparisonCancelled'; }
 }
+export class MaterialComparisonInputError extends Error {
+  constructor(readonly reason: 'requiresSolid' | 'triangleLimit', message: string) {
+    super(message);
+  }
+}
 const empty = (): MaterialRegion => ({ kind: 'empty', volume: 0, mesh: null });
 const INVALID_RESULT = '形の差を正しく計算できませんでした。';
 
 function inputVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape | null): number {
   if (shape === null) return 0;
   if (shape.IsNull()) throw new Error('比較する形を取得できませんでした。');
-  if (shapeBodyKind(oc, shape) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
+  if (shapeBodyKind(oc, shape) !== 'solid') throw new MaterialComparisonInputError('requiresSolid', OPEN_FACES_NOT_SUPPORTED);
   if (!isValidShape(oc, shape)) throw new Error('比較するソリッドの形が正しくありません。');
   const volume = measureVolume(oc, shape);
   if (!Number.isFinite(volume) || volume <= 0) throw new Error('比較するソリッドの体積を測れませんでした。');
@@ -52,7 +57,9 @@ export function compareMaterialRegions(
     checkpoint();
     const mesh = buildExportMesh(oc, shape, DEFAULT_LINEAR_DEFLECTION);
     checkpoint(); triangles += mesh.triangleCount;
-    if (triangles > 2_000_000) throw new Error('比較する形が大きすぎます。部品を分けて比較してください。');
+    if (triangles > 2_000_000) {
+      throw new MaterialComparisonInputError('triangleLimit', '比較する形が大きすぎます。部品を分けて比較してください。');
+    }
     return { kind: 'material', volume, mesh };
   }
   function region(operation: 'subtract' | 'intersect', target: TopoDS_Shape | null,
@@ -61,19 +68,33 @@ export function compareMaterialRegions(
     if (target === null || (operation === 'intersect' && tool === null)) return empty();
     if (tool === null) return material(target, targetVolume);
     const allocations = createAllocations();
+    let outcome: { result: MaterialRegion } | { cause: unknown };
     try {
       const range = allocations.keep(new oc.Message_ProgressRange_1());
       const shape = buildBooleanShape(oc, operation, target, [tool], range, allocations);
       checkpoint();
       // 正常な空結果は非nullの空COMPOUND。演算失敗を「変更なし」へ読み替えない。
       if (shape.IsNull() || !isValidShape(oc, shape)) throw new Error(INVALID_RESULT);
-      if (!hasSolid(oc, shape)) return empty();
-      if (shapeBodyKind(oc, shape) !== 'solid') throw new Error(INVALID_RESULT);
-      const volume = measureVolume(oc, shape);
-      // 微小でも正の材料は残す。干渉判定用のしきい値を流用して消さない。
-      if (!Number.isFinite(volume) || volume <= 0) throw new Error(INVALID_RESULT);
-      return material(shape, volume);
-    } finally { allocations.release(); }
+      if (!hasSolid(oc, shape)) outcome = { result: empty() };
+      else {
+        if (shapeBodyKind(oc, shape) !== 'solid') throw new Error(INVALID_RESULT);
+        const volume = measureVolume(oc, shape);
+        // 微小でも正の材料は残す。干渉判定用のしきい値を流用して消さない。
+        if (!Number.isFinite(volume) || volume <= 0) throw new Error(INVALID_RESULT);
+        outcome = { result: material(shape, volume) };
+      }
+    } catch (cause) {
+      outcome = { cause };
+    }
+    try { allocations.release(); }
+    catch (cause) {
+      if ('cause' in outcome) {
+        throw new AggregateError([outcome.cause, cause], 'Material comparison region and its disposal failed', { cause });
+      }
+      throw new Error('Material comparison region disposal failed', { cause });
+    }
+    if ('cause' in outcome) throw outcome.cause;
+    return outcome.result;
   }
   phase('removed'); const removed = region('subtract', before, after, beforeVolume);
   phase('added'); const added = region('subtract', after, before, afterVolume);

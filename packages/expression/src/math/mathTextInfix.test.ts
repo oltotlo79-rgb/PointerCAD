@@ -4,7 +4,7 @@ import { parseMathText } from './mathTextSyntax.js';
 import { convertMathNotation, sameMathMeaning } from './mathNotationConversion.js';
 import { CANDIDATE_MATH_BY_ID, CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import { renameMathDeclaration } from './mathExpressionReferences.js';
-import type { MathNode } from './mathInputContract.js';
+import { MathInputProblem, MATH_INPUT_LIMITS, type MathNode } from './mathInputContract.js';
 
 const declared = (label: string) => [{ role: 'declared' as const, id: 'decl-1', label }];
 const optionsFor = (label: string) => ({ operations: CANDIDATE_MATH_OPERATIONS,
@@ -66,5 +66,25 @@ describe('C-02k: 名前の変更後の式の文字を利用者の書き方で作
     expect(renamed.source).not.toContain('Add(');
     const original = convertMathNotation(before, node => infixText(node), text => parseMathText(text, optionsFor('k')));
     expect(original.source).toBe(source);
+  });
+});
+
+describe('L-10/L-11: 文字式の失敗は文字位置や入力値を鍵とともに返す', () => {
+  it.each([
+    ['1+', 'syntax', 'math.input.missingOperand', { position: '3' }],
+    ['1＋💡', 'syntax', 'math.input.unsupportedSymbol', { position: '3', value: '💡' }],
+    ['(1+2', 'syntax', 'math.input.expectedToken', { position: '5', value: ')' }],
+    ['12:05', 'syntax', 'math.input.ratioTime', { position: '3', value: '05' }],
+    ['NoSuchFn(1)', 'unsupported', 'math.input.unsupportedFunction', { position: '1', name: 'NoSuchFn' }],
+    [`1e${MATH_INPUT_LIMITS.decimalExponent + 1}`, 'budget', 'math.input.decimalExponent',
+      { value: String(MATH_INPUT_LIMITS.decimalExponent + 1), limit: String(MATH_INPUT_LIMITS.decimalExponent) }],
+  ] as const)('%s を理由別に断る', (source, code, key, parameters) => {
+    const parse = () => parseMathText(source, optionsFor('k'));
+    expect(parse).toThrow(MathInputProblem);
+    expect(parse).toThrow(expect.objectContaining({ code, diagnostic: { key, parameters } }));
+  });
+
+  it('旧来の文字位置付き文言を必要とする直接の読み手へ渡す', () => {
+    expect(() => parseMathText('(1+2', optionsFor('k'))).toThrow('「)」を指定してください（5文字目）');
   });
 });

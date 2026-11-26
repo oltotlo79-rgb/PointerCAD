@@ -107,7 +107,7 @@ export async function startPlaceSubAssembly(
     if (!currentRequest(requestId, documentId, assembly, library)) return;
     if (!read.ok || read.bundle.kind !== 'assembly') {
       useAppStore.getState().setFileMessage({
-        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)),
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error)),
         failed: true,
       });
       return;
@@ -158,7 +158,7 @@ export async function startReplaceSelectedComponent(
     if (!currentRequest(requestId, documentId, assembly, library)) return;
     if (!read.ok || read.bundle.kind !== 'part') {
       useAppStore.getState().setFileMessage({
-        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)), failed: true,
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error)), failed: true,
       });
       return;
     }
@@ -289,7 +289,7 @@ export async function startRefreshPartSource(
     if (!ownsRequest()) return;
     if (!read.ok || read.bundle.kind !== 'part') {
       useAppStore.getState().setFileMessage({
-        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)), failed: true,
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error)), failed: true,
       });
       return;
     }

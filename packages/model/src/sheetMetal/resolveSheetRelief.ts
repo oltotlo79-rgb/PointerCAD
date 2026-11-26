@@ -13,10 +13,14 @@ import { unfoldSheetBody } from './unfoldSheetBody.js';
 export function resolveSheetRelief(feature: SheetReliefFeature, source: ResolvedSheetBody): SheetGeometryResult<SheetGeometryPlan> {
   const available = availableSheetBoundaryEdges(source, feature.boundary.panelId); if (!available.ok) return available;
   const edge = available.value.find((item) => item.id === feature.boundary.boundaryId);
-  if (edge === undefined) return { ok: false, message: '切欠きの入口には曲げが付いていない外側の直線縁を選んでください。' };
+  if (edge === undefined) return { ok: false, message: '切欠きの入口には曲げが付いていない外側の直線縁を選んでください。', text: { key: 'sheetMetal.reliefInvalidBoundary', parameters: {} } };
   const flat = unfoldSheetBody(source, feature.boundary.panelId, feature.seamConnectionIds ?? []); if (!flat.ok) return flat;
   const placement = flat.value.panelPlacements?.get(feature.boundary.panelId);
-  if (placement === undefined) return { ok: false, message: '切欠きの基準パネルの座標が見つかりません。' };
+  if (placement === undefined) {
+    const message = '切欠きの基準パネルの座標が見つかりません。';
+    console.error('PointerCAD sheet relief panel placement', message, feature.boundary.panelId);
+    return { ok: false, message, text: { key: 'assembly.error.internal', parameters: {} } };
+  }
   const tool = sheetReliefProfile({ from: framePoint(edge.from, placement.source, placement.target), to: framePoint(edge.to, placement.source, placement.target) },
     [0, 0, 1], feature.position.value, feature.width.value, feature.depth.value, feature.shape, feature.id);
   if (!tool.ok) return tool;

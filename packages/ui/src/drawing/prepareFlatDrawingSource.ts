@@ -1,3 +1,4 @@
+import { failureMessage } from '../i18n/failureMessage.js';
 /** 元の板金履歴から展開を計算し、図面が使い終わるまで実形状の所有先を維持する。 */
 import { IDENTITY_PLACEMENT, recomputeSheetFlat, sheetFlatReferenceIssue, resolveSheetFlatOutline, sheetFlatBendLines,
   type DrawingSheetFlatReference, type DrawingSourceResolution, type KernelBridge, type PartDocument,
@@ -10,10 +11,10 @@ export async function prepareFlatDrawingSource(document: PartDocument, reference
   const sheet = computed.sheetMetalBodies?.get(reference.sourceFeatureId);
   if (sheet === undefined) throw new Error('展開図の元になる板金が表示されていません。抑制と後続の加工を確認してください。');
   const flat = await recomputeSheetFlat(sheet, reference, bridge, { partId, generation: 1, shouldCancel });
-  if (!flat.ok) throw new Error(flat.message);
+  if (!flat.ok) throw new Error(flat.text === undefined ? flat.message : failureMessage(flat.text));
   if (shouldCancel()) throw new Error('展開図の更新を中止しました。');
   const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, flat.geometry.thickness, shouldCancel);
-  if (!outline.ok) throw new Error(outline.message);
+  if (!outline.ok) throw new Error(outline.text === undefined ? outline.message : failureMessage(outline.text));
   const bends = sheetFlatBendLines(flat.geometry); if (!bends.ok) throw new Error(bends.message);
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
   const positions = flat.body.mesh.positions;

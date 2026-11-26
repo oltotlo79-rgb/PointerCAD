@@ -15,7 +15,8 @@ function overlaps(edge: SheetBoundaryEdge, attached: { readonly from: Vec3; read
 
 export function availableSheetBoundaryEdges(body: ResolvedSheetBody, panelId: string): SheetGeometryResult<readonly SheetBoundaryEdge[]> {
   const panel = body.panels.find((item) => item.id === panelId);
-  if (panel === undefined) return { ok: false, message: '板金のパネルが見つかりません。縁を選び直してください。' };
+  if (panel === undefined) return { ok: false, message: '板金のパネルが見つかりません。縁を選び直してください。',
+      text: { key: 'sheetMetal.boundaryMissingPanel', parameters: {} } };
   const edges = sheetBoundaryEdges(panel); if (!edges.ok) return edges;
   const attached = body.bends.flatMap((bend) => bend.parentPanelId === panelId ? bend.parentContacts ?? [bend.parentEdge]
     : bend.childPanelId === panelId ? bend.childContacts ?? [bend.childEdge] : []);

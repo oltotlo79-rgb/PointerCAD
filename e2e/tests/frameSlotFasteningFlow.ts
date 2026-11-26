@@ -2,6 +2,8 @@
 import { expect, test as base, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 // 入れる時に aluminumFrameCatalogFlow.ts から choice・expectPreviewLengths・openFramePicker・startAssembly を export する(同じ探し方を使い回す)。
 import { choice, expectPreviewLengths, openFramePicker, startAssembly } from './aluminumFrameCatalogFlow.js';
+import { ex18ReadAssembly } from './ex18RoutesOracle.js';
+import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { clickWorldPointChecked, componentRows } from './boltedJointTestSupport.js';
 import type { WorldPoint } from './homeViewProjection.js';
@@ -48,7 +50,8 @@ const SMALL_FRAME_SYMMETRIC: FrameSetup = { kind: 't-slot-frame-small', size: 's
 const SMALL_FRAME_NO_NOMINAL: FrameSetup = { kind: 't-slot-frame-small', size: 'small-20x10-l4.5-r4.5', z: -10, quarterTurns: 1 };
 
 /** フレーム 1 本(中心線の y を指定)と平板のブラケット 1 つを置き、選ぶ窓を閉じる。 */
-async function placeFrameAndPlate(page: Page, frameY: number, frame: FrameSetup = SERIES_FRAME): Promise<void> {
+async function placeFrameAndPlate(page: Page, frameY: number, frame: FrameSetup = SERIES_FRAME,
+  plate = 's6-36x16x2-h2'): Promise<void> {
   const dialog = await openFramePicker(page);
   await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption(frame.kind);
   await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption(frame.size);
@@ -65,7 +68,7 @@ async function placeFrameAndPlate(page: Page, frameY: number, frame: FrameSetup 
   await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
   await waitForRecompute(page, token);
   await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-flat-plate');
-  await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-36x16x2-h2');
+  await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption(plate);
   token = await beginRecompute(page);
   await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.place'), exact: true }).click();
   await waitForRecompute(page, token);
@@ -101,10 +104,72 @@ async function commitAndUndo(page: Page, dialog: Locator): Promise<void> {
   await expect(componentRows(page)).toHaveCount(6);
 }
 
+// The top slot offsets are ±10 mm for the first two sections and 0 for the third.
+const REGISTERED_TOP_SLOTS = [
+  { width: 6, size: 's6-40x60-t2s3', y: 10, z: -30, plate: 's6-36x16x2-h2', thread: 'M5', length: '8' },
+  { width: 8, size: 's8-50x100-t2s4', y: 10, z: -50, plate: 's8-55x24x3-h2', thread: 'M6', length: '12' },
+  { width: 10, size: 's10-45x60-t1s1', y: 0, z: -30, plate: 's10-75x34x3-h2', thread: 'M8', length: '16' },
+] as const;
+
+type RegisteredTopSlot = (typeof REGISTERED_TOP_SLOTS)[number];
+
+async function registeredSlotPreview(page: Page, scenario: RegisteredTopSlot): Promise<Locator> {
+  await componentRows(page).nth(1).click();
+  const dialog = await openFrameSlotTool(page);
+  await choice(dialog, 'assembly', 'assembly.frameSlot.nominal').selectOption(scenario.thread);
+  await expect(previewRows(dialog)).toHaveCount(2);
+  for (const row of await previewRows(dialog).all()) {
+    await expect(row).toContainText(uiMessage('assembly', 'assembly.frameSlot.face.top'));
+    await expect(row.getByRole('cell').nth(2)).toContainText(`T 溝用ナット 溝幅 ${scenario.width} ${scenario.thread}`);
+    await expect(row.getByRole('cell').nth(3)).toContainText(scenario.thread);
+  }
+  await expect(dialog.getByText(uiMessage('assembly', 'assembly.frameSlot.positionSimplified'), { exact: true })).toBeVisible();
+  return dialog;
+}
+
+async function savedFrameSlotDocument(bytes: Uint8Array) {
+  const bundle = await ex18ReadAssembly(bytes).catch((cause: unknown) => {
+    throw new Error('保存した締結の組立を読み戻せません。', { cause });
+  });
+  return bundle.document;
+}
+
 export function registerFrameSlotFasteningTests(test: typeof base,
   appForPage: (page: Page) => ElectronApplication | undefined = () => undefined): void {
   test.describe('J-02 フレームの溝への締結', () => {
     test.use({ viewport: { width: 1440, height: 900 } });
+
+    for (const scenario of REGISTERED_TOP_SLOTS) {
+      test(`K-29 登録溝幅 ${scenario.width} の上面溝で締結し、保存した金物を開き直す`, async ({ page }, info) => {
+        const app = appForPage(page);
+        const kind = `t-slot-frame-s${scenario.width}`;
+        await startAssembly(page, app);
+        await placeFrameAndPlate(page, scenario.y, { kind, size: scenario.size, z: scenario.z, quarterTurns: 0 }, scenario.plate);
+        const dialog = await registeredSlotPreview(page, scenario);
+        const token = await beginRecompute(page);
+        await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.frameSlot.commit'), exact: true }).click();
+        await waitForRecompute(page, token);
+        await expect(componentRows(page)).toHaveCount(6);
+
+        const file = info.outputPath('registered-slot.pcada');
+        const document = await savedFrameSlotDocument(await saveFlowFile(page, file, app));
+        expect(document.components).toHaveLength(6);
+        expect(document.components[0]?.source).toMatchObject({ options: { family: kind, item: scenario.size, length: '500' } });
+        expect(document.components[1]?.source).toMatchObject({ options: { family: 't-slot-flat-plate', item: scenario.plate } });
+        const installed = document.components.slice(2).map(({ source }) => source);
+        expect(installed.filter((source) => source.kind === 'standardPart' &&
+          source.options.item === `s${scenario.width}-${scenario.thread.toLowerCase()}-post-steel`)).toHaveLength(2);
+        expect(installed.filter((source) => source.kind === 'standardPart' &&
+          source.options.family === 'socket-head-cap-screw' && source.size === scenario.thread &&
+          source.options.length === scenario.length)).toHaveLength(2);
+
+        await openSaveFlowFile(page, file, app);
+        await expect(componentRows(page)).toHaveCount(6);
+        const reopened = await saveFlowFile(page, info.outputPath('registered-slot-reopened.pcada'), app);
+        expect(await savedFrameSlotDocument(reopened)).toEqual(document);
+        await registeredSlotPreview(page, scenario);
+      });
+    }
 
     test('P7 選んだブラケットの全部の穴: 予告は 2 行(上の面・溝幅 6 M5 後入れ・鋼・M5)で、締結すると 6 部品、Undo 1 回で 2', async ({ page }) => {
       const errors: string[] = [];

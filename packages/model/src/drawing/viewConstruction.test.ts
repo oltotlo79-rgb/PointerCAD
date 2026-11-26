@@ -128,6 +128,14 @@ describe('保存条件から投影・寸法を共通に解く派生図', () => {
     expect(result.projection.views[1].visible[0].curve).toMatchObject({ from: [84, 100], to: [104, 100] });
   });
 
+  it('詳細の円が投影の外にある場合は、図面の更新結果が鍵を保つ', async () => {
+    const view = derived('detail', { kind: 'detail', sourceViewId: 'front', center: [1000, 1000],
+      radius: expression(2), scale: expression(2), label: 'B' });
+    expect(await refreshDrawing(document([front, view]), kernel())).toEqual({
+      ok: false, message: 'drawing.error.detailOutside', text: { key: 'drawing.error.detailOutside', parameters: {} },
+    });
+  });
+
   it('部分図の切り抜きは詳細図にも適用し、切断境界と線の出自も保持する', async () => {
     const saved = document([front, derived('partial', { kind: 'partial', sourceViewId: 'front', region: { kind: 'polygon', points: [[-1, -2], [1, -2], [1, 2], [-1, 2]] } }),
       derived('detail', detail('partial'))]);

@@ -1,8 +1,8 @@
-import { writeThreeMf } from '@pointercad/io';
+import { ThreeMfDataError, ThreeMfExportLimitError, writeThreeMf } from '@pointercad/io';
 import { createNamedSavePoints, SavePointError } from '../history/namedSavePoints.js';
 import { createIndexedDbSavePointStorage } from '../history/namedSavePointStorage.js';
 import { isPcadSavePointRequest, isPcadThreeMfRequest, type PcadSavePointReply, type PcadSavePointRequest,
-  type PcadSaveReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
+  type PcadSaveReply, type PcadWorkerRequest, type ThreeMfDiagnosticCode } from './pcadSaveProtocol.js';
 import { encodeOwnedSaveInput, encodeOwnedSaveInputParts } from './pcadSaveWorkerEncoding.js';
 import type { SaveResultIssueReport } from './saveResultIssue.js';
 
@@ -60,6 +60,13 @@ async function savePoint(request: PcadSavePointRequest, signal: AbortSignal): Pr
   return { id: request.id, kind: 'savePointResult', operation: 'read', ...result };
 }
 
+function threeMfDiagnostic(error: unknown): ThreeMfDiagnosticCode {
+  if (error instanceof ThreeMfDataError) return error.code;
+  if (error instanceof ThreeMfExportLimitError) return error.reason;
+  console.error('PointerCAD 3MF export worker', error);
+  return 'internal';
+}
+
 /** 同一配信元のmodule Worker専用。要求1件ごとに所有者が生成し、必ず終了させる。 */
 self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
   if (typeof event.data !== 'object' || event.data === null) return;
@@ -72,7 +79,7 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
       self.postMessage({ id: request.id, kind: 'export3mfSuccess', bytes }, { transfer: [bytes.buffer] });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      self.postMessage({ id: request.id, kind: 'export3mfFailure', message: message.slice(0, 4096) });
+      self.postMessage({ id: request.id, kind: 'export3mfFailure', message: message.slice(0, 4096), diagnostic: threeMfDiagnostic(error) });
     }
     return;
   }

@@ -93,4 +93,36 @@ describe('資料の平板のブラケットの穴を、kernel で作った面の
       }
     }
   }, 300_000);
+
+  it.each([
+    { key: 's6-36x16x2-h2', length: 36, width: 16, thickness: 2, chamfer: 1.5, radius: 2.75, endOffset: 10 },
+    { key: 's8-55x24x3-h2', length: 55, width: 24, thickness: 3, chamfer: 2, radius: 3.3, endOffset: 15 },
+    { key: 's10-75x34x3-h2', length: 75, width: 34, thickness: 3, chamfer: 2, radius: 4.4, endOffset: 20 },
+  ])('登録溝幅の板 $key は実際に 2 穴を持ち、どちらの穴も実面から読める', async (item) => {
+    const body = await plateBody(item.key);
+    const expectedVolume = (item.length * item.width - 2 * item.chamfer ** 2 - 2 * Math.PI * item.radius ** 2) * item.thickness;
+    expect(body.volume).toBeCloseTo(expectedVolume, 6);
+
+    const walls = body.faces.filter((face) => face.surfaceKind === 'cylinder' && face.cylinderExterior === false
+      && face.radius !== null && withinMagnitude(face.radius - item.radius, KERNEL_LENGTH_TOLERANCE_MM));
+    const centers = [...new Set(walls.map(holeCenterKey))].sort();
+    expect(centers).toEqual([-item.endOffset, item.endOffset].map((x) => `${x.toFixed(3)},0.000`));
+    for (const wall of walls) {
+      const span = profileHoleSpan(wall, body.faces, body.edges);
+      if (span === null) throw new Error(`全周の穴を読めない: ${item.key} face ${wall.index}`);
+      expect(span[1] - span[0]).toBeCloseTo(item.thickness, 6);
+      const planes = endPlanes(body, wall);
+      expect(planes).toHaveLength(2);
+      for (const mating of planes) {
+        const result = profileClearanceHole(PLATE, REVISIONS, { holeFeatureId: body.featureId, hole: wall, mating,
+          matingRef: fingerprintRef(body, mating), bodyFaces: body.faces, bodyEdges: body.edges });
+        if (typeof result === 'string' || 'code' in result) {
+          throw new Error(`通し穴を読めない: ${item.key} face ${wall.index} ${JSON.stringify(result)}`);
+        }
+        if (result.hole.kind !== 'clearance') throw new Error('穴が通し穴になっていない');
+        expect(result.hole.diameter).toBeCloseTo(2 * item.radius, 6);
+        expect(result.hole.length).toBeCloseTo(item.thickness, 6);
+      }
+    }
+  }, 300_000);
 });

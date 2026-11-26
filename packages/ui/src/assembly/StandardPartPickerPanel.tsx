@@ -25,7 +25,7 @@ import { useCatalogFamilies } from './CatalogLoadStatus.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
 import { StockCuttingFields } from './StockCuttingFields.js';
 import { catalogMiterNote, steelStockCuttingRows } from './stockCuttingView.js';
-import { pickerFormProps } from './pickerFormHandlers.js';
+import { cancelPickerPlacementPoint, pickerFormProps } from './pickerFormHandlers.js';
 import { SteelBendEditForm, SteelBendFields } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES,
   selectedSteelBendEditTarget, type SteelBendEditTarget, type SteelBendSources } from './steelBendPicker.js';
@@ -413,6 +413,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   };
   // 検索の行を選んだ時: 分類・寸法系・鋼材の材質と断面・呼びを選び直す。族の窓は初めの値を渡して作り直す(K-07a)。
   const jumpTo = (target: PickerJumpTarget): void => {
+    cancelPickerPlacementPoint();
     const next = pickerJumpState(target, { category, choiceKey, lengthSource, dimensionSeries });
     setCategory(next.category); setChoiceKey(next.choiceKey); setLengthSource(next.lengthSource); setDimensionSeries(next.dimensionSeries);
     if (next.steel !== null) { setSteelMaterial(next.steel.material); if (next.steel.shape !== null) setSteelShape(next.steel.shape); }
@@ -494,7 +495,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
       <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
       <PickerSearch onPick={jumpTo} />
       {selectedBend === null ? null : <button type="button" className="pcad-button"
-        title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { setBendEdit(selectedBend); }}>
+        title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { cancelPickerPlacementPoint(); setBendEdit(selectedBend); }}>
         {t('assembly.steel.bend.reedit.entry')}</button>}
       {renderStandardPartFields({
         category, first, changeCategory, isSteel, steelMaterial, setSteelMaterial, activeShape, shapes, setSteelShape,

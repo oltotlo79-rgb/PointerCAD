@@ -11,15 +11,13 @@ import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '
 
 import type {
   KernelBridge,
-  SketchFaceFailure,
   SketchOffsetEntry,
-  SketchOffsetFailure,
   SketchOffsetRequestItem,
 } from '../kernelBridge.js';
 import type { ConstraintDiagnosis } from './constraints/diagnose.js';
 import { resolveConstrainedSketch } from './constraints/solveSketch.js';
 import { mapSketchExpressions } from './mapExpressions.js';
-import { plainText } from '../failureText.js';
+import { internalSketchFailures, sketchKernelFailure } from './sketchDiagnostics.js';
 import {
   closedOffsetDistance,
   createOffsetCache,
@@ -59,16 +57,6 @@ export interface SketchRecomputeOptions {
    * 画面から繰り返し呼ぶ側(ui)は 1 つ作って持ち回る(NFR-PF-2)。
    */
   readonly offsets?: OffsetCache;
-}
-
-/** カーネルの失敗を利用者向けの一文にする。理由はカーネルが日本語で返す。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
-function kernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', text: plainText(`面を作れませんでした: ${message}`) };
-}
-
-/** オフセットの失敗。面とは別の言い回しにして、どの操作で失敗したかを分かるようにする。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
-function offsetFailed(featureId: string, message: string, code?: SketchOffsetFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', text: plainText(`ずらした線を作れませんでした: ${message}`) };
 }
 
 /**
@@ -151,7 +139,7 @@ export async function fillOffsets(
       pendingOffsets.map((pending) => toOffsetRequest(pending, firstDistanceOf(pending))),
     );
     for (const failure of outcome.failures) {
-      errors.push(offsetFailed(failure.featureId, failure.message, failure.code));
+      errors.push(sketchKernelFailure('offset', failure));
     }
     for (const entry of outcome.results) {
       const pending = byFeature.get(entry.featureId);
@@ -166,8 +154,7 @@ export async function fillOffsets(
     }
   } catch (error) {
     // Worker との通信ごと失敗した場合。頼んだオフセットはすべて作れていない。
-    const message = error instanceof Error ? error.message : String(error);
-    return pendingOffsets.map((pending) => offsetFailed(pending.featureId, message));
+    return internalSketchFailures('offset', pendingOffsets, error);
   }
 
   if (retries.length === 0) {
@@ -177,7 +164,7 @@ export async function fillOffsets(
   try {
     const outcome = await bridge.offsetSketchCurves(retries);
     for (const failure of outcome.failures) {
-      errors.push(offsetFailed(failure.featureId, failure.message, failure.code));
+      errors.push(sketchKernelFailure('offset', failure));
     }
     for (const entry of outcome.results) {
       const pending = byFeature.get(entry.featureId);
@@ -186,10 +173,7 @@ export async function fillOffsets(
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    for (const retry of retries) {
-      errors.push(offsetFailed(retry.featureId, message));
-    }
+    errors.push(...internalSketchFailures('offset', retries, error));
   }
 
   return errors;
@@ -230,9 +214,7 @@ export async function recomputeSketch(
 
   try {
     const outcome = await bridge.tessellateSketchFaces(resolved.faces);
-    const failures = outcome.failures.map((failure) =>
-      kernelFailed(failure.featureId, failure.message, failure.code),
-    );
+    const failures = outcome.failures.map((failure) => sketchKernelFailure('face', failure));
     return {
       resolved,
       mesh: outcome.mesh,
@@ -241,8 +223,7 @@ export async function recomputeSketch(
     };
   } catch (error) {
     // Worker との通信ごと失敗した場合。頼んだ面はすべて作れていない。
-    const message = error instanceof Error ? error.message : String(error);
-    const failures = resolved.faces.map((face) => kernelFailed(face.featureId, message));
+    const failures = internalSketchFailures('face', resolved.faces, error);
     return { resolved, mesh: null, errors: [...beforeKernel, ...failures], diagnosis };
   }
 }

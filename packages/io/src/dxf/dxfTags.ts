@@ -35,6 +35,15 @@
 
 import { IO_LIMITS } from '../limits.js';
 
+export type DxfDataErrorCode =
+  | 'unsupported' | 'tooLarge' | 'nonUniformScale' | 'tooManyEntities' | 'blockNesting'
+  | 'invalidWriteValue' | 'controlCharacter' | 'invalidString';
+
+/** 元の公開例外文を保ち、画面では符号から文言を引けるようにする。 */
+export class DxfDataError extends Error {
+  constructor(readonly code: DxfDataErrorCode, message: string) { super(message); }
+}
+
 /** DXF のタグ 1 つ。`code` がグループコード、`value` は値の文字列(数値への変換は実体の段で行う)。 */
 export interface DxfTag {
   readonly code: number;
@@ -80,21 +89,21 @@ export function parseDxfTags(
 ): readonly DxfTag[] {
   if (text.length > maximumCharacters) {
     // DXF の既存契約は日本語の Error を上の層が捕捉する形。配列を作る前に同じ形で断る。
-    throw new Error(DXF_TOO_LARGE_MESSAGE);
+    throw new DxfDataError('tooLarge', DXF_TOO_LARGE_MESSAGE);
   }
   // `String.prototype.split` は必ず 1 個以上返すので、末尾の要素は常に存在する。
   const lines = text.split(INPUT_LINE_BREAK);
   // 末尾の改行 1 つぶんの空文字だけを落とす(`"0\nEOF\n"` の最後の要素)。
   const lineCount = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
   if (lineCount % 2 !== 0) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
 
   const tags: DxfTag[] = [];
   for (let index = 0; index < lineCount; index += 2) {
     const codeText = lines[index].trim();
     if (!GROUP_CODE_PATTERN.test(codeText)) {
-      throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+      throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
     }
     const parsed = Number.parseInt(codeText, 10);
     // `"-0"` は `-0` になる。以後の比較(`Object.is`)で 0 と食い違うので 0 へ寄せる。

@@ -1,10 +1,15 @@
-import type { Point2 } from '../types.js';
+import type { DrawingLayoutFailure, Point2 } from '../types.js';
 import { clipCurves, type ClipCurve } from './clipRegion.js';
 
 export interface BreakSpec { readonly axis: 'u' | 'v'; readonly from: number; readonly to: number; readonly keepGap: number }
 export interface BreakLine { readonly points: readonly Point2[]; readonly amplitudeMm: 2; readonly spacingMm: 4 }
 export type BreakResult = { readonly ok: true; readonly curves: readonly ClipCurve[]; readonly breakLines: readonly [BreakLine, BreakLine] }
-  | { readonly ok: false; readonly message: string };
+  | DrawingLayoutFailure;
+
+export function invalidBreakInterval(): DrawingLayoutFailure {
+  const key = 'drawing.error.breakIntervalInvalid';
+  return { ok: false, message: key, text: { key, parameters: {} } };
+}
 
 function coordinate(point: Point2, axis: 'u' | 'v'): number { return point[axis === 'u' ? 0 : 1]; }
 /** 紙面上の省略だけを適用する。モデル上の座標と測定値には使わない。 */
@@ -47,11 +52,14 @@ export function breakDrawingCurve(curve: ClipCurve, spec: BreakSpec): readonly C
 
 export function applyBreak(curves: readonly ClipCurve[], specs: BreakSpec | readonly BreakSpec[]): BreakResult {
   if (!('axis' in specs)) {
-    if (specs.length !== 1 || specs[0] === undefined) return { ok: false, message: '破断区間は1つだけ指定してください。' };
+    if (specs.length !== 1 || specs[0] === undefined) {
+      const key = 'drawing.error.breakIntervalCount';
+      return { ok: false, message: key, text: { key, parameters: { count: '1' } } };
+    }
     return applyBreak(curves, specs[0]);
   }
   const spec = specs;
-  if (![spec.from, spec.to, spec.keepGap].every(Number.isFinite) || !(spec.to > spec.from) || spec.keepGap < 0 || spec.keepGap >= spec.to - spec.from) return { ok: false, message: '破断区間を正しく指定してください。' };
+  if (![spec.from, spec.to, spec.keepGap].every(Number.isFinite) || !(spec.to > spec.from) || spec.keepGap < 0 || spec.keepGap >= spec.to - spec.from) return invalidBreakInterval();
   const allPoints = curves.flatMap((curve) => curve.kind === 'segment' ? [curve.from, curve.to] : curve.kind === 'polyline' ? curve.points : [
     [curve.center[0] - curve.radius, curve.center[1] - curve.radius] as Point2, [curve.center[0] + curve.radius, curve.center[1] + curve.radius] as Point2,
   ]);

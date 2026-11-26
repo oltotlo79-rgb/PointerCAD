@@ -13,12 +13,14 @@ import type {
 import type {
   Vec3,
 } from '../sketch/vec3.js';
-import type { KernelStepFailureCode } from '@pointercad/kernel';
+import type { SketchTessellationFailure, KernelStepFailureCode } from '@pointercad/kernel';
 import type { WorkerBrokenCode } from './bridgeContracts.js';
 
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SketchFaceFailure {
+  /** Omitted by older Worker replies. */
+  readonly reason?: NonNullable<SketchTessellationFailure['reason']>;
   /** 依頼した面フィーチャーの id。 */
   readonly featureId: string;
   readonly message: string;
@@ -61,6 +63,8 @@ export interface SketchOffsetEntry {
 
 /** オフセットを 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */
 export interface SketchOffsetFailure {
+  /** Omitted by older Worker replies. */
+  readonly reason?: NonNullable<SketchTessellationFailure['reason']>;
   readonly featureId: string;
   readonly message: string;
   /** Worker が壊れた時の符号(0b-1b)。 */

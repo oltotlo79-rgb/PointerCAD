@@ -563,8 +563,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
       },
     }]));
 
-    expect(result.failures).toEqual([{
-      id: 'to-face-zero', message: '押し出す長さは 0 より大きい数にしてください。',
+    expect(result.failures).toStrictEqual([{
+      id: 'to-face-zero', code: 'extrude-distance', message: '押し出す長さは 0 より大きい数にしてください。', parameters: { distance: '0' },
     }]);
     expect(result.bodies).toEqual([]);
     expect(result.cancelled).toBe(false);
@@ -1274,8 +1274,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
       ]),
     );
 
-    expect(result.failures).toEqual([
-      { id: 'extrude-2', message: '押し出す長さは 0 より大きい数にしてください。' },
+    expect(result.failures).toStrictEqual([
+      { id: 'extrude-2', code: 'extrude-distance', message: '押し出す長さは 0 より大きい数にしてください。', parameters: { distance: '0' } },
     ]);
     expect(result.bodies.map((body) => body.id)).toEqual(['extrude-1', 'extrude-3']);
     expect(result.bodies[1].volume).toBeCloseTo(SECOND_VOLUME, 6);
@@ -1297,8 +1297,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
       ]),
     );
 
-    expect(result.failures).toEqual([
-      { id: '押し出し1', message: '押し出す長さは 0 より大きい数にしてください。' },
+    expect(result.failures).toStrictEqual([
+      { id: '押し出し1', code: 'extrude-distance', message: '押し出す長さは 0 より大きい数にしてください。', parameters: { distance: '0' } },
       {
         id: '組み合わせ1',
         message: 'もとになるソリッド「押し出し1」を作れなかったため、このソリッドも作れませんでした。',
@@ -3628,9 +3628,10 @@ describe('履歴の再計算(recomputeSolids)', () => {
         ]),
       );
 
-      expect(result.failures).toEqual([
+      expect(result.failures).toStrictEqual([
         {
           id: '押し出し1',
+          code: 'extrude-next-target',
           message: '「次の面まで」の相手になるソリッドが見つかりません。相手のソリッドを選び直してください。',
         },
       ]);

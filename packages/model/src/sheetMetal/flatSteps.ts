@@ -6,10 +6,14 @@ import { sheetShapeKey } from './shapeKey.js';
 import type { SheetFlatGeometry } from './unfoldSheetBody.js';
 
 export function createSheetFlatSteps(sourceFeatureId: string, flat: SheetFlatGeometry): SheetGeometryResult<readonly ResolvedSolidStep[]> {
+  function invalidSteps(message: string): SheetGeometryResult<never> {
+    console.error('PointerCAD sheet flat steps', sourceFeatureId, message);
+    return { ok: false, message, text: { key: 'assembly.error.internal', parameters: {} } };
+  }
   const panels = new Map(flat.panels.map((panel) => [panel.id, panel])), bends = new Map(flat.bends.map((bend) => [bend.id, bend]));
   const fixed = panels.get(flat.fixedPanelId);
   if (fixed === undefined || panels.size !== flat.panels.length || bends.size !== flat.bends.length)
-    return { ok: false, message: '展開の固定面またはパネルの識別子を確認してください。' };
+    return invalidSteps('展開の固定面またはパネルの識別子を確認してください。');
   const steps: ResolvedSolidStep[] = [];
   function plate(panel: SheetPanelGeometry, label: string): ResolvedSolidStep {
     const plan: SheetBasePlan = { kind: 'sheetBase', outer: panel.outer, holes: panel.holes, normal: [0, 0, 1], thickness: flat.thickness, reversed: false };
@@ -28,7 +32,7 @@ export function createSheetFlatSteps(sourceFeatureId: string, flat: SheetFlatGeo
     const child = panels.get(connection.childPanelId), bend = bends.get(connection.connectionId);
     if (!visited.has(connection.parentPanelId) || visited.has(connection.childPanelId) || child === undefined || bend === undefined
       || bend.seamPanelId !== undefined || bend.extraPanelId !== undefined || joined.has(bend.id))
-      return { ok: false, message: '展開のパネルの接続順または重複を確認してください。' };
+      return invalidSteps('展開のパネルの接続順または重複を確認してください。');
     if (bend.panel !== null) join(bend.panel, `展開の曲げ帯 ${index + 1}`);
     join(child, `展開のパネル ${index + 2}`);
     visited.add(child.id); joined.add(bend.id);
@@ -36,12 +40,12 @@ export function createSheetFlatSteps(sourceFeatureId: string, flat: SheetFlatGeo
   for (const bend of flat.bends) {
     const panelId = bend.seamPanelId ?? bend.extraPanelId;
     if (panelId === undefined) continue;
-    if (!visited.has(panelId) || joined.has(bend.id)) return { ok: false, message: '追加する曲げ帯の接続先を確認してください。' };
+    if (!visited.has(panelId) || joined.has(bend.id)) return invalidSteps('追加する曲げ帯の接続先を確認してください。');
     if (bend.panel !== null) join(bend.panel, `追加の曲げ帯 ${joined.size + 1}`);
     joined.add(bend.id);
   }
   if (visited.size !== panels.size || joined.size !== bends.size)
-    return { ok: false, message: '展開に接続していないパネルまたは曲げ帯があります。' };
+    return invalidSteps('展開に接続していないパネルまたは曲げ帯があります。');
   steps[steps.length - 1] = { ...current, featureId: sourceFeatureId, name: '板金の展開', visible: true };
   return { ok: true, value: steps };
 }

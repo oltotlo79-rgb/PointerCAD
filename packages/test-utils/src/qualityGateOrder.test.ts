@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import ts from 'typescript';
+import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import { RECOMPUTE_TIMEOUT_MS } from './releasePerformance.js';
 
@@ -37,32 +38,9 @@ function expectHostInterferenceWindow(source: string, specs: readonly string[]):
   }
 }
 
-function vitestTokens(source: string): string[] {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, source);
-  const tokens: string[] = [];
-  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
-    tokens.push(kind === ts.SyntaxKind.StringLiteral ? JSON.stringify(scanner.getTokenValue()) : scanner.getTokenText());
-  }
-  return tokens;
-}
-
-function expectVitestConfigWiring(directory: string, profile: string): void {
-  const path = `${directory}/vitest.config.ts`;
-  const text = readFileSync(new URL(path, rootUrl), 'utf8');
-  const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest);
-  const statements = file.statements.map(statement => vitestTokens(statement.getText(file)));
-  const prefix = directory.startsWith('apps/') ? '../../packages/test-utils/src/'
-    : directory === 'packages/test-utils' ? './src/' : '../test-utils/src/';
-  expect(statements, path).toContainEqual(vitestTokens(
-    `import { createPackageVitestConfig } from '${prefix}vitest.package.testSupport.js';`,
-  ));
-  expect(statements.filter(tokens => tokens[0] === 'export' && tokens[1] === 'default'), path).toEqual([
-    vitestTokens(`export default createPackageVitestConfig('${profile}', options);`),
-  ]);
-  const policyFields = ['fileParallelism', 'sequence', 'testTimeout'];
-  const reserved = new Set(policyFields.flatMap(name => [name, JSON.stringify(name)]));
-  const overrides = statements.flatMap(tokens => tokens.filter((token, index) => reserved.has(token) && tokens[index + 1] === ':'));
-  expect(overrides, path).toEqual([]);
+function vitestConfigLinter(): ESLint {
+  return new ESLint({ cwd: fileURLToPath(rootUrl), fix: false, cache: false, allowInlineConfig: false,
+    ruleFilter: ({ ruleId }) => ruleId === 'module-style/vitest-config-wiring' });
 }
 
 describe('品質ゲートのテスト実行順', () => {
@@ -74,17 +52,48 @@ describe('品質ゲートのテスト実行順', () => {
     );
   });
 
-  it('全パッケージが共通設定を直接書き出し、実行順・worker・上限の組を保つ', () => {
-    const profiles: Record<string, string> = {
-      'apps/desktop': 'desktop', 'apps/web': 'default', 'packages/drawing': 'default',
-      'packages/expression': 'performance-serial', 'packages/fem': 'performance-serial',
-      'packages/help-content': 'default', 'packages/io': 'performance-strict', 'packages/kernel': 'kernel',
-      'packages/model': 'performance-serial', 'packages/test-utils': 'serial', 'packages/ui': 'performance-strict',
-    };
+  it('全パッケージが共通設定を直接書き出し、実行順・worker・上限の組を保つ', async () => {
+    const expected = ['apps/desktop', 'apps/web', 'packages/drawing', 'packages/expression', 'packages/fem',
+      'packages/help-content', 'packages/io', 'packages/kernel', 'packages/model', 'packages/test-utils', 'packages/ui'];
     const directories = ['apps', 'packages'].flatMap(folder => readdirSync(new URL(`${folder}/`, rootUrl))
       .map(name => `${folder}/${name}`).filter(dir => existsSync(new URL(`${dir}/vitest.config.ts`, rootUrl))));
-    expect(directories.sort()).toEqual(Object.keys(profiles).sort());
-    for (const directory of directories) expectVitestConfigWiring(directory, profiles[directory]);
+    expect(directories.sort()).toEqual(expected);
+    const paths = directories.map(directory => `${directory}/vitest.config.ts`);
+    const eslint = vitestConfigLinter();
+    const results = await eslint.lintFiles(paths);
+    expect(results).toHaveLength(paths.length);
+    expect(results.flatMap(result => result.messages)).toEqual([]);
+    for (const filePath of paths) {
+      const [result] = await eslint.lintText('export default {};', { filePath });
+      expect(result?.messages.map(message => message.messageId).sort(), filePath).toEqual(['factoryExport', 'factoryImport']);
+    }
+  });
+
+  it('共通設定の呼出しは整形を問わず、別のprofile・設定元・上書きを拒む', async () => {
+    const eslint = vitestConfigLinter();
+    const filePath = 'packages/model/vitest.config.ts';
+    const source = `import {
+  createPackageVitestConfig,
+} from "../test-utils/src/vitest.package.testSupport.js";
+const options = { include: ["src/**/*.test.ts"] };
+export default createPackageVitestConfig(
+  "performance-serial",
+  options,
+);`;
+    const examples = [
+      { code: source, diagnostics: [] },
+      { code: source.replace('performance-serial', 'performance-strict'), diagnostics: ['factoryExport'] },
+      { code: source.replace('vitest.package.testSupport.js', 'other.js'), diagnostics: ['factoryImport'] },
+      { code: source.replace('import {', 'import type {'), diagnostics: ['factoryImport'] },
+      { code: source.replace('export default createPackageVitestConfig(', 'export default wrap(createPackageVitestConfig(')
+        .replace(');', '));'), diagnostics: ['factoryExport'] },
+      { code: source.replace('include:', 'fileParallelism: true, "testTimeout": 1, ["sequence"]: {}, include:'),
+        diagnostics: ['ownedPolicy', 'ownedPolicy', 'ownedPolicy'] },
+    ];
+    for (const { code, diagnostics } of examples) {
+      const [result] = await eslint.lintText(code, { filePath });
+      expect(result?.messages.map(message => message.messageId), code).toEqual(diagnostics);
+    }
   });
 
   it('板金の性能判定が共通の目標記録と実用性の判定へ接続される', () => {

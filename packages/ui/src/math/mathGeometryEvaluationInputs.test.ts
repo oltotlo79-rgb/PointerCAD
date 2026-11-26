@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { MathWorkerClient, type MathWorkerPort } from '@pointercad/expression/math/client';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply, type MathNode } from '@pointercad/expression/math/contracts';
-import { createMathBackend, executeMathWorkRequest } from '@pointercad/expression/math/worker';
+import { createMathBackend, executeExactMathWorkRequest } from '@pointercad/expression/math/worker';
 import {
   absoluteCoordinate, appendFeature, createDefaultConfigurations, createPointFeature,
   DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId, replaceSketch,
@@ -106,7 +106,14 @@ function transport(hold = false) {
   const firstRequest = new Promise<void>(resolve => { firstSent = resolve; });
   let terminated = 0;
   const reply = (item: typeof queued[number]): void => {
-    item.port.onmessage?.({ data: executeMathWorkRequest(item.value, backend) });
+    // Use the same dispatcher as math.worker.ts, including its one wall-clock retry.
+    void executeExactMathWorkRequest(item.value, {
+      backend, engine: { evaluate: () => Promise.reject(new Error('This scalar fixture does not use the exact engine')) },
+      shouldStop: () => undefined,
+    }).then(
+      data => { item.port.onmessage?.({ data }); },
+      () => { item.port.onerror?.({ preventDefault: () => undefined }); },
+    );
   };
   const client = new MathWorkerClient({
     createWorker: () => {
@@ -176,18 +183,21 @@ function invalidate(kind: typeof unavailable[number]): void {
 }
 
 describe('図形値を使う既存の評価入口（GR-18）', () => {
-  it('実計算が期限を超えた欄の適用は停止を返し、文書とUndoを変えない', async () => {
+  it('実計算が再試行でも期限を超えた欄の適用は計算時間の上限を示し、文書とUndoを変えない', async () => {
     const before = useAppStore.getState(), dialog = propertyDialog(), channel = transport();
     const evaluate = vi.spyOn(channel.client, 'evaluate'), box = backend.box;
-    vi.spyOn(backend, 'box').mockImplementation(expression => {
+    const slowBox = vi.spyOn(backend, 'box').mockImplementation(expression => {
       const result = box(expression);
       now += 201;
       return result;
     });
-    // mathScalarExpression.ts reports a stopped calculation separately from an aborted editor operation.
-    expect(await applyProperty(dialog, channel)).toEqual({ ok: false, message: '数式の計算が中止されました。' });
+    // The real worker distinguishes its wall clock from a calculation-size limit and an aborted edit.
+    expect(await applyProperty(dialog, channel)).toEqual({
+      ok: false, message: '計算時間の上限に達しました。式や範囲を小さくしてください。',
+    });
+    expect(slowBox).toHaveBeenCalledTimes(2);
     expect(await evaluate.mock.results[0].value).toMatchObject({ status: 'result', result: {
-      evaluation: { status: 'stopped', reason: 'budget' },
+      evaluation: { status: 'stopped', reason: 'deadline' },
     } });
     expect(useAppStore.getState().document).toBe(before.document);
     expect(useAppStore.getState().undoStack).toBe(before.undoStack);
@@ -200,7 +210,7 @@ describe('図形値を使う既存の評価入口（GR-18）', () => {
     await channel.firstRequest;
     now = 5_000;
     channel.release();
-    expect((await pending).ok).toBe(false);
+    expect(await pending).toEqual({ ok: false, message: t('math.deadline') });
     expect(await evaluate.mock.results[0].value).toMatchObject({ status: 'deadline' });
     expect(channel.terminated()).toBe(1);
     expect(useAppStore.getState().document).toBe(before.document);

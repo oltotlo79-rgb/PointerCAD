@@ -166,7 +166,10 @@ export function createComponentPickActions(set: SetState, get: () => AppState): 
       const closing = activeComponentPick(state)?.purpose === purpose;
       const refused = (requester.accepts === 'component' && candidates.length === 0)
         || (requester.accepts === 'point' && placement === null) || !requester.open(state, next);
-      set({ assemblyComponentPick: closing || refused ? null : { ...next, notice: null } });
+      const frameStroke = state.frameStroke;
+      set({ assemblyComponentPick: closing || refused ? null : { ...next, notice: null },
+        ...(!closing && !refused && requester.accepts === 'point' && frameStroke?.active === true
+          ? { frameStroke: { ...frameStroke, active: false } } : {}) });
     },
     answerComponentPick: (componentId) => {
       const pick = activeComponentPick(get());

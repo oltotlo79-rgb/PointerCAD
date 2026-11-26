@@ -42,7 +42,8 @@ export function connectLineBendRegions(partition: SheetLineBendPartition, featur
     const first = contacts(partition.fixed, frame, 0, sheetTangentIntervals(band.outer, FLAT, 0));
     const second = contacts(partition.flatMoving, movingSource, 0, sheetTangentIntervals(band.outer, FLAT, metrics.bendAllowance));
     if (first.length === 0 || second.length === 0)
-      return { ok: false, message: '曲げ帯の両側に接するパネルがありません。指定線と輪郭を確認してください。' };
+      return { ok: false, message: '曲げ帯の両側に接するパネルがありません。指定線と輪郭を確認してください。',
+      text: { key: 'sheetMetal.lineBendMissingContact', parameters: {} } };
     const spans = [...first, ...second].flatMap((contact) => contact.spans);
     const low = Math.min(...spans.map((span) => span.low)), high = Math.max(...spans.map((span) => span.high));
     const offset: SheetTangentFrame = { ...FLAT, origin: [-low, 0, 0] };
@@ -62,6 +63,7 @@ export function connectLineBendRegions(partition: SheetLineBendPartition, featur
   }
   const connected = new Set(bends.flatMap((bend) => [bend.parentPanelId, bend.childPanelId]));
   if (requireAllPanels && rule.angle !== 0 && [...partition.fixed, ...partition.moving].some((panel) => !connected.has(panel.id)))
-    return { ok: false, message: '指定線曲げに接続していない材料があります。輪郭を確認してください。' };
+    return { ok: false, message: '指定線曲げに接続していない材料があります。輪郭を確認してください。',
+      text: { key: 'sheetMetal.lineBendDisconnectedMaterial', parameters: {} } };
   return { ok: true, value: bends };
 }

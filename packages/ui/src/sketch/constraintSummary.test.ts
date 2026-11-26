@@ -133,7 +133,7 @@ function diagnosisWith(patch: {
     maxResidual: 0,
     satisfied: true,
     messages: [],
-    summary: '',
+    summary: { key: 'partError.sketchConstraint.literal', parameters: { value: '' } },
   };
 }
 

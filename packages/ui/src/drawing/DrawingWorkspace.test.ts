@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { ja } from '../i18n/ja.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { DRAWING_PROPERTY_KEYS, DRAWING_TOOL_GROUPS, DRAWING_TREE_KEYS } from './DrawingWorkspace.js';
 import { DRAWING_FILE_BUTTON_ACTIONS } from './drawingToolbarItems.js';
 
@@ -68,5 +69,12 @@ describe('図面画面の5区画に入る内容', () => {
   });
   it('表が入らない断りも収録する', () => {
     expect(ja['drawing.error.tableOverflow']).toBe('この表は用紙に入りません。列を減らすか用紙を大きくしてください。');
+  });
+  it('図面の配置の断りは鍵と値から表示する', () => {
+    expect(failureMessage({ key: 'drawing.error.detailOutside', parameters: {} })).toBe(refusalMessages[6]);
+    expect(failureMessage({ key: 'drawing.error.breakIntervalCount', parameters: { count: '1' } }))
+      .toBe('破断区間は1つだけ指定してください。');
+    expect(failureMessage({ key: 'drawing.error.breakIntervalInvalid', parameters: {} }))
+      .toBe('破断区間の端と、残す隙間を正しく指定してください。');
   });
 });

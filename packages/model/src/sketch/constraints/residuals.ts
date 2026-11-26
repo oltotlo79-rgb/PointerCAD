@@ -16,6 +16,8 @@
  * 日本語の理由を返す(NaN をソルバーへ流さない。FR-504、NFR-RE-1)。
  */
 
+import type { FailureText } from '../../failureText.js';
+import { sketchConstraintText } from '../sketchDiagnostics.js';
 import { vertexKey } from '../resolveCoordinate.js';
 import { SKETCH_TOLERANCE_MM } from '../vec3.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
@@ -53,11 +55,11 @@ export type ResidualSkipReason =
   /** 指し先の組み合わせがその拘束に合わない(円に平行拘束、線分に半径拘束など)。 */
   | 'unsupportedTarget';
 
-/** 残差を作れなかった拘束 1 つ。理由の文は画面へそのまま出せる日本語で持つ(`diagnose.ts` が使う)。 */
+/** 残差を作れなかった拘束 1 つ。理由は画面で解決する鍵と値で持つ(`diagnose.ts` が使う)。 */
 export interface SkippedResidual {
   readonly constraintId: string;
   readonly reason: ResidualSkipReason;
-  readonly message: string;
+  readonly text: FailureText;
 }
 
 /** 残差の組み立ての結果。 */
@@ -774,22 +776,13 @@ function implicitOutcome(
 
 // --- 断りの文 -------------------------------------------------------------
 
-function skipMessage(label: string, reason: ResidualSkipReason): string {
-  switch (reason) {
-    case 'dangling':
-      return `${label}が指している要素が見つかりません。要素が消されたか、別の作図面にあります。`;
-    case 'degenerate':
-      return `${label}は、長さ 0 の線分・重なった点・半径 0 の円には付けられません。`;
-    case 'unsupportedTarget':
-      return `${label}は、選んだ要素の組み合わせには付けられません。`;
-  }
+function skipText(label: string, reason: ResidualSkipReason): FailureText {
+  return sketchConstraintText(reason, { label });
 }
 
-/** 円弧の暗黙の式が作れないときの断り。利用者は付けた覚えのない式なので、円弧の側から言う。 */
-function implicitMessage(featureId: string, reason: ResidualSkipReason): string {
-  return reason === 'degenerate'
-    ? `${featureId} は中心と端点が重なっていて、円弧の形を保てません。`
-    : `${featureId} の中心・端点・半径がそろっていないので、円弧の形を保てません。`;
+/** The text uses the source arc ID while the diagnostic keeps the synthetic equation ID. */
+function implicitText(featureId: string, reason: ResidualSkipReason): FailureText {
+  return sketchConstraintText(reason === 'degenerate' ? 'arcDegenerate' : 'arcMissing', { featureId });
 }
 
 // --- 入口 -----------------------------------------------------------------
@@ -816,7 +809,7 @@ export function buildResidualReport(
     skipped.push({
       constraintId: constraint.id,
       reason: outcome.reason,
-      message: skipMessage(constraint.name, outcome.reason),
+      text: skipText(constraint.name, outcome.reason),
     });
   }
   for (const equation of variableSet.implicit) {
@@ -828,7 +821,7 @@ export function buildResidualReport(
     skipped.push({
       constraintId: implicitEquationId(equation),
       reason: outcome.reason,
-      message: implicitMessage(equation.featureId, outcome.reason),
+      text: implicitText(equation.featureId, outcome.reason),
     });
   }
   return { rows, skipped };

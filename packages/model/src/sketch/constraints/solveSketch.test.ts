@@ -350,7 +350,10 @@ describe('解けないときも止めずに理由を出す(FR-504、NFR-RE-1)', 
     );
     const constrained = resolveConstrainedSketch(document);
     const conflicts = constrained.errors.filter((entry) => entry.code === 'constraintConflict');
-    expect(conflicts).toHaveLength(1);
+    expect(conflicts).toEqual([{
+      code: 'constraintConflict', featureId: 'd-2', text: constrained.diagnosis?.conflictDetails[0].text,
+    }]);
+    expect(conflicts[0].text.key).toBe('partError.sketchConstraint.conflictWithPartners');
     expect(constrained.diagnosis?.conflicting.length).toBeGreaterThan(0);
     // 形は最後に得られた x のまま描かれる(例外を投げない)。
     expect(constrained.resolved.segments).toHaveLength(1);
@@ -368,7 +371,9 @@ describe('解けないときも止めずに理由を出す(FR-504、NFR-RE-1)', 
     );
     const constrained = resolveConstrainedSketch(document);
     expect(constrained.diagnosis?.dangling).toEqual(['h-2']);
-    expect(constrained.errors.some((entry) => entry.featureId === 'h-2')).toBe(true);
+    expect(constrained.errors.find(({ featureId }) => featureId === 'h-2')).toMatchObject({
+      code: 'constraintUnsolved', text: { key: 'partError.sketchConstraint.unsupportedTarget' },
+    });
     expectVec3(segmentOf(constrained.resolved, 'line-1').to, [10, 0, 0]);
   });
 

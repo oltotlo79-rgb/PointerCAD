@@ -3,7 +3,7 @@ import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import { t } from '../i18n/t.js';
-import { activeDocumentKind } from '../store/documentKind.js';
+import { activeDocumentKind, editingDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   ChainIcon,
@@ -176,7 +176,7 @@ export function DrawingAidsGroup(): React.JSX.Element {
 }
 
 export function SnapGroup(): React.JSX.Element {
-  const documentKind = useAppStore(state => activeDocumentKind(state));
+  const documentKind = useAppStore(editingDocumentKind);
   const shortcutAssignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapKinds = useAppStore((state) => state.snapKinds);

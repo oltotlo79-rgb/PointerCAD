@@ -1,4 +1,4 @@
-import type { Point2 } from '../types.js';
+import type { DrawingLayoutFailure, Point2 } from '../types.js';
 import { clipCurves, type ClipCurve } from './clipRegion.js';
 import { formatDrawingScale } from '../paper/titleBlock.js';
 
@@ -13,7 +13,12 @@ export interface DetailViewInput {
   readonly textHeight: number;
 }
 export type DetailViewResult = { readonly ok: true; readonly curves: readonly DetailCurve[]; readonly title: string; readonly textHeight: number }
-  | { readonly ok: false; readonly message: string };
+  | DrawingLayoutFailure;
+
+export function detailOutside(): DrawingLayoutFailure {
+  const key = 'drawing.error.detailOutside';
+  return { ok: false, message: key, text: { key, parameters: {} } };
+}
 
 function transformPoint(point: Point2, input: DetailViewInput): Point2 {
   return [input.destinationCenter[0] + (point[0] - input.sourceCenter[0]) * input.scale,
@@ -29,7 +34,7 @@ function transformCurve(curve: ClipCurve, input: DetailViewInput): ClipCurve {
 export function createDetailView(input: DetailViewInput): DetailViewResult {
   const region = { kind: 'circle' as const, center: input.sourceCenter, radius: input.sourceRadius };
   const clipped = input.curves.flatMap((item) => clipCurves([item.curve], region).map((curve) => ({ ...item, curve })));
-  if (clipped.length === 0) return { ok: false, message: 'この円は図の外にあります。図の上に置いてください。' };
+  if (clipped.length === 0) return detailOutside();
   return { ok: true, curves: clipped.map((item) => ({ ...item, curve: transformCurve(item.curve, input) })),
     title: `${input.label} (${formatDrawingScale(input.scale)})`, textHeight: input.textHeight };
 }

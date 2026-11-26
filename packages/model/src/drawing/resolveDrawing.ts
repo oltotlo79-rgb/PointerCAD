@@ -1,5 +1,5 @@
-import type { CenterMark, DrawingDocument, DrawingRenderElement, DrawingSource, DrawingView, Point2, Vector3 } from '@pointercad/drawing';
-import { applyBreak, breakDrawingCurve, checkedHatchArea, clipCurves, drawingViewBasis, hatchStyle, sectionBoundaryLoops, type ClipRegion } from '@pointercad/drawing';
+import type { CenterMark, DrawingDocument, DrawingLayoutFailureText, DrawingRenderElement, DrawingSource, DrawingView, Point2, Vector3 } from '@pointercad/drawing';
+import { applyBreak, breakDrawingCurve, checkedHatchArea, clipCurves, detailOutside, drawingViewBasis, hatchStyle, sectionBoundaryLoops, type ClipRegion } from '@pointercad/drawing';
 import { resolvePlaneSpec, type PlaneResolveContext, type PlaneSpec, type ResolvedPlane } from '../geometry/planeSpec.js';
 import { resolveAuxiliaryDirection } from './viewDirection.js';
 import { dotVec3 } from '../sketch/vec3.js';
@@ -142,7 +142,7 @@ export type ResolvedDrawing =
       readonly failures: DrawingProjectionResult['failures'];
       readonly cancelled: boolean;
     }
-  | { readonly ok: false; readonly message: string };
+  | { readonly ok: false; readonly message: string; readonly text?: DrawingLayoutFailureText };
 
 interface CachedProjection {
   readonly visible: readonly DrawingProjectionCurve[];
@@ -328,6 +328,10 @@ export async function resolveDrawingWithSource(
       // 先に閉じた切り口へハッチを入れ、その後で詳細/部分図の範囲に切る。
       const rawHatches = paperLinesToRaw(hatch.segments);
       hatchCurves.push(...broken(mapped(rawHatches)).map((item) => item.curve));
+    }
+    if (view.construction?.kind === 'detail' && !cancelled && failures.length === 0
+      && visible.length + hidden.length + cutting.length + hatchCurves.length + centerCurves.length === 0) {
+      return detailOutside();
     }
     views.push({
       viewId: view.id,

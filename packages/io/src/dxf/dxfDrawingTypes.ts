@@ -1,3 +1,5 @@
+import { DxfDataError } from './dxfTags.js';
+
 export type { DrawingDxfEntity as DxfWriteEntity, DrawingDxfLayer as DxfWriteLayer,
   DrawingDxfLineType as DxfWriteLineType, DrawingDxfOptions as DxfWriteOptions } from '@pointercad/model';
 
@@ -5,16 +7,16 @@ export type { DrawingDxfEntity as DxfWriteEntity, DrawingDxfLayer as DxfWriteLay
  * 制御文字は断り、126 より上の字と `\`・`%` を `\U+` と 4 桁の 16 進で書く。 */
 export function dxfString(value: string): string {
   if ([...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
-    throw new Error('DXFの文字列に制御文字は使えません。');
+    throw new DxfDataError('controlCharacter', 'DXFの文字列に制御文字は使えません。');
   }
   let result = '';
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff && !(value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff)) {
-      throw new Error('DXFの文字列が正しくありません。');
+      throw new DxfDataError('invalidString', 'DXFの文字列が正しくありません。');
     }
     if (code >= 0xdc00 && code <= 0xdfff && !(value.charCodeAt(index - 1) >= 0xd800 && value.charCodeAt(index - 1) <= 0xdbff)) {
-      throw new Error('DXFの文字列が正しくありません。');
+      throw new DxfDataError('invalidString', 'DXFの文字列が正しくありません。');
     }
     result += code > 126 || code === 92 || code === 37 ? `\\U+${code.toString(16).toUpperCase().padStart(4, '0')}` : value[index];
   }

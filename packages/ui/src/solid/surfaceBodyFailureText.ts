@@ -7,7 +7,7 @@
  */
 import type { PartRecomputeError, SolidFailureReason } from '@pointercad/model';
 import { failureMessage } from '../i18n/failureMessage.js';
-import { t, type MessageKey } from '../i18n/t.js';
+import type { MessageKey } from '../i18n/t.js';
 
 /** 計算部が返す立体の失敗の符号の全部(SolidFailureReason)→ 文言の鍵。0b-2 で面による切断・面の縫い合わせ・辺からの距離の穴を足した。 */
 const SOLID_FAILURE_KEYS: Readonly<Record<SolidFailureReason, MessageKey>> = {
@@ -56,6 +56,30 @@ const SOLID_FAILURE_KEYS: Readonly<Record<SolidFailureReason, MessageKey>> = {
   side: 'solidFailure.edgeDistance.notOnFace',
   parallel: 'solidFailure.edgeDistance.parallel',
   outside: 'solidFailure.edgeDistance.outside',
+  'hole-not-planar': 'solidFailure.hole.notPlanar',
+  'hole-planar-conflict': 'solidFailure.hole.planarConflict',
+  'hole-planar-coordinates': 'solidFailure.hole.planarCoordinates',
+  'hole-planar-outside': 'solidFailure.hole.planarOutside',
+  'hole-no-center': 'solidFailure.hole.noCenter',
+  'hole-center-not-finite': 'solidFailure.hole.centerNotFinite',
+  'hole-tilt-angle': 'solidFailure.hole.tiltAngle',
+  'hole-tilt-azimuth': 'solidFailure.hole.tiltAzimuth',
+  'hole-not-cylindrical': 'solidFailure.hole.notCylindrical',
+  'hole-cylinder-scaled': 'solidFailure.hole.cylinderScaled',
+  'hole-cylinder-unsupported': 'solidFailure.hole.cylinderUnsupported',
+  'hole-cylinder-no-location': 'solidFailure.hole.cylinderNoLocation',
+  'hole-cylinder-coordinates': 'solidFailure.hole.cylinderCoordinates',
+  'hole-cylinder-outside': 'solidFailure.hole.cylinderOutside',
+  'hole-cylinder-bore': 'solidFailure.hole.cylinderBore',
+  'hole-diameter': 'solidFailure.hole.diameter',
+  'hole-depth': 'solidFailure.hole.depth',
+  'hole-counterbore-diameter': 'solidFailure.hole.counterboreDiameter',
+  'hole-counterbore-depth': 'solidFailure.hole.counterboreDepth',
+  'hole-countersink-angle': 'solidFailure.hole.countersinkAngle',
+  'hole-countersink-diameter': 'solidFailure.hole.countersinkDiameter',
+  'hole-entry-depth': 'solidFailure.hole.entryDepth',
+  'hole-no-removal': 'solidFailure.hole.noRemoval',
+  'hole-internal': 'assembly.error.internal',
 };
 
 const KEY_BY_REASON: ReadonlyMap<string, MessageKey> = new Map(Object.entries(SOLID_FAILURE_KEYS));
@@ -67,7 +91,7 @@ function messageKeyOf(error: PartRecomputeError): MessageKey | undefined {
 /** 再計算の誤り 1 件を、画面に出す文にする。符号の一覧に文があればその文、無ければ誤りの鍵と値の文(計算部の文はそのまま。0b-2a・0b-3a)。 */
 export function partErrorMessage(error: PartRecomputeError): string {
   const key = messageKeyOf(error);
-  return key === undefined ? failureMessage(error.text) : t(key);
+  return failureMessage(key === undefined ? error.text : { key, parameters: error.text.parameters });
 }
 
 /**
@@ -78,6 +102,6 @@ export function localizedPartErrors(errors: readonly PartRecomputeError[]): read
   if (!errors.some(error => messageKeyOf(error) !== undefined)) return errors;
   return errors.map(error => {
     const key = messageKeyOf(error);
-    return key === undefined ? error : { ...error, text: { key, parameters: {} } };
+    return key === undefined ? error : { ...error, text: { key, parameters: error.text.parameters } };
   });
 }

@@ -57,13 +57,37 @@ export interface TessellationAdmission {
   readonly remainingTriangles: number;
   readonly remainingJsBytes: number;
   readonly checkDeadline: () => void;
+  readonly rejectLimit?: (code: TessellationLimit) => never;
 }
+
+export type TessellationLimit = 'triangleLimit' | 'memoryLimit';
 
 export const TESSELLATION_ADMISSION_MESSAGE = '書き出しの三角形または追加メモリが上限を超えました。';
 
 function checkedMeshSize(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(TESSELLATION_ADMISSION_MESSAGE);
   return value;
+}
+
+function refuseTessellationLimit(
+  admission: Pick<TessellationAdmission, 'rejectLimit'>, code: TessellationLimit,
+): never {
+  admission.rejectLimit?.(code);
+  throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+}
+
+/** Check the remaining capacity before any copy or mesh allocation. */
+export function checkTessellationCapacity(
+  admission: Pick<TessellationAdmission, 'remainingTriangles' | 'remainingJsBytes' | 'rejectLimit'>,
+  triangleCount = 0,
+  byteCount = 0,
+): void {
+  const triangles = checkedMeshSize(admission.remainingTriangles);
+  const bytes = checkedMeshSize(admission.remainingJsBytes);
+  const requiredTriangles = checkedMeshSize(triangleCount);
+  const requiredBytes = checkedMeshSize(byteCount);
+  if (triangles === 0 || requiredTriangles > triangles) refuseTessellationLimit(admission, 'triangleLimit');
+  if (bytes === 0 || requiredBytes > bytes) refuseTessellationLimit(admission, 'memoryLimit');
 }
 
 /** Export-only exact-size writer; avoids retaining number[] beside final TypedArrays. */
@@ -99,9 +123,7 @@ function admitMeshCounts(
   const faceCount = checkedMeshSize(faces);
   const bytes = checkedMeshSize(checkedMeshSize(nodeCount * 24) +
     checkedMeshSize(triangleCount * 12) + checkedMeshSize(faceCount * 64));
-  if (triangleCount > admission.remainingTriangles || bytes > admission.remainingJsBytes) {
-    throw new Error(TESSELLATION_ADMISSION_MESSAGE);
-  }
+  checkTessellationCapacity(admission, triangleCount, bytes);
 }
 
 /**
@@ -437,10 +459,7 @@ export function tessellate(
   const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
   const admission = options.admission;
   if (admission !== undefined) {
-    if (checkedMeshSize(admission.remainingTriangles) === 0 ||
-      checkedMeshSize(admission.remainingJsBytes) === 0) {
-      throw new Error(TESSELLATION_ADMISSION_MESSAGE);
-    }
+    checkTessellationCapacity(admission);
     admitMeshCounts(admission, 0, 0, 0);
   }
 

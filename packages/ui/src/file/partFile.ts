@@ -130,7 +130,7 @@ export type ReadPartDocumentOutcome =
 export function readPartDocument(bytes: Uint8Array): ReadPartDocumentOutcome {
   const result = readPcadFile(bytes);
   if (!result.ok) {
-    return { ok: false, messageKey: openErrorMessageKey(result.error.code) };
+    return { ok: false, messageKey: openErrorMessageKey(result.error) };
   }
   return { ok: true, document: result.document, attachments: result.attachments };
 }
@@ -318,7 +318,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   if (read === null) return;
   const { result, saveTargetToken } = read;
   if (!result.ok) {
-    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
+    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error), failed: true });
     return;
   }
   const checkpoint = await readPickedCheckpoint(picked, transferred, read.savedSha256, useAppStore.getState().tutorialCheckpointStorage,

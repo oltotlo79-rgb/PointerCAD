@@ -14,6 +14,7 @@ import { FunctionCurvePreview } from './FunctionCurvePreview.js';
 import { FunctionSurfacePreview } from './FunctionSurfacePreview.js';
 import { prepareFunctionPlot } from './prepareFunctionPlot.js';
 import { applyFunctionPreset, FUNCTION_PRESETS } from './functionPresets.js';
+import { listenForFunctionSurfaceCommit, recordFunctionSurfaceCommitTarget } from './functionSurfaceCommitObservation.js';
 import './functionPlot.css';
 
 type EditorTarget = { readonly kind: 'scalar'; readonly key: FunctionScalarField }
@@ -47,6 +48,26 @@ function waitForPreviewRecompute(signal: AbortSignal, isCurrent: () => boolean):
   });
 }
 
+function useFunctionPlotLifetime({ owner, close, dialog, running, mounted }: {
+  owner: ReturnType<typeof useAppStore.getState>;
+  close: () => void;
+  dialog: { current: HTMLDialogElement | null };
+  running: { current: AbortController | null };
+  mounted: { current: boolean };
+}): void {
+  useEffect(() => {
+    mounted.current = true;
+    const element = dialog.current, restoreFocus = rememberDialogOpener(element);
+    element?.showModal();
+    const stopListening = import.meta.env.VITE_PCAD_E2E === '1'
+      ? listenForFunctionSurfaceCommit(element) : undefined;
+    const unsubscribe = useAppStore.subscribe(state => {
+      if (state.document !== owner.document || state.documentVersion !== owner.documentVersion) { running.current?.abort(); close(); }
+    });
+    return () => { mounted.current = false; running.current?.abort(); stopListening?.(); unsubscribe(); element?.close(); restoreFocus(); };
+  }, [owner, close, dialog, running, mounted]);
+}
+
 export function FunctionPlotDialog({ featureId, onClose }: {
   readonly featureId?: string; readonly onClose: () => void;
 }): React.JSX.Element {
@@ -66,15 +87,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
   const dialog = useRef<HTMLDialogElement>(null), running = useRef<AbortController | null>(null), mounted = useRef(true), id = useId();
   const isCurrent = () => mounted.current && useAppStore.getState().document === owner.document
     && useAppStore.getState().documentVersion === owner.documentVersion;
-  useEffect(() => {
-    mounted.current = true;
-    const element = dialog.current, restoreFocus = rememberDialogOpener(element);
-    element?.showModal();
-    const unsubscribe = useAppStore.subscribe(state => {
-      if (state.document !== owner.document || state.documentVersion !== owner.documentVersion) { running.current?.abort(); close(); }
-    });
-    return () => { mounted.current = false; running.current?.abort(); unsubscribe(); element?.close(); restoreFocus(); };
-  }, [owner, close]);
+  useFunctionPlotLifetime({ owner, close, dialog, running, mounted });
   const change = (next: FunctionPlotDraft) => { running.current?.abort(); setBusy(false); setPreview(null); setDisplayed(false); setIssues(new Map()); setDraft(next); };
   const calculate = async () => {
     if (!isCurrent() || busy || sketch === undefined) return;
@@ -246,6 +259,9 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             : <button className="pcad-button" key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
           <button className="pcad-button pcad-button--primary" title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
             if (!displayed || preview === null || preview.draft !== draft || !isCurrent()) return;
+            if (import.meta.env.VITE_PCAD_E2E === '1' && preview.kind === 'surface') {
+              recordFunctionSurfaceCommitTarget(dialog.current, preview.feature.id);
+            }
             useAppStore.getState().applyDocument(preview.document); close();
           }}>{t(surface ? 'functionPlot.surfaceApply' : 'functionPlot.apply')}</button>
         </div>

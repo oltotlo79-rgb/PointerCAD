@@ -81,7 +81,8 @@ export function vertexKey(featureId: string, vertex: 'start' | 'end' | 'center')
 export type PartPointLookup =
   | { readonly kind: 'none' }
   | { readonly kind: 'point'; readonly position: Vec3 }
-  | { readonly kind: 'refused'; readonly message: string };
+  | { readonly kind: 'refused'; readonly message: string }
+  | { readonly kind: 'refused'; readonly text: FailureText };
 
 export const NO_PART_POINT: PartPointLookup = { kind: 'none' };
 
@@ -184,7 +185,11 @@ export function resolvePointReference(
       }
       if (found !== undefined) return { ok: true, value: found.position };
       if (part.kind === 'point') return { ok: true, value: part.position };
-      if (part.kind === 'refused') return failure(featureId, 'missingBase', part.message);
+      if (part.kind === 'refused') {
+        return 'text' in part
+          ? failureWith(featureId, 'missingBase', part.text)
+          : failure(featureId, 'missingBase', part.message);
+      }
       return failureWith(featureId, 'missingBase', { key: 'partError.coordinate.missingPoint', parameters: { id: reference.pointId } });
     }
     case 'vertex': {

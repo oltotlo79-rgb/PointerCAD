@@ -344,7 +344,7 @@ export function AppShell(): React.JSX.Element {
             聞くのは式 1 つだけ。開いているときだけ自分で姿を現す。
           */}
           {documentKind === 'part' ? <ConstraintValuePopover /> : null}
-          {documentKind !== 'part' || snapIndicator === null ? null : (
+          {(documentKind !== 'part' && documentKind !== 'assembly') || snapIndicator === null ? null : (
             /* 吸い付いている場所の印(FR-107)。 */
             <span
               className="pcad-snap-marker"

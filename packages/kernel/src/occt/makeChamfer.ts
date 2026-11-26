@@ -16,6 +16,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, faceAt, facesTouchingEdge } from './subShapes.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { EdgeTreatmentFailure, unexpectedEdgeTreatmentFailure } from './edgeTreatmentFailure.js';
 import { KernelStepError } from './kernelStepError.js';
 
 /**
@@ -57,7 +58,7 @@ const NOT_SOLID_MESSAGE = '面を取った結果がソリッドになりませ�
 /** 距離として使える数か。0 と負と非数を断る。 */
 function requireDistance(value: number): void {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(DISTANCE_MESSAGE);
+    throw new EdgeTreatmentFailure('chamfer-distance', DISTANCE_MESSAGE);
   }
 }
 
@@ -83,7 +84,7 @@ function validateSize(size: ChamferSizeSpec): void {
     case 'distanceAngle': {
       requireDistance(size.distance);
       if (!Number.isFinite(size.angle) || size.angle <= 0 || size.angle >= Math.PI / 2) {
-        throw new Error(ANGLE_MESSAGE);
+        throw new EdgeTreatmentFailure('chamfer-angle', ANGLE_MESSAGE);
       }
       return;
     }
@@ -112,12 +113,12 @@ function referenceFaceOf(
 ): TopoDS_Face {
   const touching = facesTouchingEdge(oc, shape, edgeIndex);
   if (touching.length < 2) {
-    throw new Error(NO_REFERENCE_FACE_MESSAGE);
+    throw new EdgeTreatmentFailure('chamfer-reference-face', NO_REFERENCE_FACE_MESSAGE);
   }
   const face = faceAt(oc, shape, touching[swapReferenceFace ? 1 : 0]);
   if (face === null) {
     // 番号は `facesTouchingEdge` が同じ形から数えたものなので、通常はここへ来ない。
-    throw new Error(NO_REFERENCE_FACE_MESSAGE);
+    throw new EdgeTreatmentFailure('edge-treatment-internal', NO_REFERENCE_FACE_MESSAGE);
   }
   return face;
 }
@@ -176,18 +177,6 @@ function addChamferedEdge(
 }
 
 /**
- * 例外を利用者へ見せる日本語へ揃える。
- *
- * OCCT の C++ 側が投げる例外は、embind を通ると**数値(実体へのポインタ)**として飛んでくる
- * (2026-09-03 実測。辺を 1 本も足さずに `Build` したときは `19453408` だった)。
- * そのまま外へ出すと画面に数字が並ぶだけなので、こちらで理由へ置き換える。
- * 自分で投げた Error(すでに日本語)はそのまま通す。
- */
-function toJapaneseFailure(error: unknown, message: string): Error {
-  return error instanceof Error ? error : new Error(message);
-}
-
-/**
  * C 面取り(FR-408)。**対象は消費せず、新しい形を返す。**
  *
  * 手順は、①指紋で辺を選び直す → ②大きさに応じて
@@ -223,18 +212,23 @@ export function makeChamfer(
   tables: SubShapeTables,
   semantic?: { readonly featureId: string; readonly origins: CurrentOriginIndex },
 ): OcctShapeHandle {
-  validateSize(spec.size);
-
-  // 位置の点を正規化する長さ。境界箱の対角長の半分(matchSubShape.ts の scorePosition)。
-  const scale = boundingDiagonal(oc, target) * 0.5;
-  const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
-  if (edgeIndices.length === 0) {
-    throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
-  }
-
   const { keep, release } = createAllocations();
 
   try {
+    validateSize(spec.size);
+
+    // 位置の点を正規化する長さ。境界箱の対角長の半分(matchSubShape.ts の scorePosition)。
+    const scale = boundingDiagonal(oc, target) * 0.5;
+    const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
+    if (edgeIndices.length === 0) {
+      throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
+    }
+
+    if (typeof oc.BRepFilletAPI_MakeChamfer !== 'function') {
+      throw new EdgeTreatmentFailure('edge-treatment-kernel-unavailable',
+        '幾何カーネルの準備ができていません。アプリを再読み込みしてください。');
+    }
+
     const maker = keep(new oc.BRepFilletAPI_MakeChamfer(target));
 
     for (const index of edgeIndices) {
@@ -245,22 +239,24 @@ export function makeChamfer(
     try {
       maker.Build(range);
     } catch (error) {
-      throw toJapaneseFailure(error, BUILD_FAILED_MESSAGE);
+      // embind が OCCT の C++ 例外を数値のポインタで返す。
+      if (typeof error !== 'number') throw error;
+      throw new EdgeTreatmentFailure('chamfer-build', BUILD_FAILED_MESSAGE, { cause: error });
     }
 
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
     // (面取りも同じ扱いにする)。
     if (!maker.IsDone()) {
-      throw new Error(BUILD_FAILED_MESSAGE);
+      throw new EdgeTreatmentFailure('chamfer-build', BUILD_FAILED_MESSAGE);
     }
 
     const shape = keep(maker.Shape());
 
     if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw new EdgeTreatmentFailure('chamfer-result', NOT_SOLID_MESSAGE);
     }
     if (!isValidShape(oc, shape)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw new EdgeTreatmentFailure('chamfer-result', NOT_SOLID_MESSAGE);
     }
 
     let origins: CurrentOriginIndex | undefined;
@@ -276,6 +272,6 @@ export function makeChamfer(
     return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
-    throw error;
+    throw unexpectedEdgeTreatmentFailure(error);
   }
 }

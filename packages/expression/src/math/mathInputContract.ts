@@ -1,3 +1,4 @@
+import type { MathInputDiagnostic } from './mathInputDiagnostics.js';
 import type { MathDeclaration as TypeMathDeclaration } from './mathDeclarations.js';
 import type { OdeSolutions as TypeOdeSolutions } from './differentialEquations.js';
 import type { NumericalRootIntervals as TypeNumericalRootIntervals } from './numericalRootResult.js';
@@ -196,13 +197,14 @@ export type MathEvaluation =
   | { readonly status: 'value'; readonly kind: 'series'; readonly expression: MathNode;
       readonly expansion: TypeTaylorExpansion }
   | { readonly status: 'unresolved'; readonly reason: 'unknown-symbol' | 'missing-condition' | 'unevaluated'; readonly names: readonly string[] }
-  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unit' | 'unsupported' | 'divergent' | 'no-limit' | 'empty-set' | 'no-extremum'; readonly detail: string }
+  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unit' | 'unsupported' | 'divergent' | 'no-limit' | 'empty-set' | 'no-extremum'; readonly detail: string;
+      readonly diagnostic?: MathInputDiagnostic }
   | { readonly status: 'multiple'; readonly candidates: readonly MathNode[]; readonly exhaustive: boolean }
-  | { readonly status: 'stopped'; readonly reason: 'cancelled' | 'deadline' | 'budget' };
+  | { readonly status: 'stopped'; readonly reason: 'cancelled' | 'deadline' | 'budget'; readonly diagnostic?: MathInputDiagnostic };
 
 export class MathInputProblem extends Error {
   readonly code: 'syntax' | 'domain' | 'budget' | 'forbidden' | 'unsupported';
-  constructor(code: MathInputProblem['code'], message: string) {
+  constructor(code: MathInputProblem['code'], message: string, readonly diagnostic?: MathInputDiagnostic) {
     super(message);
     this.name = 'MathInputProblem';
     this.code = code;
@@ -220,12 +222,12 @@ export function hasMathControlCharacters(value: string, allowLineBreaks = false)
 
 /** Validate before calling any parser. This does not reinterpret LaTeX grouping as a complete grammar. */
 export function validateMathSource(source: string): void {
-  if (source.length === 0) throw new MathInputProblem('syntax', '式を入力してください。');
+  if (source.length === 0) throw new MathInputProblem('syntax', '式を入力してください。', { key: 'math.input.emptySource', parameters: {} });
   if (source.length > MATH_INPUT_LIMITS.sourceCodeUnits) {
-    throw new MathInputProblem('budget', '式が長すぎます。定義を分けてください。');
+    throw new MathInputProblem('budget', '式が長すぎます。定義を分けてください。', { key: 'math.input.sourceLength', parameters: { count: String(source.length), limit: String(MATH_INPUT_LIMITS.sourceCodeUnits) } });
   }
   if (hasMathControlCharacters(source, true)) {
-    throw new MathInputProblem('syntax', '数式に使えない制御文字が含まれています。');
+    throw new MathInputProblem('syntax', '数式に使えない制御文字が含まれています。', { key: 'math.input.controlCharacter', parameters: {} });
   }
   let depth = 0;
   let digits = 0;
@@ -235,12 +237,12 @@ export function validateMathSource(source: string): void {
     // Escaped LaTeX braces still consume the conservative resource budget.
     if (character === '(' || character === '[' || character === '{') {
       depth += 1;
-      if (depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '括弧の入れ子が深すぎます。');
+      if (depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '括弧の入れ子が深すぎます。', { key: 'math.input.bracketDepth', parameters: { position: String(index + 1), limit: String(MATH_INPUT_LIMITS.depth) } });
     } else if (character === ')' || character === ']' || character === '}') {
       depth = Math.max(0, depth - 1);
     }
     digits = character !== undefined && /[0-9０-９]/u.test(character) ? digits + 1 : 0;
-    if (digits > MATH_INPUT_LIMITS.literalDigits) throw new MathInputProblem('budget', '数値の桁数が多すぎます。');
+    if (digits > MATH_INPUT_LIMITS.literalDigits) throw new MathInputProblem('budget', '数値の桁数が多すぎます。', { key: 'math.input.sourceDigits', parameters: { position: String(index + 1), limit: String(MATH_INPUT_LIMITS.literalDigits) } });
   }
 }
 
@@ -248,16 +250,16 @@ const DECIMAL = /^[+-]?([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE]([+-]?[0-9]+))?$/u;
 
 export function validateMathDecimal(value: string): void {
   if (value.length > MATH_INPUT_LIMITS.literalDigits + 16) {
-    throw new MathInputProblem('budget', '数値の桁数が多すぎます。');
+    throw new MathInputProblem('budget', '数値の桁数が多すぎます。', { key: 'math.input.decimalDigits', parameters: { limit: String(MATH_INPUT_LIMITS.literalDigits) } });
   }
   const match = DECIMAL.exec(value);
-  if (!match) throw new MathInputProblem('syntax', '数値の表記が正しくありません。');
+  if (!match) throw new MathInputProblem('syntax', '数値の表記が正しくありません。', { key: 'math.input.decimalFormat', parameters: { value: value } });
   if ((match[1]?.replace('.', '').length ?? Infinity) > MATH_INPUT_LIMITS.literalDigits) {
-    throw new MathInputProblem('budget', '数値の桁数が多すぎます。');
+    throw new MathInputProblem('budget', '数値の桁数が多すぎます。', { key: 'math.input.decimalDigits', parameters: { limit: String(MATH_INPUT_LIMITS.literalDigits) } });
   }
   const exponent = Number(match[2] ?? 0);
   if (!Number.isSafeInteger(exponent) || exceedsMagnitude(exponent, MATH_INPUT_LIMITS.decimalExponent)) {
-    throw new MathInputProblem('budget', '指数が大きすぎます。');
+    throw new MathInputProblem('budget', '指数が大きすぎます。', { key: 'math.input.decimalExponent', parameters: { value: match[2] ?? '0', limit: String(MATH_INPUT_LIMITS.decimalExponent) } });
   }
 }
 
@@ -294,29 +296,29 @@ export function validateRawMath(
     if (!item) break;
     nodes += 1;
     if (nodes > MATH_INPUT_LIMITS.nodes || item.depth > MATH_INPUT_LIMITS.depth) {
-      throw new MathInputProblem('budget', '数式の構造が複雑すぎます。');
+      throw new MathInputProblem('budget', '数式の構造が複雑すぎます。', { key: 'math.input.rawStructure', parameters: { nodes: String(MATH_INPUT_LIMITS.nodes), depth: String(MATH_INPUT_LIMITS.depth) } });
     }
     const value = item.value;
     if (typeof value === 'number') {
-      if (!Number.isFinite(value)) throw new MathInputProblem('syntax', '有限でない数値は定数として明示してください。');
+      if (!Number.isFinite(value)) throw new MathInputProblem('syntax', '有限でない数値は定数として明示してください。', { key: 'math.input.nonFiniteLiteral', parameters: {} });
       continue;
     }
     if (typeof value === 'string') {
       if (value.length === 0 || value.length > MATH_INPUT_LIMITS.sourceCodeUnits) {
-        throw new MathInputProblem('budget', '記号名の長さが上限を超えています。');
+        throw new MathInputProblem('budget', '記号名の長さが上限を超えています。', { key: 'math.input.symbolLength', parameters: { count: String(value.length), limit: String(MATH_INPUT_LIMITS.sourceCodeUnits) } });
       }
       symbols.add(value);
       continue;
     }
     if (Array.isArray(value)) {
       const head: unknown = value[0];
-      if (typeof head !== 'string') throw new MathInputProblem('syntax', '演算名を確認できません。');
-      if (FORBIDDEN_HEADS.has(head)) throw new MathInputProblem('forbidden', 'この欄には値を求める数式を入力してください。');
+      if (typeof head !== 'string') throw new MathInputProblem('syntax', '演算名を確認できません。', { key: 'math.input.operationName', parameters: {} });
+      if (FORBIDDEN_HEADS.has(head)) throw new MathInputProblem('forbidden', 'この欄には値を求める数式を入力してください。', { key: 'math.input.forbiddenOperation', parameters: {} });
       const operation = operations.get(head);
-      if (!operation || operation.pure !== true) throw new MathInputProblem('unsupported', `演算「${head}」の定義を確認してください。`);
+      if (!operation || operation.pure !== true) throw new MathInputProblem('unsupported', `演算「${head}」の定義を確認してください。`, { key: 'math.input.unsupportedOperation', parameters: { name: head } });
       const count = value.length - 1;
       if (count > MATH_INPUT_LIMITS.arguments || count < operation.minimumArguments || count > operation.maximumArguments) {
-        throw new MathInputProblem('syntax', `演算「${head}」の引数の数を確認してください。`);
+        throw new MathInputProblem('syntax', `演算「${head}」の引数の数を確認してください。`, { key: 'math.input.operationArity', parameters: { name: head, count: String(count), min: String(operation.minimumArguments), max: String(Math.min(MATH_INPUT_LIMITS.arguments, operation.maximumArguments)) } });
       }
       heads.add(head);
       for (let index = value.length - 1; index >= 1; index -= 1) {
@@ -328,17 +330,17 @@ export function validateRawMath(
       const prototype: unknown = Object.getPrototypeOf(value);
       const keys = Object.keys(value);
       if ((prototype !== Object.prototype && prototype !== null) || keys.length !== 1) {
-        throw new MathInputProblem('syntax', '数式データの形式が正しくありません。');
+        throw new MathInputProblem('syntax', '数式データの形式が正しくありません。', { key: 'math.input.dataFormat', parameters: {} });
       }
       const data = value as Record<string, unknown>;
       if (typeof data.num === 'string') validateMathDecimal(data.num);
       else if (typeof data.sym === 'string' || typeof data.str === 'string') {
         pending.push({ value: data.sym ?? data.str, depth: item.depth + 1 });
       } else if (Array.isArray(data.fn)) pending.push({ value: data.fn, depth: item.depth + 1 });
-      else throw new MathInputProblem('syntax', '数式データの種類を確認できません。');
+      else throw new MathInputProblem('syntax', '数式データの種類を確認できません。', { key: 'math.input.dataKind', parameters: {} });
       continue;
     }
-    throw new MathInputProblem('syntax', '数式データに無効な値が含まれています。');
+    throw new MathInputProblem('syntax', '数式データに無効な値が含まれています。', { key: 'math.input.dataValue', parameters: {} });
   }
   return { nodes, heads, symbols };
 }

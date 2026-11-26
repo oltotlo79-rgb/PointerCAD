@@ -22,6 +22,7 @@ export interface NamedSavePointsLabels {
   readonly busy: string;
   readonly cancelled: string;
   readonly restored: string;
+  readonly cloneListingFailed: string;
   /** 件数と容量の上限の案内。 */
   readonly limits: string;
   readonly kinds: Readonly<Record<SavePointKind, string>>;
@@ -117,7 +118,12 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
         <button className="pcad-button" type="button" title={labels.hints.clone} disabled={busy || !hasSelection || name.trim().length === 0}
           onClick={() => { void run(async signal => { const result = await actions.cloneAndList(selectedId, name, signal);
             if (signal.aborted) return;
-            if (!result.listing.ok) throw new SavePointError(result.listing.reason, result.listing.message);
+            if (!result.listing.ok) {
+              const failure = failureMessage(new SavePointError(result.listing.reason, result.listing.message), labels.errors);
+              setMessage({ ...failure, text: labels.cloneListingFailed });
+              setName('');
+              return;
+            }
             setPoints(result.listing.points); setSelectedId(result.point.id); setName(''); }); }}>{labels.clone}</button>
         <button className="pcad-button" type="button" title={labels.hints.before} disabled={busy || !hasSelection} onClick={() => setBeforeId(selectedId)}>{labels.before}</button>
         <button className="pcad-button" type="button" title={labels.hints.after} disabled={busy || !hasSelection} onClick={() => setAfterId(selectedId)}>{labels.after}</button>

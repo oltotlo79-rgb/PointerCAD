@@ -81,6 +81,7 @@ import {
 } from './assemblyJson.js';
 import { parseDocument, serializeDocument, type ParseErrorCode } from './documentJson.js';
 import { parseDrawing, serializeDrawing } from './drawingJson.js';
+import { readDiagnosticMessage, type ArchiveDocumentDiagnostic } from './readDiagnostics.js';
 import {
   PCAD_TEMPLATE_KIND,
   type PcadDocumentKind,
@@ -552,7 +553,6 @@ function importedMeshCounts(mesh: ImportedMeshBytes): { vertexCount: number; tri
 /** 区切りへ順に書く位置(A-10)。区切りは 1 つずつ、書く値が来た時に確保する。 */
 interface MeshChunkCursor {
   readonly total: number;
-  readonly chunks: Uint8Array[];
   view: DataView;
   at: number;
   allocated: number;
@@ -560,17 +560,19 @@ interface MeshChunkCursor {
 
 function nextMeshChunk(cursor: MeshChunkCursor): void {
   const chunk = new Uint8Array(Math.min(ZIP_STEP_BYTES, cursor.total - cursor.allocated));
-  cursor.chunks.push(chunk);
   cursor.view = new DataView(chunk.buffer);
   cursor.at = 0;
   cursor.allocated += chunk.length;
 }
 
 /** 位置・法線(float32)か添字(uint32)の成分を、`encodeImportedMeshBytes` と同じ DataView の書き方で区切りへ続けて書く。 */
-function writeMeshComponent(cursor: MeshChunkCursor, values: Float32Array | Uint32Array): void {
+function* writeMeshComponent(cursor: MeshChunkCursor, values: Float32Array | Uint32Array): Generator<Uint8Array, void, void> {
   let from = 0;
   while (from < values.length) {
-    if (cursor.at === cursor.view.byteLength) nextMeshChunk(cursor);
+    if (cursor.at === cursor.view.byteLength) {
+      yield new Uint8Array(cursor.view.buffer);
+      nextMeshChunk(cursor);
+    }
     const part = values.subarray(from, from + Math.min(values.length - from, (cursor.view.byteLength - cursor.at) / 4));
     let at = cursor.at;
     if (part instanceof Float32Array) {
@@ -589,34 +591,39 @@ function writeMeshComponent(cursor: MeshChunkCursor, values: Float32Array | Uint
  * 1 つの値が区切りをまたがない。成分(位置・法線・添字)を書き終えるたびに `onComponentWritten` を呼ぶ
  * (呼び出し側は、その成分の領域をほかに読む物が無ければ、ここで手放せる)。そろっていない三角形は `null`。
  */
-function encodeImportedMeshChunks(mesh: ImportedMeshBytes,
-  onComponentWritten: ((component: Float32Array | Uint32Array) => void) | undefined): ZipChunkedBytes | null {
-  const counts = importedMeshCounts(mesh);
-  if (counts === null) {
-    return null;
-  }
-  const cursor: MeshChunkCursor = { total: counts.byteLength, chunks: [], view: new DataView(new ArrayBuffer(0)), at: 0, allocated: 0 };
+function* encodeImportedMeshChunks(mesh: ImportedMeshBytes, counts: NonNullable<ReturnType<typeof importedMeshCounts>>,
+  onComponentWritten: ((component: Float32Array | Uint32Array) => void) | undefined): Generator<Uint8Array, void, void> {
+  const cursor: MeshChunkCursor = { total: counts.byteLength, view: new DataView(new ArrayBuffer(0)), at: 0, allocated: 0 };
   nextMeshChunk(cursor);
   new Uint8Array(cursor.view.buffer).set(MESH_MAGIC, 0);
   cursor.view.setUint32(4, counts.vertexCount, MESH_LITTLE_ENDIAN);
   cursor.view.setUint32(8, counts.triangleCount, MESH_LITTLE_ENDIAN);
   cursor.at = MESH_HEADER_BYTES;
   for (const component of [mesh.positions, mesh.normals, mesh.indices]) {
-    writeMeshComponent(cursor, component);
+    yield* writeMeshComponent(cursor, component);
     onComponentWritten?.(component);
   }
   if (cursor.allocated !== cursor.total || cursor.at !== cursor.view.byteLength) {
     throw new Error('三角形の区切りの長さが合いません。');
   }
-  return { length: cursor.total, pending: cursor.chunks };
+  yield new Uint8Array(cursor.view.buffer);
 }
 
 /** 持ち主の道で、1MiB を超える三角形だけを区切りの並びにする(1MiB 以下は今の道と同じ 1 本のバイト列)。 */
 export function ownedMeshEntryBytes(mesh: ImportedMeshBytes,
   onComponentWritten: ((component: Float32Array | Uint32Array) => void) | undefined): Uint8Array | ZipChunkedBytes | null {
   const counts = importedMeshCounts(mesh);
-  return counts !== null && counts.byteLength > ZIP_STEP_BYTES ? encodeImportedMeshChunks(mesh, onComponentWritten)
+  return counts !== null && counts.byteLength > ZIP_STEP_BYTES
+    ? { length: counts.byteLength, pending: [...encodeImportedMeshChunks(mesh, counts, onComponentWritten)] }
     : encodeImportedMeshBytes(mesh);
+}
+
+/** The normal save Worker requests each piece when the ZIP compressor can consume it. */
+export function streamedMeshEntryBytes(mesh: ImportedMeshBytes,
+  release: (component: Float32Array | Uint32Array) => void): Uint8Array | ZipChunkedBytes | null {
+  const counts = importedMeshCounts(mesh);
+  if (counts === null || counts.byteLength <= ZIP_STEP_BYTES) return encodeImportedMeshBytes(mesh);
+  return { length: counts.byteLength, chunks: () => encodeImportedMeshChunks(mesh, counts, release) };
 }
 
 /**
@@ -848,10 +855,11 @@ export function partEntriesWithMeshes<Extra extends ZipChunkedBytes>(document: P
  */
 export type ReadPcadFileErrorCode = ParseErrorCode | 'notZip' | 'archiveExpansionLimit' | 'missingDocument' | 'subAssemblyCycle' | 'subAssemblyDepth';
 
-/** 読み込めなかった理由。`message` はそのまま利用者へ見せる日本語(NFR-UX-5)。 */
+/** 読み込みに失敗した理由。message は従来APIと開発者の診断用。画面はコードを翻訳する。 */
 export interface ReadPcadFileError {
   readonly code: ReadPcadFileErrorCode;
   readonly message: string;
+  readonly diagnostic?: ArchiveDocumentDiagnostic;
 }
 
 export type ReadPcadFileResult =
@@ -948,7 +956,9 @@ function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | ZipStepEntry<S
     if (name === PCAD_THUMBNAIL_ENTRY || isResultEntry(name)) continue;
     if (isPcadArchiveEntry(name) || name.startsWith(PCAD_PART_ENTRY_PREFIX)) {
       const bytes = ArrayBuffer.isView(entry) ? entry : entry[0];
-      yield [name, bytes instanceof Uint8Array ? bytes : bytes.pending, document];
+      if (bytes instanceof Uint8Array) yield [name, bytes, document];
+      else if ('pending' in bytes) yield [name, bytes.pending, document];
+      else throw new Error('Analysis result binding requires prepared mesh bytes');
     }
   }
 }
@@ -1533,7 +1543,8 @@ function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsRes
       ok: false,
       error: {
         code: reason.code,
-        message: `抱き込んだ文書を読めませんでした(${name})。${reason.message}`,
+        diagnostic: 'embeddedDocument',
+        message: readDiagnosticMessage('embeddedDocument', name, reason.message),
       },
     };
   }
@@ -1605,7 +1616,8 @@ async function collectPartAttachments(
     if (collected.brokenMeshEntry !== null) {
       return {
         code: 'invalidField',
-        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${collected.brokenMeshEntry} の形が違います)。`,
+        diagnostic: 'partAttachmentInvalid',
+        message: readDiagnosticMessage('partAttachmentInvalid', `${PCAD_PART_ENTRY_PREFIX}${ref}/${collected.brokenMeshEntry}`),
       };
     }
     allocatedMeshBytes += collected.allocatedMeshBytes;
@@ -1615,7 +1627,8 @@ async function collectPartAttachments(
       if (missing !== null) {
         return {
           code: 'missingField',
-          message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${missing} が見つかりません)。`,
+          diagnostic: 'partAttachmentMissing',
+          message: readDiagnosticMessage('partAttachmentMissing', `${PCAD_PART_ENTRY_PREFIX}${ref}/${missing}`),
         };
       }
     }
@@ -1624,13 +1637,15 @@ async function collectPartAttachments(
     if (group?.storedDigest === undefined && hasAttachmentEntries) {
       return {
         code: 'missingField',
-        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY} が見つかりません)。`,
+        diagnostic: 'partAttachmentDigestMissing',
+        message: readDiagnosticMessage('partAttachmentDigestMissing', `${PCAD_PART_ENTRY_PREFIX}${ref}/${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`),
       };
     }
     if (group?.storedDigest !== undefined && group.storedDigest !== digest) {
       return {
         code: 'missingField',
-        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref} の添付ダイジェストが一致しません)。`,
+        diagnostic: 'partAttachmentDigestMismatch',
+        message: readDiagnosticMessage('partAttachmentDigestMismatch', `${PCAD_PART_ENTRY_PREFIX}${ref}`),
       };
     }
     attachments.set(ref, collected.attachments);

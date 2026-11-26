@@ -1,5 +1,5 @@
 import { executeCommand } from '../../commands/commandRegistry.js';
-import { toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
+import { toolbarCommand, toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
 /**
@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { t } from '../../i18n/t.js';
 import type { SnapKind } from '../../sketch/snapMath.js';
 import { TRACK_ANGLE_STEPS } from '../../sketch/trackMath.js';
+import { editingDocumentKind } from '../../store/documentKind.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { ChevronRightIcon } from '../icons.js';
 import { angleStepLabel, selectTrackAngleStep, SNAP_KINDS_UI } from './sketchToolTables.js';
@@ -35,6 +36,7 @@ export function SnapKindsMenu({
   snapKinds,
   trackAngleStep,
 }: SnapKindsMenuProps): React.JSX.Element {
+  const documentKind = useAppStore(editingDocumentKind);
   const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +58,9 @@ export function SnapKindsMenu({
     };
   }, [open]);
 
-  const activeNames = SNAP_KINDS_UI.filter((entry) => snapKinds.includes(entry.kind)).map((entry) =>
+  const kinds = SNAP_KINDS_UI.filter((entry) => toolbarCommand(toolbarCommandId('snap', entry.kind))
+    ?.documentKinds.includes(documentKind) === true);
+  const activeNames = kinds.filter((entry) => snapKinds.includes(entry.kind)).map((entry) =>
     t(entry.labelKey),
   );
   // 畳んでいても何が効いているかを読めるようにし、続けて開き方を伝える(NFR-UX-7)。
@@ -92,19 +96,19 @@ export function SnapKindsMenu({
         }}
       >
         <span className="pcad-menu__count">
-          {`${String(activeNames.length)}/${String(SNAP_KINDS_UI.length)}`}
+          {`${String(activeNames.length)}/${String(kinds.length)}`}
         </span>
         <ChevronRightIcon className="pcad-menu__chevron" />
       </button>
       {open ? (
         <div className="pcad-menu__panel" role="group" aria-label={t('toolbar.snap.kindsLabel')}>
-          {SNAP_KINDS_UI.map((entry) => (
+          {kinds.map((entry) => (
             <button
               key={entry.kind}
               type="button"
               className="pcad-button pcad-menu__item"
               data-command-id={toolbarCommandId('snap', entry.kind)} data-help-topic="snap"
-              title={`${currentCommandLabel(toolbarCommandId('snap', entry.kind), assignments, 'part')}: ${t(entry.tooltipKey)}`}
+              title={`${currentCommandLabel(toolbarCommandId('snap', entry.kind), assignments, documentKind)}: ${t(entry.tooltipKey)}`}
               aria-pressed={snapKinds.includes(entry.kind)}
               onClick={() => {
                 executeCommand(toolbarCommandId('snap', entry.kind));
@@ -120,27 +124,29 @@ export function SnapKindsMenu({
             隣にあるほうが結び付きが分かる(NFR-UX-1)。値そのものは表示設定と同じ 1 つの鍵で
             端末に覚える(`settings.ts`)。
           */}
-          <span className="pcad-menu__section">{t('toolbar.snap.angleStepLabel')}</span>
-          <div
-            className="pcad-segmented pcad-menu__steps"
-            role="group"
-            aria-label={t('toolbar.snap.angleStepLabel')}
-          >
-            {TRACK_ANGLE_STEPS.map((step) => (
-              <button
-                key={step}
-                type="button"
-                className="pcad-button"
-                title={t('toolbar.snap.angleStepTooltip')}
-                aria-pressed={step === trackAngleStep}
-                onClick={() => {
-                  selectTrackAngleStep(step);
-                }}
-              >
-                {angleStepLabel(step)}
-              </button>
-            ))}
-          </div>
+          {documentKind === 'part' ? <>
+            <span className="pcad-menu__section">{t('toolbar.snap.angleStepLabel')}</span>
+            <div
+              className="pcad-segmented pcad-menu__steps"
+              role="group"
+              aria-label={t('toolbar.snap.angleStepLabel')}
+            >
+              {TRACK_ANGLE_STEPS.map((step) => (
+                <button
+                  key={step}
+                  type="button"
+                  className="pcad-button"
+                  title={t('toolbar.snap.angleStepTooltip')}
+                  aria-pressed={step === trackAngleStep}
+                  onClick={() => {
+                    selectTrackAngleStep(step);
+                  }}
+                >
+                  {angleStepLabel(step)}
+                </button>
+              ))}
+            </div>
+          </> : null}
         </div>
       ) : null}
     </div>

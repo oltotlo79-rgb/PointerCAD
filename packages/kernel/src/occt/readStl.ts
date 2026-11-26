@@ -9,6 +9,8 @@ import {
   computeVertexNormals,
   computeVolume,
   meshTooLargeMessage,
+  ShapeImportError,
+  withShapeImportDiagnostic,
 } from './exchangeShared.js';
 import { withVirtualFileInput } from './virtualFile.js';
 
@@ -124,7 +126,7 @@ export function startsWithBytes(bytes: Uint8Array, signature: readonly number[])
  */
 function inspectHeader(bytes: Uint8Array): StlHeader {
   if (bytes.length < BINARY_HEADER_LENGTH) {
-    throw new Error(MESH_READ_FAILED_MESSAGE);
+    throw new ShapeImportError({ code: 'unreadable' }, MESH_READ_FAILED_MESSAGE);
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const triangleCount = view.getUint32(BINARY_TRIANGLE_COUNT_OFFSET, true);
@@ -133,10 +135,13 @@ function inspectHeader(bytes: Uint8Array): StlHeader {
   const binary = sizedAsBinary || !startsWithBytes(bytes, ASCII_SOLID_BYTES);
   if (binary) {
     if (triangleCount > MESH_MAX_TRIANGLE_COUNT) {
-      throw new Error(meshTooLargeMessage(triangleCount));
+      throw new ShapeImportError(
+        { code: 'triangleLimit', count: triangleCount, limit: MESH_MAX_TRIANGLE_COUNT },
+        meshTooLargeMessage(triangleCount),
+      );
     }
     if (triangleCount === 0) {
-      throw new Error(MESH_NO_FACE_MESSAGE);
+      throw new ShapeImportError({ code: 'noFace' }, MESH_NO_FACE_MESSAGE);
     }
   }
   return { binary, triangleCount };
@@ -162,6 +167,14 @@ export function readStl(
   bytes: Uint8Array,
   options: StlReadOptions = {},
 ): ImportedMeshData {
+  return withShapeImportDiagnostic(() => readStlFile(oc, bytes, options));
+}
+
+function readStlFile(
+  oc: OpenCascadeInstance,
+  bytes: Uint8Array,
+  options: StlReadOptions,
+): ImportedMeshData {
   const fileName = options.fileName ?? 'import.stl';
   // 読む前の門(84 バイト未満・三角形 0 枚・多すぎる)。OCCT へ渡す前に断る理由は上の注釈。
   inspectHeader(bytes);
@@ -173,7 +186,7 @@ export function readStl(
       const handle = keep(oc.RWStl.ReadFile_2(path, range));
       if (handle.IsNull()) {
         // 壊れたファイルでも例外は飛ばず、空の Handle が返る(冒頭の実測)。
-        throw new Error(MESH_READ_FAILED_MESSAGE);
+        throw new ShapeImportError({ code: 'unreadable' }, MESH_READ_FAILED_MESSAGE);
       }
       // `.get()` の戻りは借り物なので控えへ積まない。
       const triangulation = handle.get();
@@ -181,11 +194,14 @@ export function readStl(
       const nodeCount = Number(triangulation.NbNodes());
       const triangleCount = Number(triangulation.NbTriangles());
       if (nodeCount === 0 || triangleCount === 0) {
-        throw new Error(MESH_NO_FACE_MESSAGE);
+        throw new ShapeImportError({ code: 'noFace' }, MESH_NO_FACE_MESSAGE);
       }
       if (triangleCount > MESH_MAX_TRIANGLE_COUNT) {
         // 頭の個数と実際の枚数が食い違うファイル(ASCII など)は、ここで初めて分かる。
-        throw new Error(meshTooLargeMessage(triangleCount));
+        throw new ShapeImportError(
+          { code: 'triangleLimit', count: triangleCount, limit: MESH_MAX_TRIANGLE_COUNT },
+          meshTooLargeMessage(triangleCount),
+        );
       }
 
       const positions = new Float32Array(nodeCount * 3);

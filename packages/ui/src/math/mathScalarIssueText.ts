@@ -1,18 +1,24 @@
 import { inspectMathScalarExpression, type MathScalarIssue } from '@pointercad/expression';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { MathEditorOutput } from './mathEditorSession.js';
 
 const SCALAR_ISSUE_KEYS = {
-  stopped: 'mathScalar.stopped',
   notUniqueReal: 'mathScalar.notUniqueReal',
   inexactCoordinate: 'mathScalar.inexactCoordinate',
   outOfRange: 'mathScalar.outOfRange',
   sourceUnavailable: 'mathScalar.sourceUnavailable',
   internal: 'assembly.error.internal',
-} satisfies Record<Exclude<MathScalarIssue['code'], 'invalidEvaluation'>, MessageKey>;
+} satisfies Record<Exclude<MathScalarIssue['code'], 'invalidEvaluation' | 'stopped'>, MessageKey>;
 
 export function mathScalarIssueText(issue: MathScalarIssue): string {
-  return issue.code === 'invalidEvaluation' ? issue.evaluation.detail : t(SCALAR_ISSUE_KEYS[issue.code]);
+  if (issue.code === 'invalidEvaluation') {
+    return issue.evaluation.diagnostic === undefined ? issue.evaluation.detail : failureMessage(issue.evaluation.diagnostic);
+  }
+  if (issue.code === 'stopped') {
+    return issue.evaluation.diagnostic === undefined ? t(`math.${issue.evaluation.reason}`) : failureMessage(issue.evaluation.diagnostic);
+  }
+  return t(SCALAR_ISSUE_KEYS[issue.code]);
 }
 
 export function canApplyMathScalar(output: MathEditorOutput): boolean {

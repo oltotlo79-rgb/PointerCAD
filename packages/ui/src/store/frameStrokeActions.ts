@@ -8,6 +8,7 @@ import {
   appendFrameStrokePoint, nextFrameStrokePoint, removeLastFrameStrokePoint, type FrameStroke, type FrameStrokeChange, type FrameStrokeHit,
 } from '../assembly/frameStroke.js';
 import type { AppState } from './appState.js';
+import { endComponentPickFor } from './componentPickActions.js';
 
 /**
  * 点の列と、当たらない時に次の点を置く面を決める上の軸(窓の「断面の上」)と、3D の押下で点を足すか(active。
@@ -46,12 +47,15 @@ export function createFrameStrokeActions(set: (patch: Partial<AppState>) => void
 Omit<FrameStrokeSlice, 'frameStroke'> {
   // 欄の直しは、その欄が持ち主の時だけ(既定は一括配置の欄)。
   const update = (patch: Partial<Omit<FrameStrokeDraft, 'owner'>>, owner: FrameStrokeOwner = 'layout'): void => {
-    const current = get().frameStroke;
-    if (current !== null && current.owner === owner) set({ frameStroke: { ...current, ...patch } });
+    const state = get();
+    const current = state.frameStroke;
+    if (current !== null && current.owner === owner) set({ frameStroke: { ...current, ...patch },
+      ...(patch.active === true ? endComponentPickFor(state, ['placementPoint']) : {}) });
   };
   return {
     beginFrameStroke: (stroke, up, owner = 'layout') => {
-      set({ frameStroke: { points: [...stroke.points], closed: stroke.closed, up, active: true, owner } });
+      set({ frameStroke: { points: [...stroke.points], closed: stroke.closed, up, active: true, owner },
+        ...endComponentPickFor(get(), ['placementPoint']) });
     },
     updateFrameStroke: update,
     addFrameStrokeHit: (hit, lockAxis) => {

@@ -1,4 +1,4 @@
-import { plainText, plainTextValue } from '../failureText.js';
+import { plainText } from '../failureText.js';
 import type { ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -201,7 +201,9 @@ describe('スケッチの再計算(要件§6.3)', () => {
 
     expect(result.mesh?.faces).toHaveLength(0);
     expect(result.errors).toEqual([
-      { featureId: 'f1', code: 'kernelFailed', text: plainText('面を作れませんでした: 面が閉じていません') },
+      { featureId: 'f1', code: 'kernelFailed', text: {
+        key: 'partError.sketchKernel.face', parameters: { reason: plainText('面が閉じていません') },
+      } },
     ]);
   });
 
@@ -216,7 +218,7 @@ describe('スケッチの再計算(要件§6.3)', () => {
     expect(result.mesh).toBeNull();
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('kernelFailed');
-    expect(plainTextValue(result.errors[0].text)).toBe('面を作れませんでした: 面が閉じていません');
+    expect(result.errors[0].text).toEqual({ key: 'assembly.error.internal', parameters: {} });
   });
 
   it('解決の失敗とカーネルの失敗を合わせて返す(FR-504)', async () => {
@@ -737,7 +739,7 @@ describe('オフセットの再計算(FR-321、タスク15)', () => {
     const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
       Promise.resolve<SketchOffsetResult>({
         results: [],
-        failures: [{ featureId: 'of1', message: 'これ以上内側にはオフセットできません。' }],
+        failures: [{ featureId: 'of1', message: 'これ以上内側にはオフセットできません。', reason: { code: 'offsetInside' } }],
       }),
     );
     const result = await recomputeSketch(
@@ -749,7 +751,9 @@ describe('オフセットの再計算(FR-321、タスク15)', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('kernelFailed');
     expect(result.errors[0].featureId).toBe('of1');
-    expect(plainTextValue(result.errors[0].text)).toContain('これ以上内側には');
+    expect(result.errors[0].text).toEqual({
+      key: 'partError.sketchKernel.offset', parameters: { reason: { key: 'partError.sketchKernel.offsetInside', parameters: {} } },
+    });
   });
 
   it('カーネルとの通信ごと失敗しても落ちない(NFR-RE-1)', async () => {
@@ -760,7 +764,7 @@ describe('オフセットの再計算(FR-321、タスク15)', () => {
     );
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('kernelFailed');
-    expect(plainTextValue(result.errors[0].text)).toContain('worker が応答しません');
+    expect(result.errors[0].text).toEqual({ key: 'assembly.error.internal', parameters: {} });
   });
 
   it('オフセットの曲線で面を張れる(押し出しの材料になる)', async () => {

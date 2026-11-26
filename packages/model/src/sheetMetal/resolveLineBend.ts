@@ -14,7 +14,8 @@ export type SheetLineResolver = (reference: SketchLineRef) => ResolvedSegment | 
 export function resolveSheetLineBend(feature: SheetBendFeature, source: ResolvedSheetBody, line: SheetLineResolver): SheetGeometryResult<SheetGeometryPlan> {
   const rule = resolveSheetRule(source.rule, feature.rule); if (!rule.ok) return rule;
   const panel = source.panels.find((item) => item.id === feature.panelId), axis = line(feature.line);
-  if (panel === undefined || axis === undefined) return { ok: false, message: '曲げる板金パネルと指定線を選び直してください。' };
+  if (panel === undefined || axis === undefined) return { ok: false, message: '曲げる板金パネルと指定線を選び直してください。',
+      text: { key: 'sheetMetal.lineBendMissingReference', parameters: {} } };
   const partition = partitionSheetLineBend(panel, axis, feature.fixedSide, { ...rule.rule, angle: feature.angle.value }, feature.id);
   if (!partition.ok) return partition;
   const connected = connectLineBendRegions(partition.value, feature.id); if (!connected.ok) return connected;

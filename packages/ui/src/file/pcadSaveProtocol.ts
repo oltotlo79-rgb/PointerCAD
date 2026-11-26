@@ -1,6 +1,6 @@
 import type { SaveDocumentInput, SaveEncodingStage } from '@pointercad/io';
 import { IO_LIMITS, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
-  type ThreeMfMeshInput } from '@pointercad/io';
+  type ThreeMfDataErrorCode, type ThreeMfExportLimitError, type ThreeMfMeshInput } from '@pointercad/io';
 import { isNamedSavePoint, type CreatedSavePointListing, type NamedSavePoint, type SavePointErrorCode, type SavePointKind } from '../history/namedSavePoints.js';
 import { isSaveResultIssue, type SaveResultIssueReport } from './saveResultIssue.js';
 
@@ -64,9 +64,15 @@ export interface PcadThreeMfRequest {
   readonly meshes: readonly ThreeMfMeshInput[];
   readonly remainingMs: number;
 }
+export type ThreeMfDiagnosticCode = ThreeMfDataErrorCode | ThreeMfExportLimitError['reason'] | 'internal';
+const THREE_MF_DIAGNOSTICS: ReadonlySet<unknown> = new Set<ThreeMfDiagnosticCode>([
+  'number', 'positions', 'indices', 'color', 'triangles', 'bytes', 'deadline', 'internal',
+]);
+
 export type PcadThreeMfReply =
   | { readonly id: string; readonly kind: 'export3mfSuccess'; readonly bytes: Uint8Array }
-  | { readonly id: string; readonly kind: 'export3mfFailure'; readonly message: string };
+  | { readonly id: string; readonly kind: 'export3mfFailure'; readonly message: string;
+      readonly diagnostic?: ThreeMfDiagnosticCode };
 export type PcadWorkerRequest = PcadSaveRequest | PcadSavePointRequest | PcadSavePointCancelRequest | PcadThreeMfRequest;
 
 export interface PcadCloneAndListResult {
@@ -114,7 +120,8 @@ export function isPcadThreeMfReply(value: unknown): value is PcadThreeMfReply {
   if (value.kind === 'export3mfSuccess') return 'bytes' in value && value.bytes instanceof Uint8Array
     && value.bytes.byteLength <= THREE_MF_EXPORT_BYTE_LIMIT;
   return value.kind === 'export3mfFailure' && 'message' in value
-    && typeof value.message === 'string' && value.message.length <= 4096;
+    && typeof value.message === 'string' && value.message.length <= 4096
+    && (!('diagnostic' in value) || THREE_MF_DIAGNOSTICS.has(value.diagnostic));
 }
 
 export function isPcadSavePointRequest(value: unknown): value is PcadSavePointRequest | PcadSavePointCancelRequest {

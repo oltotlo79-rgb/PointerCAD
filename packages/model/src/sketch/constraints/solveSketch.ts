@@ -21,7 +21,8 @@
  */
 
 import { withinMagnitude } from '../../numericTolerance.js';
-import { plainText, type FailureText } from '../../failureText.js';
+import type { FailureText } from '../../failureText.js';
+import { joinSketchText } from '../sketchDiagnostics.js';
 import {
   baseWorkPlane,
   isFreeWorkPlaneId,
@@ -274,15 +275,6 @@ function buildOverrides(
   return { pointOverrides, radiusOverrides };
 }
 
-/** スケッチ全体に関わる断りを 1 件作る。指す先は文書の id にする。 */
-function sketchError(
-  documentId: string,
-  code: SketchError['code'],
-  message: string,
-): SketchError {
-  return { featureId: documentId, code, text: plainText(message) };
-}
-
 /** スケッチ全体に関わる断りを、画面の文の鍵と値で 1 件作る(文は ui の文言の表が鍵ごとに持つ)。 */
 function sketchErrorWith(documentId: string, code: SketchError['code'], text: FailureText): SketchError {
   return { featureId: documentId, code, text };
@@ -306,24 +298,22 @@ function constraintErrors(
   converged: boolean | null,
 ): readonly SketchError[] {
   if (diagnosis.tooMany) {
-    return [sketchError(documentId, 'constraintTooMany', diagnosis.summary)];
+    return [sketchErrorWith(documentId, 'constraintTooMany', diagnosis.summary)];
   }
   const errors: SketchError[] = [];
   if (diagnosis.rank === null) {
-    errors.push(sketchError(documentId, 'constraintUnsolved', diagnosis.summary));
+    errors.push(sketchErrorWith(documentId, 'constraintUnsolved', diagnosis.summary));
   }
   if (diagnosis.conflictDetails.length > 0) {
     // 同じ文が相手の側にも入っているので、重複を除いてから並べる。
-    const sentences: string[] = [];
-    for (const detail of diagnosis.conflictDetails) {
-      if (!sentences.includes(detail.message)) {
-        sentences.push(detail.message);
-      }
+    const sentences = new Map<string, FailureText>();
+    for (const { text } of diagnosis.conflictDetails) {
+      sentences.set(JSON.stringify(text), text);
     }
     errors.push({
       featureId: diagnosis.conflictDetails[0].constraintId,
       code: 'constraintConflict',
-      text: plainText(sentences.join('')),
+      text: joinSketchText([...sentences.values()], 'join'),
     });
   } else if (converged === false) {
     errors.push(sketchErrorWith(documentId, 'constraintUnsolved', CONSTRAINT_UNSOLVED_TEXT));
@@ -332,7 +322,7 @@ function constraintErrors(
     errors.push({
       featureId: skipped.constraintId,
       code: 'constraintUnsolved',
-      text: plainText(skipped.message),
+      text: skipped.text,
     });
   }
   return errors;

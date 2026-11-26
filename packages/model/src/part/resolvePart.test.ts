@@ -87,6 +87,7 @@ import {
 } from './resolvePart.js';
 import type {
   ImportedShapeBytes,
+  PartError,
   RevolveAxisFrame,
   ResolvedPart,
   ResolvedPartSketch,
@@ -6904,8 +6905,10 @@ describe('曲面(FR-428、P5 タスク46)', () => {
       }),
     );
     expect(result.steps).toHaveLength(1);
-    expect(result.errors[0].code).toBe('invalidValue');
-    expect(plainTextValue(result.errors[0].text)).toContain('0 以外');
+    expect(result.errors).toEqual([{
+      featureId: 'surface-1', code: 'invalidValue',
+      text: { key: 'partError.surface.offsetZero', parameters: {} },
+    }] satisfies PartError[]);
   });
 
   it('面でないもの(辺)を取り出そうとしたら断る', () => {
@@ -6916,8 +6919,11 @@ describe('曲面(FR-428、P5 タスク46)', () => {
         face: edgeRef('extrude-1'),
       }),
     );
-    expect(result.errors[0].code).toBe('invalidValue');
-    expect(plainTextValue(result.errors[0].text)).toContain('ソリッドの面だけ');
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors).toEqual([{
+      featureId: 'surface-1', code: 'invalidValue',
+      text: { key: 'partError.surface.notFace', parameters: { bodyFeatureId: 'extrude-1', index: '3' } },
+    }] satisfies PartError[]);
   });
 
   it('面を借りる立体が無ければ断る', () => {

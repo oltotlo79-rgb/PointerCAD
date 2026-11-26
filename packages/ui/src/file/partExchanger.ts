@@ -40,6 +40,7 @@ import {
 } from '@pointercad/model';
 
 import { resolveCachedSteps, type CachedResolveDeps } from '../solid/resolveCachedSteps.js';
+import { ExchangeExportError, ExchangeImportError } from './exchangeFailureMessage.js';
 import type {
   ExchangeExportOutcome,
   ExchangeExportRequest,
@@ -145,7 +146,7 @@ export function toExchangeExportOutcome(outcome: ShapeExportOutcome): ExchangeEx
         ...(admitted !== null && exactTriples ? { triangleCount: admitted.triangleCount } : {}) };
     }
     case 'failed':
-      throw new Error(outcome.message);
+      throw new ExchangeExportError(outcome.message, outcome.diagnostic);
     case 'cancelled':
       throw new DOMException('Export cancelled', 'AbortError');
   }
@@ -183,24 +184,34 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
     ...(deps.supportsIges === undefined ? {} : { supportsIges: deps.supportsIges }),
     ...(deps.inspectImportedBrep === undefined ? {} : { inspectImportedBrep: deps.inspectImportedBrep }),
     async exportShapes(request: ExchangeExportRequest): Promise<ExchangeExportOutcome> {
-      const snapshot = deps.snapshot();
-      // 書き出しは再計算を起こさない読み取り。解くだけで鍵が揃う。
-      const steps = resolveCachedSteps(snapshot.document, deps);
-      const outcome = await deps.exportShapes(steps, {
-        format: request.format,
-        ...(request.signal === undefined ? {} : { signal: request.signal }),
-        bodies: exportBodiesFor(snapshot, steps, request.featureIds, request.withColors, request.withColors && request.format !== 'iges'),
-        meshQuality: request.meshQuality,
-        withColors: request.withColors,
-        ascii: request.ascii,
-        baseName: request.baseName,
-      });
+      const reportDiagnostics = request.format === 'step' || request.format === 'stl';
+      let outcome: ShapeExportOutcome;
+      try {
+        const snapshot = deps.snapshot();
+        // 書き出しは再計算を起こさない読み取り。解くだけで鍵が揃う。
+        const steps = resolveCachedSteps(snapshot.document, deps);
+        outcome = await deps.exportShapes(steps, {
+          format: request.format,
+          ...(reportDiagnostics ? { reportDiagnostics: true } : {}),
+          ...(request.signal === undefined ? {} : { signal: request.signal }),
+          bodies: exportBodiesFor(snapshot, steps, request.featureIds, request.withColors, request.withColors && request.format !== 'iges'),
+          meshQuality: request.meshQuality,
+          withColors: request.withColors,
+          ascii: request.ascii,
+          baseName: request.baseName,
+        });
+      } catch (error) {
+        if (!reportDiagnostics || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        throw new ExchangeExportError('', { code: 'internal' }, { cause: error });
+      }
       return toExchangeExportOutcome(outcome);
     },
 
     async importShape(format, fileName, bytes): Promise<ExchangeImportOutcome> {
       const outcome = await deps.importShape({ format, fileName, bytes });
+      if (outcome.kind === 'cancelled') throw new DOMException('Import cancelled', 'AbortError');
       if (outcome.kind === 'failed') {
+        if (outcome.diagnostic !== undefined) throw new ExchangeImportError(outcome.diagnostic, outcome.message);
         // 読めなかった理由は下の層(幾何カーネル)が日本語で持っている。
         throw new Error(outcome.message);
       }

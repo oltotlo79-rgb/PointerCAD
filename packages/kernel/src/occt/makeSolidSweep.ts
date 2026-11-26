@@ -13,6 +13,7 @@ import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
+import { SolidSweepFailure, unexpectedSolidSweepFailure } from './solidSweepFailure.js';
 import { prismCurveSubShapeOrigins, prismSubShapeOrigins } from './subShapeOrigins.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { computeVolumeProperties } from './volumeProperties.js';
@@ -65,15 +66,6 @@ const MAX_TAPER_ANGLE = Math.PI / 2;
  * 1 に十分近い値で切れば足りる(ふたの法線は向きと平行、側面の法線は直交する)。
  */
 const CAP_NORMAL_DOT = 1 - 1e-7;
-
-/** 傾きの角度が受け取れないとき(FR-504)。 */
-const TAPER_RANGE_MESSAGE = '押し出しの傾きは 0 度以上 90 度未満にしてください。';
-
-/** 傾きを付けたら形が作れなかったとき(角度が大きすぎて側面どうしがぶつかる等)。 */
-const TAPER_FAILED_MESSAGE = '押し出しに傾きを付けられませんでした。角度を小さくしてください。';
-
-/** 「次の面まで」で、押し出す先に材料が無かったとき(NFR-UX-5)。 */
-const NO_MATERIAL_AHEAD_MESSAGE = '押し出す先にソリッドがありません。';
 
 /**
  * 押し出しの終端の指定(FR-415)。
@@ -142,13 +134,18 @@ function resolveExtrudeRange(
 ): ExtrudeRange {
   if (end.kind === 'toNext') {
     if (target === null) {
-      throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+      throw new SolidSweepFailure('extrude-no-material');
     }
     // 対象を必ず突き抜ける長さ。ちょうど接する形はブーリアンが最も苦手なので余裕を足す
     // (makeHole.ts の貫通穴と同じ決め)。
-    const diagonal = boundingDiagonal(oc, target);
+    let diagonal: number;
+    try {
+      diagonal = boundingDiagonal(oc, target);
+    } catch (error) {
+      throw unexpectedSolidSweepFailure(error);
+    }
     if (!(diagonal > 0)) {
-      throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+      throw new SolidSweepFailure('extrude-no-material');
     }
     // 「次の面まで」で使う角柱の余裕(穴と同じ決め)。対象の境界箱の対角長へ
     // 両側 `booleanMargin` ぶんを足した長さの角柱を作り、必ず突き抜けさせる。
@@ -162,12 +159,14 @@ function resolveExtrudeRange(
       end.backward < 0 ||
       end.forward + end.backward <= 0
     ) {
-      throw new Error('押し出す長さは 0 より大きい数にしてください。');
+      throw new SolidSweepFailure('extrude-distance', {
+        forward: String(end.forward), backward: String(end.backward),
+      });
     }
     return { startOffset: end.backward, length: end.forward + end.backward };
   }
   if (!Number.isFinite(end.distance) || end.distance <= 0) {
-    throw new Error('押し出す長さは 0 より大きい数にしてください。');
+    throw new SolidSweepFailure('extrude-distance', { distance: String(end.distance) });
   }
   return { startOffset: 0, length: end.distance };
 }
@@ -191,12 +190,12 @@ function throughTargetRange(
   target: TopoDS_Shape | null,
 ): ExtrudeRange {
   if (target === null) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-no-material');
   }
   const box = keep(new oc.Bnd_Box_1());
   oc.BRepBndLib.Add(target, box, false);
   if (box.IsVoid()) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-no-material');
   }
   box.SetGap(0);
   const low = keep(box.CornerMin());
@@ -207,11 +206,11 @@ function throughTargetRange(
   const location = keep(keep(adaptor.Plane()).Location());
   const base: Vec3Tuple = [location.X(), location.Y(), location.Z()];
   if (!isFinitePoint(min) || !isFinitePoint(max) || !isFinitePoint(base)) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-no-material');
   }
   const diagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
   if (!(diagonal > 0)) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-no-material');
   }
   let nearest = Number.POSITIVE_INFINITY;
   let farthest = Number.NEGATIVE_INFINITY;
@@ -253,7 +252,7 @@ function shiftFace(
   // 第 3 引数 Copy = true は「下地の幾何ごと複製する」指定(transformShape.ts と同じ理由)。
   const mover = keep(new oc.BRepBuilderAPI_Transform_2(face, trsf, true));
   if (!mover.IsDone()) {
-    throw new Error('断面を押し出せませんでした。断面の形を見直してください。');
+    throw new SolidSweepFailure('extrude-build');
   }
   return keep(oc.TopoDS.Face_1(keep(mover.Shape())));
 }
@@ -327,7 +326,7 @@ function applyTaper(
 ): TopoDS_Shape {
   const sideFaces = collectSideFaces(oc, keep, prism, direction);
   if (sideFaces.length === 0) {
-    throw new Error(TAPER_FAILED_MESSAGE);
+    throw new SolidSweepFailure('extrude-taper-build');
   }
 
   const baseAdaptor = keep(new oc.BRepAdaptor_Surface_2(baseFace, true));
@@ -340,13 +339,13 @@ function applyTaper(
     drafter.Add(face, pullDirection, signedAngle, neutralPlane, true);
     // 1 枚でも受け取れなかったら、そこで止めて理由を出す(FR-504)。
     if (!drafter.AddDone()) {
-      throw new Error(TAPER_FAILED_MESSAGE);
+      throw new SolidSweepFailure('extrude-taper-build');
     }
   }
 
   drafter.Build(keep(new oc.Message_ProgressRange_1()));
   if (!drafter.IsDone()) {
-    throw new Error(TAPER_FAILED_MESSAGE);
+    throw new SolidSweepFailure('extrude-taper-build');
   }
   return keep(drafter.Shape());
 }
@@ -402,7 +401,7 @@ function keepNearestChunk(
   );
   // 成否は HasErrors() と IsDone() だけで見る(booleanOp.ts と同じ理由)。
   if (common.HasErrors() || !common.IsDone()) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-end-build');
   }
   const result = keep(common.Shape());
 
@@ -431,7 +430,7 @@ function keepNearestChunk(
   }
 
   if (nearest === null) {
-    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+    throw new SolidSweepFailure('extrude-no-material');
   }
   return nearest;
 }
@@ -458,12 +457,12 @@ export function makeExtrudeSolid(
   const target = shaping.target ?? null;
 
   if (!Number.isFinite(taperAngle) || taperAngle < 0 || taperAngle >= MAX_TAPER_ANGLE) {
-    throw new Error(TAPER_RANGE_MESSAGE);
+    throw new SolidSweepFailure('extrude-taper-range', { angleRadians: String(taperAngle) });
   }
 
   const direction = normalizeDirection(spec.direction);
   if (direction === null) {
-    throw new Error('押し出す向きが決まりません。断面が平らかどうかを確かめてください。');
+    throw new SolidSweepFailure('extrude-direction', { direction: spec.direction.join(', ') });
   }
 
   // 「対象を貫く」だけは断面の平面が要るので、面を作ったあとで決める(throughTargetRange)。
@@ -471,9 +470,10 @@ export function makeExtrudeSolid(
 
   const { keep, release } = createAllocations();
 
+  // 面の生成は共有の入力経路。失敗時は makePlanarFace が自身の確保物を解放する。
+  const profileFace = keep(makePlanarFace(oc, spec.profile, options,
+    (spec.holes?.length ?? 0) === 0 ? spec.profileOrigin : undefined, undefined, spec.holes));
   try {
-    const profileFace = keep(makePlanarFace(oc, spec.profile, options,
-      (spec.holes?.length ?? 0) === 0 ? spec.profileOrigin : undefined, undefined, spec.holes));
     const { startOffset, length } = fixedRange
       ?? throughTargetRange(oc, keep, profileFace.face, direction, target);
     const baseFace = shiftFace(oc, keep, profileFace.face, direction, startOffset);
@@ -485,7 +485,7 @@ export function makeExtrudeSolid(
     // 成否は IsDone() だけで見る。Error() の戻り値(BRepBuilderAPI_*Error)は
     // 型定義では空の型 `{}` になっており、比較に強制変換が要るため使わない。
     if (!maker.IsDone()) {
-      throw new Error('断面を押し出せませんでした。断面の形を見直してください。');
+      throw new SolidSweepFailure('extrude-build');
     }
 
     let shape: TopoDS_Shape = keep(maker.Shape());
@@ -494,7 +494,7 @@ export function makeExtrudeSolid(
     // 傾きや切り取りの前に見ておくと、潰れた形を相手にした無駄な計算をしないで済む。
     // 面の向きが裏返っている断面では符号が負になり得るので絶対値で見る。
     if (belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
-      throw new Error('押し出しても厚みが出ませんでした。長さを大きくしてください。');
+      throw new SolidSweepFailure('extrude-no-volume');
     }
 
     let reshaped = false;
@@ -530,7 +530,7 @@ export function makeExtrudeSolid(
     // (面 26 枚の板で 1 回 7.5〜11ms。booleanOp.ts の BooleanResult の注釈)ので、
     // 角柱のまま何も変えていないときは上で測った結果をそのまま信じる。
     if (reshaped && belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
-      throw new Error('押し出しても厚みが出ませんでした。長さを大きくしてください。');
+      throw new SolidSweepFailure('extrude-no-volume');
     }
 
     const origins = featureId !== undefined && spec.profileOrigin !== undefined
@@ -546,7 +546,7 @@ export function makeExtrudeSolid(
     return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
-    throw error;
+    throw unexpectedSolidSweepFailure(error);
   }
 }
 
@@ -562,18 +562,20 @@ export function makeRevolveSolid(
   options: TessellationOptions = {},
 ): OcctShapeHandle {
   if (!Number.isFinite(spec.angle) || spec.angle <= 0 || spec.angle > MAX_REVOLVE_ANGLE) {
-    throw new Error('回転の角度は 0 より大きく 360 度以下にしてください。');
+    throw new SolidSweepFailure('revolve-angle', { angleRadians: String(spec.angle) });
   }
 
   const axisDirection = normalizeDirection(spec.axisDirection);
   if (axisDirection === null || !isFinitePoint(spec.axisOrigin)) {
-    throw new Error('回転の軸が決まりません。軸を選び直してください。');
+    throw new SolidSweepFailure('revolve-axis', {
+      direction: spec.axisDirection.join(', '), origin: spec.axisOrigin.join(', '),
+    });
   }
 
   const { keep, release } = createAllocations();
 
+  const face = keep(makePlanarFace(oc, spec.profile, options));
   try {
-    const face = keep(makePlanarFace(oc, spec.profile, options));
     const origin = keep(
       new oc.gp_Pnt_3(spec.axisOrigin[0], spec.axisOrigin[1], spec.axisOrigin[2]),
     );
@@ -584,23 +586,23 @@ export function makeRevolveSolid(
     // 断面が軸をまたいでいると、OCCT は IsDone() に false を返す(2026-09-03 実測)。
     // このとき Shape() を呼ぶと C++ の例外がそのまま飛んでくるので、先に IsDone() を見る。
     if (!maker.IsDone()) {
-      throw new Error('断面が回転軸と重なっているため、回せませんでした。断面を軸から離してください。');
+      throw new SolidSweepFailure('revolve-axis-overlap');
     }
 
     const shape = keep(maker.Shape());
 
     if (!isValidShape(oc, shape)) {
-      throw new Error('断面が回転軸と重なっているため、回せませんでした。断面を軸から離してください。');
+      throw new SolidSweepFailure('revolve-axis-overlap');
     }
 
     // 軸が断面の平面に直交していると、OCCT は成功を返すが体積 0 の形になる(2026-09-03 実測)。
     if (belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
-      throw new Error('回しても厚みが出ませんでした。軸と断面の向きを見直してください。');
+      throw new SolidSweepFailure('revolve-no-volume');
     }
 
     return { shape, delete: release };
   } catch (error) {
     release();
-    throw error;
+    throw unexpectedSolidSweepFailure(error);
   }
 }

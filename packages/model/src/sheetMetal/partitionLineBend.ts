@@ -34,13 +34,16 @@ function movePanel(panel: SheetPanelGeometry, from: SheetTangentFrame, to: Sheet
 
 export function partitionSheetLineBend(panel: SheetPanelGeometry, line: ResolvedSegment, fixedSide: 'left' | 'right',
   input: SheetBendInput, featureId: string): SheetGeometryResult<SheetLineBendPartition> {
-  const metrics = sheetBendMetrics(input); if (!metrics.ok) return { ok: false, message: '板金の曲げ角・板厚・半径・K係数を確認してください。' };
+  const metrics = sheetBendMetrics(input); if (!metrics.ok) return { ok: false, message: '板金の曲げ角・板厚・半径・K係数を確認してください。',
+      text: { key: 'sheetMetal.lineBendInvalidConditions', parameters: {} } };
   const vector = subVec3(line.to, line.from), length = lengthVec3(vector), normal = panel.normal;
   if (panel.outer.length === 0 || ![...line.from, ...line.to, ...normal, length].every(Number.isFinite) || length <= 1e-7
     || exceedsMagnitude(lengthVec3(normal) - 1, 1e-10) || Math.min(input.radius, input.thickness) <= 1e-7)
-    return { ok: false, message: '曲げるパネルと重ならない2点の指定線を選んでください。' };
+    return { ok: false, message: '曲げるパネルと重ならない2点の指定線を選んでください。',
+      text: { key: 'sheetMetal.lineBendInvalidAxis', parameters: {} } };
   if (exceedsMagnitude(dotVec3(vector, normal), 1e-7) || exceedsMagnitude(dotVec3(subVec3(line.from, curveStart(panel.outer[0])), normal), 1e-7))
-    return { ok: false, message: '曲げる線は選択したパネルと同じ平面に置いてください。' };
+    return { ok: false, message: '曲げる線は選択したパネルと同じ平面に置いてください。',
+      text: { key: 'sheetMetal.lineBendAxisNotOnPanel', parameters: {} } };
   // y正方向を動く側へ揃え、軸の反転で左右を処理する。寸法は拡縮しない。
   const xAxis = scaleVec3(normalizeVec3(vector), fixedSide === 'left' ? -1 : 1), yAxis = crossVec3(normal, xAxis);
   const allowance = metrics.metrics.bendAllowance;
@@ -52,14 +55,16 @@ export function partitionSheetLineBend(panel: SheetPanelGeometry, line: Resolved
   const fixed = clipped(panel, frame, -1, `${featureId}:fixed`); if (!fixed.ok) return fixed;
   const moving = clipped(panel, movingSource, 1, `${featureId}:moving`); if (!moving.ok) return moving;
   if (fixed.value.length === 0 || moving.value.length === 0)
-    return { ok: false, message: '曲げの両側に平らな板が残るよう、指定線・角度・半径を変更してください。' };
+    return { ok: false, message: '曲げの両側に平らな板が残るよう、指定線・角度・半径を変更してください。',
+      text: { key: 'sheetMetal.lineBendNoMaterialOnSide', parameters: {} } };
   const stripStart = clipped(panel, frame, 1, `${featureId}:band-start`); if (!stripStart.ok) return stripStart;
   const bands: SheetPanelGeometry[] = [];
   for (const piece of stripStart.value) {
     const result = clipped(piece, movingSource, -1, `${featureId}:band:${piece.id}`); if (!result.ok) return result;
     bands.push(...result.value.map((item) => movePanel(item, frame, FLAT)));
   }
-  if (bands.length === 0) return { ok: false, message: '指定線の接線間に曲げる材料がありません。' };
+  if (bands.length === 0) return { ok: false, message: '指定線の接線間に曲げる材料がありません。',
+      text: { key: 'sheetMetal.lineBendNoStripMaterial', parameters: {} } };
   return { ok: true, value: { rule: input, fixed: fixed.value, moving: moving.value.map((item) => movePanel(item, movingSource, target.value)),
     flatMoving: moving.value, bands, frame, movingSource, movingTarget: target.value, metrics: metrics.metrics } };
 }

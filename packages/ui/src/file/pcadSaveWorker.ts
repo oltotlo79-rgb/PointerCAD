@@ -1,10 +1,10 @@
 import { admitThreeMf, checkThreeMfDeadline, concatZipParts, threeMfDeadline,
-  ThreeMfExportLimitError,
+  ThreeMfDataError, ThreeMfExportLimitError,
   type SaveDocumentEncoder, type SaveDocumentInput, type SaveDocumentPartsEncoder, type SaveEncodingControl,
   type ThreeMfMeshInput } from '@pointercad/io';
 import { SavePointError, type CreatedSavePointListing, type NamedSavePoint, type SavePointKind } from '../history/namedSavePoints.js';
 import { isPcadSavePointReply, isPcadSaveReply, isPcadThreeMfReply, type PcadCloneAndListResult, type PcadSavePointReply,
-  type PcadSaveRequest, type PcadSavePointRequest, type PcadWorkerRequest } from './pcadSaveProtocol.js';
+  type PcadSaveRequest, type PcadSavePointRequest, type PcadThreeMfReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
 import { captureSaveSnapshot, copySaveSnapshot } from './pcadSaveSnapshot.js';
 
 /** headlessの検査では、この小さい境界へ実IOを使う相手を明示注入する。 */
@@ -188,6 +188,15 @@ async function copyThreeMfMeshes(
 }
 
 /** One short-lived Worker, no renderer-side XML or ZIP fallback. */
+function threeMfReplyError(reply: Extract<PcadThreeMfReply, { kind: 'export3mfFailure' }>): PcadSaveWorkerError {
+  const { diagnostic, message } = reply;
+  if (diagnostic === undefined || diagnostic === 'internal')
+    return new PcadSaveWorkerError('rejected', message, diagnostic === 'internal');
+  const cause = diagnostic === 'triangles' || diagnostic === 'bytes' || diagnostic === 'deadline'
+    ? new ThreeMfExportLimitError(diagnostic) : new ThreeMfDataError(diagnostic, message);
+  return new PcadSaveWorkerError('rejected', message, false, { cause });
+}
+
 export function createThreeMfExportEncoder(createWorker: () => PcadSaveWorkerPort = browserWorker) {
   return async (meshes: readonly ThreeMfMeshInput[], control: ThreeMfWorkControl): Promise<Uint8Array> => {
     const deadlineAt = threeMfDeadline(control.remainingMs);
@@ -230,7 +239,7 @@ export function createThreeMfExportEncoder(createWorker: () => PcadSaveWorkerPor
         }
         try { assertThreeMfCurrent(control, deadlineAt); }
         catch (error) { fail(error); return; }
-        if (reply.kind === 'export3mfFailure') fail(new PcadSaveWorkerError('rejected', reply.message));
+        if (reply.kind === 'export3mfFailure') fail(threeMfReplyError(reply));
         else if (cleanup()) resolve(reply.bytes);
       };
       worker.onerror = event => fail(new PcadSaveWorkerError('crashed', event.message));

@@ -11,7 +11,10 @@ import { compareCachedMaterials } from './compareCachedMaterials.js';
 let oc: OpenCascadeInstance;
 const caches: AcquiringShapeCache<CachedSolid>[] = [];
 beforeAll(async () => { oc = await loadOcctForNode(); });
-afterEach(() => { for (const cache of caches.splice(0)) cache.clear(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const cache of caches.splice(0)) cache.clear();
+});
 function cache() { const value = createShapeCache<CachedSolid>(8); caches.push(value); return value; }
 function box(target: AcquiringShapeCache<CachedSolid>, key: string, size: number) {
   const handle = makeBox(oc, { dx: size, dy: size, dz: size });
@@ -64,10 +67,34 @@ describe('形の比較は計算中の両入力を借用し、全成分か明確�
     const shapes = cache(); box(shapes, 'available', 10);
     const loader = vi.fn(() => Promise.resolve(oc));
     const missing = await compareCachedMaterials({ beforeKeys: ['available'], afterKeys: ['missing'] }, shapes, loader);
-    expect(missing.kind).toBe('failed'); expect(loader).not.toHaveBeenCalled();
+    expect(missing).toMatchObject({ kind: 'failed', diagnostic: 'expired' }); expect(loader).not.toHaveBeenCalled();
     const request = { beforeKeys: ['available'], afterKeys: ['available'] };
-    expect(await compareCachedMaterials(request, shapes, () => Promise.reject(new Error('読込み不能')))).toEqual({ kind: 'failed', message: '読込み不能' });
-    expect(await compareCachedMaterials(request, shapes, loader, () => { throw new Error('中止確認不能'); })).toEqual({ kind: 'failed', message: '中止確認不能' });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const loadError = new Error('読込み不能'), cancelError = new Error('中止確認不能');
+    const internal = { kind: 'failed', diagnostic: 'internal', message: '形の比較結果を確認できませんでした。再度お試しください。' };
+    expect(await compareCachedMaterials(request, shapes, () => Promise.reject(loadError))).toEqual(internal);
+    expect(await compareCachedMaterials(request, shapes, loader, () => { throw cancelError; })).toEqual(internal);
+    expect(log.mock.calls).toEqual([
+      ['PointerCAD material comparison', 'internal', [{ stage: 'load OCCT', cause: loadError }]],
+      ['PointerCAD material comparison', 'internal', [{ stage: 'check cancellation', cause: cancelError }]],
+    ]);
+    expect(shapes.delete('available')).toBe(true);
+  });
+
+  it('比較と貸出の返却が両方失敗しても、元の理由を一つの開発者記録に残す', async () => {
+    const shapes = cache(); box(shapes, 'available', 10);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const computation = new Error('比較不能'), release = new Error('返却不能');
+    const broken = { ...shapes, release(token: Parameters<typeof shapes.release>[0]) {
+      shapes.release(token);
+      throw release;
+    } };
+    expect(await compareCachedMaterials({ beforeKeys: ['available'], afterKeys: ['available'] }, broken,
+      () => Promise.reject(computation))).toEqual({
+      kind: 'failed', diagnostic: 'internal', message: '形の比較結果を確認できませんでした。再度お試しください。',
+    });
+    expect(log.mock.calls).toEqual([['PointerCAD material comparison', 'internal',
+      [{ stage: 'load OCCT', cause: computation }, { stage: 'release cache', cause: release }]]]);
     expect(shapes.delete('available')).toBe(true);
   });
 
@@ -85,9 +112,12 @@ describe('形の比較は計算中の両入力を借用し、全成分か明確�
 
   it('異常な入力を計算前に断り、明示的な両空集合は体積0として比較する', async () => {
     const shapes = cache(), loader = vi.fn(() => Promise.resolve(oc));
-    for (const request of [null, {}, { beforeKeys: [null], afterKeys: [] }, { beforeKeys: [''], afterKeys: [] },
-      { beforeKeys: Array.from({ length: 1025 }, () => 'same'), afterKeys: [] }]) {
-      expect((await compareCachedMaterials(request, shapes, loader)).kind).toBe('failed');
+    for (const request of [null, {}, { beforeKeys: [null], afterKeys: [] }, { beforeKeys: [''], afterKeys: [] }]) {
+      expect(await compareCachedMaterials(request, shapes, loader)).toMatchObject({ kind: 'failed', diagnostic: 'invalidRequest' });
+    }
+    const overLimit = Array.from({ length: 1025 }, () => 'same');
+    for (const request of [{ beforeKeys: overLimit, afterKeys: [] }, { beforeKeys: [], afterKeys: overLimit }]) {
+      expect(await compareCachedMaterials(request, shapes, loader)).toMatchObject({ kind: 'failed', diagnostic: 'solidLimit' });
     }
     expect(loader).not.toHaveBeenCalled();
     const result = await compareCachedMaterials({ beforeKeys: [], afterKeys: [] }, shapes, loader);

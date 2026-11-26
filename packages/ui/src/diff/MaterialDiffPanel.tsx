@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MaterialComparisonGeometry } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
+import { materialDiffResultMessage, runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
 import { MATERIAL_REGION_COLORS, MATERIAL_REGIONS, type MaterialRegionSelection } from './materialDiffView.js';
 import { MaterialDiffPreview } from './MaterialDiffPreview.js';
 import { cssColor } from '../viewport/themeColors.js';
@@ -17,12 +17,13 @@ export function MaterialDiffPanel({ beforeBytes, afterBytes }: { readonly before
     setPhase('before'); setMessage(null); setResult(null); setSelection('all'); setDisplayReady(false);
     const outcome = await runMaterialDiff(beforeBytes, afterBytes, controller.signal,
       value => { if (operation.current === controller && !controller.signal.aborted) setPhase(value); });
-    if (operation.current !== controller || controller.signal.aborted) return;
+    if (operation.current !== controller) return;
     operation.current = null; setPhase(null);
-    if (outcome.kind === 'compared') setResult(outcome.result);
-    else setMessage({ text: outcome.kind === 'cancelled' ? t('materialDiff.cancelled') : outcome.message, error: outcome.kind === 'failed' });
+    if (outcome.kind === 'compared') {
+      if (!controller.signal.aborted) setResult(outcome.result);
+    } else setMessage(materialDiffResultMessage(outcome));
   };
-  const cancel = (): void => { operation.current?.abort(); operation.current = null; setPhase(null); setMessage({ text: t('materialDiff.cancelled'), error: false }); };
+  const cancel = (): void => { operation.current?.abort(); setPhase(null); setMessage(materialDiffResultMessage({ kind: 'cancelled' })); };
   const format = (value: number) => value.toLocaleString('ja-JP', { maximumSignificantDigits: 10 });
   const empty = result !== null && MATERIAL_REGIONS.every(name => result[name].kind === 'empty');
   return <section className="pcad-material-diff" aria-label={t('materialDiff.title')}>

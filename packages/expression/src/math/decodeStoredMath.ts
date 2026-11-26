@@ -42,7 +42,7 @@ function constant(value: unknown): Extract<MathNode, { kind: 'constant' }>['name
 export function decodeStoredMath(value: unknown, context: StoredMathContext): StoredMathExpression {
   const stored = decodeStoredMathStructure(value, context);
   const parsed = context.parseSource(stored.source, stored.inputNotation);
-  if (JSON.stringify(parsed) !== JSON.stringify(stored.expression)) throw new MathInputProblem('syntax', '表示される数式と保存された定義が一致しません。');
+  if (JSON.stringify(parsed) !== JSON.stringify(stored.expression)) throw new MathInputProblem('syntax', '表示される数式と保存された定義が一致しません。', { key: 'math.input.savedMeaning', parameters: {} });
   return stored;
 }
 

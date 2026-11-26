@@ -3,7 +3,7 @@ import { matchEdge, matchFace, matchVertex } from '@pointercad/kernel';
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolveCurrentOrigin } from './createSubShapeReference.js';
-import type { SolidBody, MateSubShapeGeometry } from './solidContracts.js';
+import type { SolidBody, MateSubShapeGeometry, SolidFaceEntry, SolidEdgeEntry, SolidVertexEntry } from './solidContracts.js';
 import { faceGeometry, matchScaleOf, subShapeMatchCandidates, type SubShapeMatchCandidate } from './subShapeMatchCandidates.js';
 import { toSubShapeQuery } from './subShapeQuery.js';
 
@@ -13,6 +13,33 @@ function uniqueSemanticCandidate(body: SolidBody, reference: SubShapeRef): SubSh
   if (resolveCurrentOrigin(body, reference).status !== 'matched') return null;
   const candidates = subShapeMatchCandidates(body, reference);
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+type LegacyShapeMatch =
+  | { readonly kind: 'face'; readonly shape: SolidFaceEntry }
+  | { readonly kind: 'edge'; readonly shape: SolidEdgeEntry }
+  | { readonly kind: 'vertex'; readonly shape: SolidVertexEntry };
+
+/** The compatibility path takes the first table entry for the winning index. */
+function findLegacyShape(body: SolidBody, query: ReturnType<typeof toSubShapeQuery>): LegacyShapeMatch | null {
+  const scale = matchScaleOf(body);
+  switch (query.kind) {
+    case 'face': {
+      const match = matchFace(body.faces, query, scale);
+      const shape = match === null ? undefined : body.faces.find(face => face.index === match.index);
+      return shape === undefined ? null : { kind: 'face', shape };
+    }
+    case 'edge': {
+      const match = matchEdge(body.edges, query, scale);
+      const shape = match === null ? undefined : body.edges.find(edge => edge.index === match.index);
+      return shape === undefined ? null : { kind: 'edge', shape };
+    }
+    case 'vertex': {
+      const match = matchVertex(body.vertices, query, scale);
+      const shape = match === null ? undefined : body.vertices.find(vertex => vertex.index === match.index);
+      return shape === undefined ? null : { kind: 'vertex', shape };
+    }
+  }
 }
 
 /**
@@ -38,52 +65,17 @@ export function selectSubShape(body: SolidBody, reference: SubShapeRef): Resolve
       curveKind: geometry.kind === 'edge' ? geometry.curveKind : null,
     };
   }
-  const query = toSubShapeQuery(reference);
-  const scale = matchScaleOf(body);
-  switch (query.kind) {
-    case 'face': {
-      const match = matchFace(body.faces, query, scale);
-      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'face',
-        position: found.centroid,
-        axis: found.axis,
-        surfaceKind: found.surfaceKind,
-        curveKind: null,
-      };
-    }
-    case 'edge': {
-      const match = matchEdge(body.edges, query, scale);
-      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'edge',
-        position: found.midpoint,
-        axis: found.axis,
-        surfaceKind: null,
-        curveKind: found.curveKind,
-      };
-    }
-    case 'vertex': {
-      const match = matchVertex(body.vertices, query, scale);
-      const found =
-        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'vertex',
-        position: found.position,
-        axis: null,
-        surfaceKind: null,
-        curveKind: null,
-      };
-    }
+  const match = findLegacyShape(body, toSubShapeQuery(reference));
+  if (match === null) return null;
+  switch (match.kind) {
+    case 'face':
+      return { kind: 'face', position: match.shape.centroid, axis: match.shape.axis,
+        surfaceKind: match.shape.surfaceKind, curveKind: null };
+    case 'edge':
+      return { kind: 'edge', position: match.shape.midpoint, axis: match.shape.axis,
+        surfaceKind: null, curveKind: match.shape.curveKind };
+    case 'vertex':
+      return { kind: 'vertex', position: match.shape.position, axis: null, surfaceKind: null, curveKind: null };
   }
 }
 
@@ -99,34 +91,20 @@ export function selectMateTargetGeometry(
 ): MateSubShapeGeometry | null {
   if (body.featureId !== reference.bodyFeatureId) return null;
   if (reference.origin !== undefined) return uniqueSemanticCandidate(body, reference)?.geometry ?? null;
-  const query = toSubShapeQuery(reference);
-  const scale = matchScaleOf(body);
-  switch (query.kind) {
-    case 'face': {
-      const match = matchFace(body.faces, query, scale);
-      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-      return found === undefined ? null : faceGeometry(body, found);
-    }
+  const match = findLegacyShape(body, toSubShapeQuery(reference));
+  if (match === null) return null;
+  switch (match.kind) {
+    case 'face':
+      return faceGeometry(body, match.shape);
     case 'edge': {
-      const match = matchEdge(body.edges, query, scale);
-      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-      if (found === undefined) return null;
-      return {
-        kind: 'edge',
-        curveKind: found.curveKind,
-        length: found.length,
-        position: found.midpoint,
-        axis: found.axis,
-        radius: found.radius,
-        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }), ...(found.curveKind !== 'circle' || found.circleBasis === undefined ? {} : { circleBasis: found.circleBasis }),
-      };
+      const edge = match.shape;
+      return { kind: 'edge', curveKind: edge.curveKind, length: edge.length, position: edge.midpoint,
+        axis: edge.axis, radius: edge.radius,
+        ...(edge.axisOrigin == null ? {} : { axisOrigin: edge.axisOrigin }),
+        ...(edge.curveKind !== 'circle' || edge.circleBasis === undefined ? {} : { circleBasis: edge.circleBasis }) };
     }
-    case 'vertex': {
-      const match = matchVertex(body.vertices, query, scale);
-      const found =
-        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-      return found === undefined ? null : { kind: 'vertex', position: found.position };
-    }
+    case 'vertex':
+      return { kind: 'vertex', position: match.shape.position };
   }
 }
 
@@ -164,51 +142,28 @@ export function rematchSubShapeRef(bodies: readonly SolidBody[], reference: SubS
   const candidates = preferred.length > 0 ? preferred : bodies;
   const query = toSubShapeQuery(reference);
   for (const body of candidates) {
-    const scale = matchScaleOf(body);
-    switch (query.kind) {
-      case 'face': {
-        const match = matchFace(body.faces, query, scale);
-        const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: {
-              kind: 'face', surfaceKind: found.surfaceKind, area: found.area,
-              position: found.centroid, axis: found.axis, radius: found.radius,
-            },
-          };
-        }
-        break;
-      }
-      case 'edge': {
-        const match = matchEdge(body.edges, query, scale);
-        const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: {
-              kind: 'edge', curveKind: found.curveKind, length: found.length,
-              position: found.midpoint, axis: found.axis, radius: found.radius,
-            },
-          };
-        }
-        break;
-      }
-      case 'vertex': {
-        const match = matchVertex(body.vertices, query, scale);
-        const found = match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: { kind: 'vertex', position: found.position },
-          };
-        }
-        break;
-      }
+    const match = findLegacyShape(body, query);
+    if (match !== null) {
+      return { bodyFeatureId: body.featureId, index: match.shape.index, fingerprint: legacyFingerprint(match) };
     }
   }
   return null;
+}
+
+/** 保存する指紋は識別に使う測定値だけを持つ。 */
+function legacyFingerprint(match: LegacyShapeMatch): SubShapeRef['fingerprint'] {
+  switch (match.kind) {
+    case 'face': {
+      const face = match.shape;
+      return { kind: 'face', surfaceKind: face.surfaceKind, area: face.area,
+        position: face.centroid, axis: face.axis, radius: face.radius };
+    }
+    case 'edge': {
+      const edge = match.shape;
+      return { kind: 'edge', curveKind: edge.curveKind, length: edge.length,
+        position: edge.midpoint, axis: edge.axis, radius: edge.radius };
+    }
+    case 'vertex':
+      return { kind: 'vertex', position: match.shape.position };
+  }
 }

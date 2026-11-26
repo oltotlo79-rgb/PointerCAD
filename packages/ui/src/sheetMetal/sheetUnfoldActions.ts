@@ -1,3 +1,4 @@
+import { failureMessage } from '../i18n/failureMessage.js';
 /** 展開に成功してから固定面を保存する。表示切替だけならUndoへ追加しない。 */
 import { setSheetUnfoldDefinition, type SheetUnfoldDefinition } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -25,7 +26,7 @@ export async function showSheetUnfold(session: SheetMetalToolSession, definition
     const result = await computer(sheet, definition, requestId, () => !current());
     if (!current()) return;
     if (!result.ok) {
-      if (!result.cancelled) useAppStore.setState({ sheetMetalError: result.message });
+      if (!result.cancelled) useAppStore.setState({ sheetMetalError: result.text === undefined ? result.message : failureMessage(result.text) });
       return;
     }
     if (next.value !== state.document) useAppStore.getState().applyDocument(next.value);

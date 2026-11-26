@@ -13,8 +13,9 @@ function error(reason: ConstructorParameters<typeof SavePointError>[0], message:
   return new SavePointError(reason, message, detail);
 }
 /** 取引の中断の細目(A-25): どの取引か + IndexedDB の誤りの名前(DOMException の name だけ。無ければ付けない)。 */
-function abortDetail(site: 'storage-read-abort' | 'storage-chunk-abort' | 'storage-write-abort', tx: IDBTransaction): string {
-  const name: unknown = tx.error?.name;
+type StorageAbortSite = 'storage-read-abort' | 'storage-chunk-abort' | 'storage-write-abort';
+function abortDetail(site: StorageAbortSite, cause: unknown): string {
+  const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : undefined;
   return typeof name === 'string' && /^[A-Za-z0-9_-]{1,64}$/u.test(name) ? `${site}:${name}` : site;
 }
 function isRevision(value: unknown): value is RevisionRecord {
@@ -25,10 +26,11 @@ function isRevision(value: unknown): value is RevisionRecord {
   return record.id === META_ID && record.version === 1 && Number.isSafeInteger(record.revision) &&
     typeof record.revision === 'number' && record.revision >= 0;
 }
-function failureFrom(value: unknown): SavePointError {
+function failureFrom(value: unknown, site?: StorageAbortSite, detailSource = value): SavePointError {
+  const detail = site === undefined ? undefined : abortDetail(site, detailSource);
   if (typeof value === 'object' && value !== null && 'name' in value && value.name === 'QuotaExceededError')
-    return error('quota', '端末の保存容量が不足しています。');
-  return error('unavailable', '端末の保存先を利用できません。');
+    return error('quota', '端末の保存容量が不足しています。', detail);
+  return error('unavailable', '端末の保存先を利用できません。', detail);
 }
 
 /** 既存自動保存DBとは別所有。未知versionや欠けたstoreを自動修復せず拒否する。 */
@@ -66,8 +68,13 @@ async function load(db: IDBDatabase): Promise<SavePointState> {
     const pointRequest = tx.objectStore(POINTS).getAll();
     const blobRequest = tx.objectStore(BLOBS).getAll();
     const chunkRequest = tx.objectStore(CHUNKS).getAllKeys();
-    tx.onerror = () => reject(failureFrom(tx.error));
-    tx.onabort = () => reject(error('aborted', '保存点DBの読取りが中断されました。', abortDetail('storage-read-abort', tx)));
+    tx.onerror = event => {
+      const cause = tx.error;
+      const target = event?.target;
+      const requestError = target !== null && target !== undefined && 'error' in target ? target.error : undefined;
+      reject(failureFrom(cause, 'storage-read-abort', cause ?? requestError));
+    };
+    tx.onabort = () => reject(error('aborted', '保存点DBの読取りが中断されました。', abortDetail('storage-read-abort', tx.error)));
     tx.oncomplete = () => {
       const points: unknown = pointRequest.result, blobs: unknown = blobRequest.result, chunkKeys: unknown = chunkRequest.result;
       if (!Array.isArray(points) || !Array.isArray(blobs) || !Array.isArray(chunkKeys)) {
@@ -101,7 +108,11 @@ async function readBlob(db: IDBDatabase, blob: SavePointBlob, signal?: AbortSign
     try { tx = db.transaction(CHUNKS, 'readonly'); } catch (cause) { reject(failureFrom(cause)); return; }
     const store = tx.objectStore(CHUNKS), bytes = new Uint8Array(blob.byteLength);
     let index = 0, finished = 0, rejected: SavePointError | null = null;
-    const fail = (cause: SavePointError): void => { rejected = cause; try { tx.abort(); } catch { reject(cause); } };
+    const fail = (cause: SavePointError): void => {
+      if (rejected !== null) return;
+      rejected = cause;
+      try { tx.abort(); } catch { reject(cause); }
+    };
     const onCancel = (): void => fail(error('cancelled', '保存点の操作を取り消しました。'));
     signal?.addEventListener('abort', onCancel, { once: true });
     const next = (): void => {
@@ -112,15 +123,15 @@ async function readBlob(db: IDBDatabase, blob: SavePointBlob, signal?: AbortSign
       const key = `${blob.sha256}:${chunkIndex}`;
       let request: IDBRequest<unknown>;
       try { request = store.get(key); } catch (cause) { fail(failureFrom(cause)); return; }
-      request.onerror = () => fail(failureFrom(request.error));
+      request.onerror = () => fail(failureFrom(request.error, 'storage-chunk-abort'));
       request.onsuccess = () => {
         if (!isChunk(request.result, key, expected)) { fail(error('corrupt', '保存点のbyte片が壊れています。')); return; }
         bytes.set(request.result.bytes, offset); finished += 1; next();
       };
     };
-    tx.onerror = () => { if (!rejected) rejected = failureFrom(tx.error); };
+    tx.onerror = () => { if (!rejected) rejected = failureFrom(tx.error, 'storage-chunk-abort'); };
     tx.onabort = () => { signal?.removeEventListener('abort', onCancel);
-      reject(rejected ?? error('aborted', '保存点blobの読取りが中断されました。', abortDetail('storage-chunk-abort', tx))); };
+      reject(rejected ?? error('aborted', '保存点blobの読取りが中断されました。', abortDetail('storage-chunk-abort', tx.error))); };
     tx.oncomplete = () => { signal?.removeEventListener('abort', onCancel);
       if (rejected) reject(rejected);
       else if (finished === blob.chunkCount) resolve(bytes);
@@ -167,7 +178,11 @@ async function commit(db: IDBDatabase, revision: number, change: SavePointChange
     let failure: SavePointError | null = null, completed = false;
     const onCancel = (): void => { failure = error('cancelled', '保存点の操作を取り消しました。'); try { tx.abort(); } catch { reject(failure); } };
     signal?.addEventListener('abort', onCancel, { once: true });
-    const fail = (cause: SavePointError): void => { failure = cause; try { tx.abort(); } catch { reject(cause); } };
+    const fail = (cause: SavePointError): void => {
+      if (failure !== null) return;
+      failure = cause;
+      try { tx.abort(); } catch { reject(cause); }
+    };
     let nextIndex = 0, finished = 0;
     const execute = (): void => {
       if (failure || completed) return;
@@ -179,16 +194,16 @@ async function commit(db: IDBDatabase, revision: number, change: SavePointChange
         (store: IDBObjectStore) => store.put({ id: META_ID, version: 1, revision: revision + 1 });
       let request: WriteRequest;
       try { request = step(points, blobs, chunks); } catch (cause) { fail(failureFrom(cause)); return; }
-      request.onerror = () => fail(failureFrom(request.error));
+      request.onerror = () => fail(failureFrom(request.error, 'storage-write-abort'));
       request.onsuccess = () => { if (index < steps.length) { finished += 1; execute(); } };
     };
-    tx.onerror = () => { if (!failure) failure = failureFrom(tx.error); };
-    tx.onabort = () => { signal?.removeEventListener('abort', onCancel); reject(failure ?? error('aborted', '保存点の書込みが中断されました。', abortDetail('storage-write-abort', tx))); };
+    tx.onerror = () => { if (!failure) failure = failureFrom(tx.error, 'storage-write-abort'); };
+    tx.onabort = () => { signal?.removeEventListener('abort', onCancel); reject(failure ?? error('aborted', '保存点の書込みが中断されました。', abortDetail('storage-write-abort', tx.error))); };
     tx.oncomplete = () => { completed = true; signal?.removeEventListener('abort', onCancel);
       if (failure) reject(failure); else resolve(); };
     let request: IDBRequest<unknown>;
     try { request = points.get(META_ID); } catch (cause) { fail(failureFrom(cause)); return; }
-    request.onerror = () => fail(failureFrom(request.error));
+    request.onerror = () => fail(failureFrom(request.error, 'storage-write-abort'));
     request.onsuccess = () => {
       const current = request.result;
       if ((current === undefined && revision !== 0) || (current !== undefined && (!isRevision(current) || current.revision !== revision))) {

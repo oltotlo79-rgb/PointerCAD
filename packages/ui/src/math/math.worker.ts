@@ -65,7 +65,9 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     if (kind === 'evaluate-math') {
       const envelope = decodeMathWorkEnvelope(value);
       activeRequest = { serial: envelope.serial, identity: envelope.request.identity };
-      result = await executeExactMathWorkRequest(envelope, options);
+      result = await executeExactMathWorkRequest(envelope, { ...options,
+        reportInternalError: (stage, cause) => { console.error('PointerCAD math evaluation', stage, cause); },
+      });
     } else {
       result = await executePreparedFunctionWork(value, { ...options,
         onIdentity: (serial, identity) => { activeRequest = { serial, identity }; },
@@ -76,6 +78,7 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     const packed = packFunctionSurfaceWorkReply(result);
     self.postMessage(packed.message, { transfer: packed.transfer });
   } catch (error) {
+    if (kind === 'evaluate-math') console.error('PointerCAD math Worker', error);
     if (import.meta.env.DEV && (kind === 'sample-function-curve' || kind === 'sample-function-surface'
       || kind === 'sample-function-implicit-curve' || kind === 'sample-function-implicit-surface')) {
       console.error('PointerCAD function plot Worker', kind, error);

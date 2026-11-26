@@ -9,11 +9,11 @@ import { parseFramePoints, type FrameLayoutState, type FrameUp } from './frameLa
 
 /**
  * 押した所: 部品の頂点に当たった時はその点('vertex')、当たらない時は `frameStrokeLevelPlane` の面と視線の交点('level'。
- * 3D の画面の `screenToPlanePoint` で求める)。
+ * 3D の画面の `screenToPlanePoint` で求める。方眼に吸い付いた点は 'grid')。
  */
 export type FrameStrokeHit =
   | { readonly kind: 'vertex'; readonly point: Vec3 }
-  | { readonly kind: 'level'; readonly point: Vec3 };
+  | { readonly kind: 'level' | 'grid'; readonly point: Vec3 };
 
 /** 打った点の列と、最初の点へ戻って閉じたか。 */
 export interface FrameStroke {

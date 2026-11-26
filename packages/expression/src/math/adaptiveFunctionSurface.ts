@@ -74,13 +74,14 @@ function corners(cell: SurfaceCell): readonly SurfaceParameter[] {
 }
 function centre(cell: SurfaceCell): SurfaceParameter { return [cell.u+cell.span/2,cell.v+cell.span/2]; }
 function triangleKind(a: FunctionPoint, b: FunctionPoint, c: FunctionPoint): 'face' | 'degenerate' | 'roundoff' {
-  const ab = b.map((value, axis) => value-a[axis]), ac = c.map((value, axis) => value-a[axis]);
-  if (!ab.every(Number.isFinite) || !ac.every(Number.isFinite)) return 'roundoff';
-  const sb = Math.max(...ab.map(Math.abs)), sc = Math.max(...ac.map(Math.abs));
+  const bx = b[0]-a[0], by = b[1]-a[1], bz = b[2]-a[2];
+  const cx = c[0]-a[0], cy = c[1]-a[1], cz = c[2]-a[2];
+  const sb = Math.max(Math.abs(bx), Math.abs(by), Math.abs(bz));
+  const sc = Math.max(Math.abs(cx), Math.abs(cy), Math.abs(cz));
+  if (!Number.isFinite(sb) || !Number.isFinite(sc)) return 'roundoff';
   if (sb === 0 || sc === 0) return 'degenerate';
-  const bUnit = ab.map(value => value/sb), cUnit = ac.map(value => value/sc);
-  const normal = [bUnit[1]*cUnit[2]-bUnit[2]*cUnit[1], bUnit[2]*cUnit[0]-bUnit[0]*cUnit[2], bUnit[0]*cUnit[1]-bUnit[1]*cUnit[0]];
-  return normal.some(value => value !== 0) ? 'face' : 'degenerate';
+  const ubx = bx/sb, uby = by/sb, ubz = bz/sb, ucx = cx/sc, ucy = cy/sc, ucz = cz/sc;
+  return uby*ucz-ubz*ucy !== 0 || ubz*ucx-ubx*ucz !== 0 || ubx*ucy-uby*ucx !== 0 ? 'face' : 'degenerate';
 }
 
 function surfaceConditions(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
@@ -457,7 +458,8 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
     const canonical = canonicalGrid(grid), id = key(canonical), existing = vertexIndexes.get(id);
     const point = sample(grid); if (point === null) { failure ??= 'roundoff'; return null; }
     const gridKey = key(grid);
-    const representative = existing === undefined ? sample(canonical)?.vertex : vertices[existing];
+    const representative = existing === undefined
+      ? (id === gridKey ? point.vertex : sample(canonical)?.vertex) : vertices[existing];
     if (representative === undefined) { failure ??= 'roundoff'; return null; }
     // Shared topology may change a floating approximation by a few ulps. Recheck the full point enclosure.
     const error = id === gridKey ? point.error : functionPointError(evaluator.enclosure(point.vertex.parameters,point.vertex.parameters),representative.point);

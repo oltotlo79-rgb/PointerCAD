@@ -2,7 +2,7 @@ import { plainText } from '@pointercad/model';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writePcadFile } from '@pointercad/io';
 import { createEmptyPartDocument, type PartRecomputeResult, type MaterialComparisonResult } from '@pointercad/model';
-import { runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
+import { materialDiffResultMessage, runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
 import type { MaterialDiffSession } from './materialDiffSession.js';
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
@@ -19,7 +19,7 @@ function fixture() {
   const create = vi.fn((): MaterialDiffSession => ({ compute, compare, dispose }));
   return { compute, compare, dispose, create };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 describe('比較用の実ファイルを独立して再計算し、最後に一度だけ終了する', () => {
   it('同じ文書IDでも前後の所有者を分け、元のバイト列を保持する', async () => {
     const f = fixture(), phase = vi.fn<(value: MaterialDiffPhase) => void>(), original = [...bytes];
@@ -58,8 +58,15 @@ describe('比較用の実ファイルを独立して再計算し、最後に一�
     const broken = fixture();
     expect((await runMaterialDiff(bytes, new Uint8Array([1, 2]), new AbortController().signal, () => undefined, broken.create)).kind).toBe('failed');
     expect(broken.compute).toHaveBeenCalledTimes(1); expect(broken.compare).not.toHaveBeenCalled(); expect(broken.dispose).toHaveBeenCalledTimes(1);
-    const failed = fixture(); failed.compute.mockRejectedValue(new Error('この式を計算できません'));
-    expect(await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, failed.create)).toEqual({ kind: 'failed', message: 'この式を計算できません' });
+    const failed = fixture(), computeError = new Error('この式を計算できません'), disposeError = new Error('終了失敗');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    failed.compute.mockRejectedValue(computeError);
+    failed.dispose.mockImplementation(() => { throw disposeError; });
+    const result = await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, failed.create);
+    expect(result).toEqual({ kind: 'failed', message: '内部の誤りが起きました。',
+      text: { key: 'assembly.error.internal', parameters: {} } });
+    expect(log.mock.calls).toEqual([['PointerCAD material comparison session', '内部の誤りが起きました。',
+      [{ stage: 'recompute before', cause: computeError }, { stage: 'dispose session', cause: disposeError }]]]);
     expect(failed.dispose).toHaveBeenCalledTimes(1); expect(failed.compare).not.toHaveBeenCalled();
   });
   it('再計算の取消、演算の失敗、終了失敗を同じ形だという表示へ変換しない', async () => {
@@ -68,10 +75,13 @@ describe('比較用の実ファイルを独立して再計算し、最後に一�
     expect(cancelled.compare).not.toHaveBeenCalled(); expect(cancelled.dispose).toHaveBeenCalledTimes(1);
     const failed = fixture(); failed.compare.mockResolvedValue({ kind: 'failed', message: 'Boolean失敗' });
     expect(await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, failed.create)).toEqual({ kind: 'failed', message: 'Boolean失敗' });
-    const dirty = fixture(); dirty.dispose.mockImplementation(() => { throw new Error('終了失敗'); });
+    const dirty = fixture(), cause = new Error('終了失敗');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    dirty.dispose.mockImplementation(() => { throw cause; });
     const result = await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, dirty.create);
     if (result.kind !== 'failed') throw new Error('終了の失敗を通知していません');
-    expect(result.message).toContain('終了失敗');
+    expect(materialDiffResultMessage(result)).toEqual({ text: '内部の誤りが起きました。', error: true });
+    expect(log.mock.calls).toEqual([['PointerCAD material comparison session', 'compared', [{ stage: 'dispose session', cause }]]]);
     expect(dirty.dispose).toHaveBeenCalledTimes(1);
   });
   it('再計算が一部失敗した文書を、空の部品として比較へ渡さない', async () => {
@@ -88,5 +98,20 @@ describe('比較用の実ファイルを独立して再計算し、最後に一�
     expect(await runMaterialDiff(bytes, bytes, interrupted.signal, () => undefined,
       () => { interrupted.abort(); return during.create(); })).toEqual({ kind: 'cancelled' });
     expect(during.dispose).toHaveBeenCalledTimes(1); expect(during.compute).not.toHaveBeenCalled();
+  });
+  it('古い再計算世代と解放に失敗した取消を「比較済み」にしない', async () => {
+    const stale = fixture();
+    stale.compute.mockResolvedValue({ ...computed(), generation: 0 });
+    const expired = await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, stale.create);
+    expect(materialDiffResultMessage(expired)).toEqual({ text: '比較するソリッドが見つかりません。形を再計算してください。', error: true });
+    expect(stale.compare).not.toHaveBeenCalled(); expect(stale.dispose).toHaveBeenCalledTimes(1);
+    const dirty = fixture(), controller = new AbortController(), cause = new Error('終了失敗');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    dirty.dispose.mockImplementation(() => { throw cause; });
+    const outcome = await runMaterialDiff(bytes, bytes, controller.signal, () => undefined,
+      () => { controller.abort(); return dirty.create(); });
+    expect(materialDiffResultMessage(outcome)).toEqual({ text: '内部の誤りが起きました。', error: true });
+    expect(log.mock.calls).toEqual([['PointerCAD material comparison session', 'cancelled', [{ stage: 'dispose session', cause }]]]);
+    expect(dirty.compare).not.toHaveBeenCalled(); expect(dirty.dispose).toHaveBeenCalledTimes(1);
   });
 });

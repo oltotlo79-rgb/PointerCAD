@@ -4,6 +4,7 @@ import { INTEGRAL_TRANSFORM_DEFINITIONS } from './integralTransforms.js';
 import { TAYLOR_DEFINITIONS } from './taylorExpansion.js';
 import { SEQUENCE_DEFINITIONS } from './sequenceCalculations.js';
 import {MathInputProblem,MATH_INPUT_LIMITS,validateMathSource,validateMathDecimal,type MathNode,type MathOperationDefinition} from './mathInputContract.js';
+import type { MathInputDiagnosticKey } from './mathInputDiagnostics.js';
 import {decodeMathJson,type DecodeMathOptions} from './decodeMathJson.js';
 import {VECTOR_CALCULUS_AT_DEFINITIONS} from './vectorCalculusAt.js';
 import {CLOSED_INTEGRAL_UNAVAILABLE,LINE_INTEGRAL_DEFINITIONS,closedIntegralHead} from './lineIntegrals.js';
@@ -37,10 +38,10 @@ const RATIO_BINDING=40;
 export function repeatingDecimalFraction(decimal:string,repetend:string):{readonly numerator:string;readonly denominator:string} {
   const [integer='',fraction='',...extra]=decimal.split('.');
   if(extra.length>0||!/^[0-9]*$/u.test(integer)||!/^[0-9]*$/u.test(fraction)||!/^[0-9]+$/u.test(repetend)) {
-    throw new MathInputProblem('syntax',`${REPEATING_DECIMAL_FORM}。`);
+    throw new MathInputProblem('syntax', `${REPEATING_DECIMAL_FORM}。`, { key: 'math.input.repeatingDecimal', parameters: {} });
   }
   if(integer.length+fraction.length+repetend.length>MATH_INPUT_LIMITS.literalDigits) {
-    throw new MathInputProblem('budget',`${REPEATING_DECIMAL_DIGITS}。`);
+    throw new MathInputProblem('budget', `${REPEATING_DECIMAL_DIGITS}。`, { key: 'math.input.repeatingDecimalDigits', parameters: { count: String(integer.length+fraction.length+repetend.length), limit: String(MATH_INPUT_LIMITS.literalDigits) } });
   }
   const numerator=BigInt(integer+fraction+repetend)-BigInt(integer+fraction||'0');
   const denominator=10n**BigInt(fraction.length)*(10n**BigInt(repetend.length)-1n);
@@ -51,7 +52,11 @@ export function repeatingDecimalFraction(decimal:string,repetend:string):{readon
 /** An integer literal written with a leading zero, such as 05 in 12:05, reads as clock time next to a colon. */
 function clockDigits(text:string):boolean {return /^0[0-9]/u.test(text);}
 function own<T>(values:Readonly<Record<string,T>>,key:string):T|undefined {return Object.hasOwn(values,key)?values[key]:undefined;}
-function fail(message:string,position:number):never {throw new MathInputProblem('syntax',`${message}（${position+1}文字目）`);}
+// The Error message remains available to the LaTeX bridge and older direct callers.
+function fail(key:MathInputDiagnosticKey,message:string,position:number,parameters:Readonly<Record<string,string>>={}):never {
+  throw new MathInputProblem('syntax',`${message}（${position+1}文字目）`,
+    {key,parameters:{...parameters,position:String(position+1)}});
+}
 function normalizeNumericWidth(source:string):string {
   let quoted=false,escaped=false,result='';
   for(const character of source) {
@@ -68,7 +73,7 @@ function normalizeNumericWidth(source:string):string {
 function tokenize(source:string):readonly Token[] {
   validateMathSource(source);source=normalizeNumericWidth(source);const tokens:Token[]=[];let at=0;
   while(at<source.length) {
-    if(tokens.length>=MATH_INPUT_LIMITS.nodes)throw new MathInputProblem('budget','数式の項目が多すぎます。');
+    if(tokens.length>=MATH_INPUT_LIMITS.nodes)throw new MathInputProblem('budget', '数式の項目が多すぎます。', { key: 'math.input.tokenLimit', parameters: { limit: String(MATH_INPUT_LIMITS.nodes) } });
     const char=source[at];if(/\s/u.test(char)){at+=1;continue;}
     const start=at;
     if(char==='"') {
@@ -77,9 +82,9 @@ function tokenize(source:string):readonly Token[] {
         const next=source[at++];if(escaped){escaped=false;continue;}
         if(next==='\\'){escaped=true;continue;}if(next==='"'){closed=true;break;}
       }
-      if(!closed)fail('係数名の引用符を閉じてください',start);
-      let value:unknown;try{value=JSON.parse(source.slice(start,at));}catch{fail('係数名の引用符とエスケープを確認してください',start);}
-      if(typeof value!=='string')fail('係数名を文字列で指定してください',start);
+      if(!closed)fail('math.input.unclosedCoefficientQuote','係数名の引用符を閉じてください',start);
+      let value:unknown;try{value=JSON.parse(source.slice(start,at));}catch{fail('math.input.invalidCoefficientQuote','係数名の引用符とエスケープを確認してください',start);}
+      if(typeof value!=='string')fail('math.input.coefficientString','係数名を文字列で指定してください',start);
       tokens.push({kind:'string',text:value,start});continue;
     }
     const tail=source.slice(at),number=/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/u.exec(tail)?.[0];
@@ -88,7 +93,7 @@ function tokenize(source:string):readonly Token[] {
       // Nothing may follow a number with "(" today, so 0.1(6) and 0.(3) take no existing meaning.
       if(source[at]==='('&&number.includes('.')&&!/[eE]/u.test(number)) {
         const repetend=/^\(([0-9]+)\)/u.exec(source.slice(at))?.[1];
-        if(repetend===undefined)fail(REPEATING_DECIMAL_FORM,at);
+        if(repetend===undefined)fail('math.input.repeatingDecimalAt',REPEATING_DECIMAL_FORM,at);
         repeatingDecimalFraction(number,repetend);
         tokens.push({kind:'number',text:number,start,repetend});at+=repetend.length+2;continue;
       }
@@ -102,7 +107,7 @@ function tokenize(source:string):readonly Token[] {
     if(SINGLE.has(char)){tokens.push({kind:'operator',text:char,start});at+=1;continue;}
     // ∮(…) and ∯(…) name the closed integrals (MC-19d); prefix() rejects a symbol without its arguments.
     if(char==='∮'||char==='∯'){tokens.push({kind:'name',text:char,start});at+=1;continue;}
-    fail('この記号は数式パレットまたはLaTeX入力で指定してください',at);
+    fail('math.input.unsupportedSymbol','この記号は数式パレットまたはLaTeX入力で指定してください',at,{value:String.fromCodePoint(source.codePointAt(at) ?? 0)});
   }
   tokens.push({kind:'end',text:'',start:source.length});return tokens;
 }
@@ -123,14 +128,14 @@ const ALIASES:Readonly<Record<string,string>>={abs:'Abs',sgn:'Sign',ceil:'Ceil',
 
 /** raw output remains uncanonicalized until decodeMathJson has enforced operation and symbol permissions. */
 /** Convert call syntax with explicit binding or argument rules using the parser's own node budget. */
-function structuredTextCall(name:string,start:number,values:Raw[],
+function structuredTextCall(name:string,label:string,start:number,values:Raw[],
   node:(head:string,...operands:Raw[])=>Raw):Raw|undefined {
   if(name==='odesolve'||name==='pde') {
     const dependent=values[2], independent:Raw=name==='odesolve'?['List',values[1]]:values[1];
     if(values.length!==4||!isRawArray(dependent)||dependent[0]!=='List'
       ||!isRawArray(independent)||independent[0]!=='List'
       ||[...dependent.slice(1),...independent.slice(1)].some(value=>typeof value!=='string')) {
-      fail('微分方程式の一覧、独立変数、求める関数の一覧、初期値や境界の条件を指定してください',start);
+      fail('math.input.differentialEquationArguments','微分方程式の一覧、独立変数、求める関数の一覧、初期値や境界の条件を指定してください',start,{name:label});
     }
     return node(name==='odesolve'?'ODESolve':'PDE',
       node('Function',differentialEquationNotation(node('List',values[0],values[3]),independent.slice(1),dependent.slice(1)),...independent.slice(1),...dependent.slice(1)),
@@ -139,43 +144,43 @@ function structuredTextCall(name:string,start:number,values:Raw[],
   if(name==='solvesystem') {
     const variables=values[1];
     if(values.length!==3||!isRawArray(variables)||variables[0]!=='List'||variables.length<2||variables.length>9
-      ||variables.slice(1).some(value=>typeof value!=='string')) fail('方程式の一覧、未知数の一覧、実数または複素数の範囲を指定してください',start);
+      ||variables.slice(1).some(value=>typeof value!=='string')) fail('math.input.systemArguments','方程式の一覧、未知数の一覧、実数または複素数の範囲を指定してください',start,{name:label});
     return node('SolveSystem',node('Function',values[0],...variables.slice(1)),values[2]);
   }
   const equation=EQUATION_DEFINITIONS.find(([,head])=>head.toLowerCase()===name);
   if(equation!==undefined) {
-    if(values.length!==3||typeof values[1]!=='string')fail('式、未知数、実数/複素数または区間を指定してください',start);
+    if(values.length!==3||typeof values[1]!=='string')fail('math.input.equationArguments','式、未知数、実数/複素数または区間を指定してください',start,{name:label});
     return node(equation[1],node('Function',values[0],values[1]),values[2]);
   }
   if(name==='mapping') {
-    if(values.length!==4||typeof values[1]!=='string')fail('写像の式、変数、定義域と出力先の集合を指定してください',start);
+    if(values.length!==4||typeof values[1]!=='string')fail('math.input.mappingArguments','写像の式、変数、定義域と出力先の集合を指定してください',start,{name:label});
     return node('Mapping',node('Function',values[0],values[1]),...values.slice(2));
   }
   if(name==='numericroots') {
-    if(values.length!==5||typeof values[1]!=='string')fail('式、未知数、探索範囲の両端と精度を指定してください',start);
+    if(values.length!==5||typeof values[1]!=='string')fail('math.input.numericalRootsArguments','式、未知数、探索範囲の両端と精度を指定してください',start,{name:label});
     return node('NumericRoots',node('Function',values[0],values[1]),...values.slice(2));
   }
   if(name==='fourierseries') {
-    if(values.length!==5||typeof values[1]!=='string')fail('級数の式、変数、区間の両端と最高次数を指定してください',start);
+    if(values.length!==5||typeof values[1]!=='string')fail('math.input.fourierArguments','級数の式、変数、区間の両端と最高次数を指定してください',start,{name:label});
     return node('FourierSeries',node('Function',values[0],values[1]),...values.slice(2));
   }
   const transform=INTEGRAL_TRANSFORM_DEFINITIONS.find(([,head])=>head.toLowerCase()===name);
   if(transform!==undefined) {
-    if(values.length!==3||typeof values[1]!=='string'||typeof values[2]!=='string')fail('変換する式、変換前と変換後の変数を指定してください',start);
+    if(values.length!==3||typeof values[1]!=='string'||typeof values[2]!=='string')fail('math.input.transformArguments','変換する式、変換前と変換後の変数を指定してください',start,{name:label});
     return node(transform[1],node('Function',values[0],values[1],values[2]));
   }
   const expansion=TAYLOR_DEFINITIONS.find(([,head])=>head.toLowerCase()===name);
   if(expansion!==undefined) {
-    if(values.length!==expansion[2]+1||typeof values[1]!=='string')fail('展開する式、変数、中心と打切り次数を指定してください',start);
+    if(values.length!==expansion[2]+1||typeof values[1]!=='string')fail('math.input.expansionArguments','展開する式、変数、中心と打切り次数を指定してください',start,{name:label});
     return node(expansion[1],node('Function',values[0],values[1]),...values.slice(2));
   }
   const sequence=SEQUENCE_DEFINITIONS.find(([,head])=>head.toLowerCase()===name);
   if(sequence!==undefined) {
     const recurrence=sequence[0]==='recurrence-value', variable=values[1];
-    if(values.length!==sequence[2]+1)fail('数列の式、添字と評価条件をすべて指定してください',start);
+    if(values.length!==sequence[2]+1)fail('math.input.sequenceArguments','数列の式、添字と評価条件をすべて指定してください',start,{name:label});
     const names=recurrence&&isRawArray(variable)&&variable[0]==='List'?variable.slice(1):[variable];
     if(names.some(value=>typeof value!=='string')||(!recurrence&&typeof variable!=='string')) {
-      fail('添字を指定してください。漸化式は添字に続けて古い順の項を一覧で指定します',start);
+      fail('math.input.sequenceIndex','添字を指定してください。漸化式は添字に続けて古い順の項を一覧で指定します',start,{name:label});
     }
     return node(sequence[1],node('Function',values[0],...names),...values.slice(2));
   }
@@ -184,7 +189,7 @@ function structuredTextCall(name:string,start:number,values:Raw[],
     const count=probability[2], variables=values[count];
     if(values.length!==count+2||!isRawArray(variables)||variables[0]!=='List'
       ||variables.length<2||variables.length>9||variables.slice(1).some(value=>typeof value!=='string')) {
-      fail('式、変数一覧、分布を指定してください。条件付き確率や共分散には式を2個指定します',start);
+      fail('math.input.probabilityArguments','式、変数一覧、分布を指定してください。条件付き確率や共分散には式を2個指定します',start,{name:label});
     }
     return node(probability[1],node('Function',node('List',...values.slice(0,count)),...variables.slice(1)),values[count+1]);
   }
@@ -194,7 +199,7 @@ function structuredTextCall(name:string,start:number,values:Raw[],
     if(values.length!==6||!isRawArray(coordinates)||coordinates[0]!=='List'
       ||!isRawArray(parameters)||parameters[0]!=='List'
       ||[...coordinates.slice(1),...parameters.slice(1)].some(value=>typeof value!=='string')) {
-      fail('量または場、座標変数一覧、座標式一覧、媒介変数一覧、下限一覧、上限一覧を指定してください',start);
+      fail('math.input.regionIntegralArguments','量または場、座標変数一覧、座標式一覧、媒介変数一覧、下限一覧、上限一覧を指定してください',start,{name:label});
     }
     return node(regionIntegral[1],node('Function',values[0],...coordinates.slice(1)),
       node('Function',values[2],...parameters.slice(1)),values[4],values[5]);
@@ -204,7 +209,7 @@ function structuredTextCall(name:string,start:number,values:Raw[],
     const variables=values[1];
     if(values.length!==6||!isRawArray(variables)||variables[0]!=='List'
       ||variables.length<2||variables.length>4||variables.slice(1).some(value=>typeof value!=='string')
-      ||typeof values[3]!=='string')fail('場、座標変数一覧、曲線の座標式一覧、媒介変数、下限、上限を指定してください',start);
+      ||typeof values[3]!=='string')fail('math.input.lineIntegralArguments','場、座標変数一覧、曲線の座標式一覧、媒介変数、下限、上限を指定してください',start,{name:label});
     return node(lineIntegral[1],node('Function',values[0],...variables.slice(1)),
       node('Function',values[2],values[3]),values[4],values[5]);
   }
@@ -213,39 +218,39 @@ function structuredTextCall(name:string,start:number,values:Raw[],
     const variables=values[1];
     if(values.length!==3||!isRawArray(variables)||variables[0]!=='List'
       ||variables.length<2||variables.length>4||variables.slice(1).some(value=>typeof value!=='string')) {
-      fail('式、順序付きの変数一覧、同じ順序の評価点一覧を指定してください',start);
+      fail('math.input.vectorAtArguments','式、順序付きの変数一覧、同じ順序の評価点一覧を指定してください',start,{name:label});
     }
     return node(vectorAt[1],node('Function',values[0],...variables.slice(1)),values[2]);
   }
   const binding=['sum','product','integrate'].includes(name);
   if(binding) {
     const variable=values[1];
-    if(typeof variable!=='string')fail('総和や積分の2番目には変数名を指定してください',start);
+    if(typeof variable!=='string')fail('math.input.bindingName','総和や積分の2番目には変数名を指定してください',start,{name:label});
     const head=name==='sum'?'Sum':name==='product'?'Product':'Integrate';
     if(name==='integrate'&&values.length===2)return node(head,values[0],variable);
-    if(values.length!==4&&(name==='integrate'||values.length!==5))fail('式、変数、下限、上限を指定してください',start);
+    if(values.length!==4&&(name==='integrate'||values.length!==5))fail('math.input.bindingArguments','式、変数、下限、上限を指定してください',start,{name:label});
     return node(head,values[0],node('Tuple',variable,...values.slice(2)));
   }
   if(name==='derivativeat') {
-    if((values.length!==3&&values.length!==4)||typeof values[1]!=='string')fail('derivativeat(式,変数,位置,回数)を指定してください。回数は省略すると1です',start);
+    if((values.length!==3&&values.length!==4)||typeof values[1]!=='string')fail('math.input.derivativeArguments','derivativeat(式,変数,位置,回数)を指定してください。回数は省略すると1です',start,{name:label});
     return node('DerivativeAt',node('Function',values[0],values[1]),values[2],values[3]??{num:'1'});
   }
   if(name==='limsup'||name==='liminf') {
     if(values.length<3||values.length>5||typeof values[1]!=='string') {
-      fail('上極限・下極限は式、変数、近づける値を指定し、必要なら方向と実数・整数・自然数の範囲を続けてください',start);
+      fail('math.input.extremeLimitArguments','上極限・下極限は式、変数、近づける値を指定し、必要なら方向と実数・整数・自然数の範囲を続けてください',start,{name:label});
     }
     return node(name==='limsup'?'LimSup':'LimInf',node('Function',values[0],values[1]),...values.slice(2));
   }
   if(name==='limit') {
-    if((values.length!==3&&values.length!==4)||typeof values[1]!=='string')fail('limit(式,変数,近づける値,方向)を指定してください。方向は省略できます',start);
+    if((values.length!==3&&values.length!==4)||typeof values[1]!=='string')fail('math.input.limitArguments','limit(式,変数,近づける値,方向)を指定してください。方向は省略できます',start,{name:label});
     return node('Limit',node('Function',values[0],values[1]),...values.slice(2));
   }
   if(name==='forall'||name==='exists') {
-    if(values.length!==3||typeof values[0]!=='string')fail('変数、集合、条件を指定してください',start);
+    if(values.length!==3||typeof values[0]!=='string')fail('math.input.quantifierArguments','変数、集合、条件を指定してください',start,{name:label});
     return node(name==='forall'?'ForAll':'Exists',node('Element',values[0],values[1]),values[2]);
   }
   if(name==='cbrt') {
-    if(values.length!==1)fail('cbrtの値は1つで指定してください',start);
+    if(values.length!==1)fail('math.input.cubeRootArguments','cbrtの値は1つで指定してください',start,{name:label});
     return node('Root',values[0],{num:'3'});
   }
   return undefined;
@@ -258,10 +263,10 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
   const peek=()=>tokens[at];
   const take=()=>tokens[at++];
   const node=(head:string,...operands:Raw[]):Raw=>{
-    if(++nodes>MATH_INPUT_LIMITS.nodes)throw new MathInputProblem('budget','数式の構造が複雑すぎます。');
+    if(++nodes>MATH_INPUT_LIMITS.nodes)throw new MathInputProblem('budget', '数式の構造が複雑すぎます。', { key: 'math.input.syntaxNodeLimit', parameters: { limit: String(MATH_INPUT_LIMITS.nodes) } });
     return [head,...operands];
   };
-  const expect=(text:string)=>{if(peek().text!==text)fail(`「${text}」を指定してください`,peek().start);take();};
+  const expect=(text:string)=>{if(peek().text!==text)fail('math.input.expectedToken',`「${text}」を指定してください`,peek().start,{value:text});take();};
   // True while an element of [ ] or { } is read directly; ( ), a call and the other delimiters reset it.
   const groups:boolean[]=[];
   function within<T>(listed:boolean,read:()=>T):T {groups.push(listed);try{return read();}finally{groups.pop();}}
@@ -269,38 +274,38 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
     const values:Raw[]=[];
     if(peek().text===end){take();return values;}
     for(;;) {
-      if(values.length>=MATH_INPUT_LIMITS.arguments)throw new MathInputProblem('budget','引数が多すぎます。');
+      if(values.length>=MATH_INPUT_LIMITS.arguments)throw new MathInputProblem('budget', '引数が多すぎます。', { key: 'math.input.argumentLimit', parameters: { limit: String(MATH_INPUT_LIMITS.arguments) } });
       values.push(within(listed,()=>expression(0,depth+1)));
       if(peek().text===end){take();return values;}
       expect(',');
     }
   }
-  function call(name:string,start:number,depth:number):Raw {
-    name=name.toLowerCase();
+  function call(label:string,start:number,depth:number):Raw {
+    let name=label.toLowerCase();
     expect('(');
     if(name==='coef') {
-      const label=take();if(label.kind!=='string')fail('coef("名前")のように係数名を指定してください',label.start);
-      expect(')');return node('PcadCoefficient',{str:label.text});
+      const quoted=take();if(quoted.kind!=='string')fail('math.input.coefficientArguments','coef("名前")のように係数名を指定してください',quoted.start);
+      expect(')');return node('PcadCoefficient',{str:quoted.text});
     }
     const values=argumentsOf(')',depth);
     // ∮ reads as closedcirculation for an explicit vector field and closedlineintegral otherwise; ∯ likewise.
     if(name==='∮'||name==='∯')name=closedIntegralHead(name,values[0]).toLowerCase();
-    const structured=structuredTextCall(name,start,values,node);
+    const structured=structuredTextCall(name,label,start,values,node);
     if(structured!==undefined)return structured;
     const head=own(ALIASES,name)??functions.get(name);
-    if(!head)throw new MathInputProblem('unsupported',`関数「${name}」を確認してください。係数はcoef("名前")で挿入します。`);
+    if(!head)throw new MathInputProblem('unsupported', `関数「${name}」を確認してください。係数はcoef("名前")で挿入します。`, { key: 'math.input.unsupportedFunction', parameters: { name: label, position: String(start+1) } });
     return node(head,...values);
   }
   /** ∇f, ∇·F, ∇×F, ∇²f and ∇_[x,y,z]…; without a list the decoder supplies only a plot's X/Y/Z axes. */
   function nabla(marker:string,depth:number):Raw {
     let laplacian=marker.startsWith('∇²'),variables:Raw=NABLA_DEFAULT_VARIABLES;
     if(marker.endsWith('_')) {
-      if(peek().text!=='[')fail(NABLA_VARIABLE_LIST,peek().start);
+      if(peek().text!=='[')fail('math.input.nablaVariables',NABLA_VARIABLE_LIST,peek().start);
       take();variables=node('List',...argumentsOf(']',depth,true));
-    } else if(peek().kind==='name'&&peek().text.startsWith('_'))fail(NABLA_VARIABLE_LIST,peek().start);
+    } else if(peek().kind==='name'&&peek().text.startsWith('_'))fail('math.input.nablaVariables',NABLA_VARIABLE_LIST,peek().start);
     if(!laplacian&&peek().text==='^') {
       const exponent=tokens[at+1];
-      if(exponent.kind!=='number'||exponent.text!=='2')fail(NABLA_LAPLACIAN,peek().start);
+      if(exponent.kind!=='number'||exponent.text!=='2')fail('math.input.nablaLaplacian',NABLA_LAPLACIAN,peek().start);
       take();take();laplacian=true;
     }
     let head=laplacian?'Laplacian':'Gradient';
@@ -314,7 +319,7 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
       const {numerator,denominator}=repeatingDecimalFraction(token.text,token.repetend);
       return denominator==='1'?{num:numerator}:node('Divide',{num:numerator},{num:denominator});
     }
-    if(token.kind==='name'&&(token.text==='∮'||token.text==='∯')&&peek().text!=='(')throw new MathInputProblem('unsupported',CLOSED_INTEGRAL_UNAVAILABLE);
+    if(token.kind==='name'&&(token.text==='∮'||token.text==='∯')&&peek().text!=='(')throw new MathInputProblem('unsupported', CLOSED_INTEGRAL_UNAVAILABLE, { key: 'math.input.closedIntegralArguments', parameters: { position: String(token.start+1) } });
     if(token.kind==='name')return peek().text==='('?call(token.text,token.start,depth):token.text;
     if(token.kind==='operator'&&token.text.startsWith('∇'))return nabla(token.text,depth);
     if(token.text==='±'||token.text==='∓')return node(token.text==='±'?'PlusMinus':'MinusPlus',expression(70,depth+1));
@@ -328,11 +333,14 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
     if(token.text==='⟨'||token.text==='∁') {
       if(token.text==='∁')expect('(');
       const values=argumentsOf(token.text==='⟨'?'⟩':')',depth);
-      if(values.length!==2)fail(token.text==='⟨'?'内積には2つの値を指定してください':'補集合には集合と母集合を指定してください',token.start);
+      if(values.length!==2) {
+        if(token.text==='⟨')fail('math.input.innerProductArguments','内積には2つの値を指定してください',token.start);
+        fail('math.input.complementArguments','補集合には集合と母集合を指定してください',token.start);
+      }
       return node(token.text==='⟨'?'Dot':'Complement',...values);
     }
     if(token.text==='|'||token.text==='⌊'||token.text==='⌈') {
-      if(token.text==='|'&&peek().text==='|')fail('ノルムはnorm(値)、絶対値はabs(値)で意味を指定してください',token.start);
+      if(token.text==='|'&&peek().text==='|')fail('math.input.bars','ノルムはnorm(値)、絶対値はabs(値)で意味を指定してください',token.start);
       const value=within(false,()=>expression(0,depth+1));expect(token.text==='|'?'|':token.text==='⌊'?'⌋':'⌉');
       return node(token.text==='|'?'Abs':token.text==='⌊'?'Floor':'Ceil',value);
     }
@@ -340,10 +348,11 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
       expect('(');const value=within(false,()=>expression(0,depth+1));expect(')');
       return token.text==='√'?node('Sqrt',value):node('Root',value,{num:'3'});
     }
-    fail('数値、変数、または括弧で囲んだ式を指定してください',token.start);
+    if(token.kind==='end')fail('math.input.missingOperand','数値、変数、または括弧で囲んだ式を指定してください',token.start);
+    fail('math.input.unexpectedOperand','数値、変数、または括弧で囲んだ式を指定してください',token.start,{value:token.text});
   }
   function expression(minimum:number,depth:number):Raw {
-    if(depth>MATH_INPUT_LIMITS.depth)throw new MathInputProblem('budget','数式の入れ子が深すぎます。');
+    if(depth>MATH_INPUT_LIMITS.depth)throw new MathInputProblem('budget', '数式の入れ子が深すぎます。', { key: 'math.input.syntaxDepth', parameters: { limit: String(MATH_INPUT_LIMITS.depth) } });
     let left=prefix(depth);
     for(;;) {
       const token=peek();
@@ -357,19 +366,18 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
       // The ratio a:b is its value a÷b (Q1=A). Forms that also read as a range, set condition or clock time are refused.
       if(token.text===':'&&RATIO_BINDING>=minimum) {
         take();
-        if(peek().text==='=')fail(RATIO_DEFINITION,token.start);
-        if(groups.at(-1)===true)fail(RATIO_IN_LIST,token.start);
+        if(peek().text==='=')fail('math.input.ratioDefinition',RATIO_DEFINITION,token.start);
+        if(groups.at(-1)===true)fail('math.input.ratioInList',RATIO_IN_LIST,token.start);
         const before=tokens[at-2],after=peek();
-        if((before.kind==='number'&&clockDigits(before.text))||(after.kind==='number'&&clockDigits(after.text)))fail(RATIO_TIME,token.start);
+        if((before.kind==='number'&&clockDigits(before.text))||(after.kind==='number'&&clockDigits(after.text)))fail('math.input.ratioTime',RATIO_TIME,token.start,{value:clockDigits(before.text)?before.text:after.text});
         left=node('Divide',left,expression(RATIO_BINDING+1,depth+1));
-        if(peek().text===':')fail(RATIO_TERMS,peek().start);
+        if(peek().text===':')fail('math.input.ratioTerms',RATIO_TERMS,peek().start);
         continue;
       }
       if(own(COMPARE,token.text)&&30>=minimum) {
         const comparisons:Raw[]=[];let previous=left;
-        while(own(COMPARE,peek().text)) {
-          const operator=take(),next=expression(31,depth+1);
-          const head=own(COMPARE,operator.text);if(!head)fail('比較演算子を指定してください',operator.start);
+        for(let head=own(COMPARE,peek().text);head!==undefined;head=own(COMPARE,peek().text)) {
+          take();const next=expression(31,depth+1);
           comparisons.push(node(head,previous,next));previous=next;
         }
         left=comparisons.length===1?comparisons[0]:node('And',...comparisons);continue;
@@ -380,7 +388,7 @@ export function parseMathTextRaw(source:string,operations:ReadonlyMap<string,Mat
     return left;
   }
   const result=expression(0,0);
-  if(peek().kind!=='end')fail('項を区切ってください。掛け算は *、係数はcoef("名前")で指定します',peek().start);
+  if(peek().kind!=='end')fail('math.input.missingOperator','項を区切ってください。掛け算は *、係数はcoef("名前")で指定します',peek().start);
   return result;
 }
 export function parseMathText(source:string,options:Omit<DecodeMathOptions,'allowRenderedProducts'|'symbolNotation'>):MathNode {

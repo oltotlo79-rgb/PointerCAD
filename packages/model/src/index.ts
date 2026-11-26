@@ -1401,7 +1401,7 @@ export { unfoldDrawingPick, drawingSectionRetainsPoint } from './drawing/viewPic
 
 export { textFeature, type TextFeatureInput } from './sketch/textFeature.js';
 
-export { drawingToDxf } from './exchange/drawingToDxf.js';
+export { drawingToDxf, DrawingDxfInputError } from './exchange/drawingToDxf.js';
 export type { DrawingDxfEntity, DrawingDxfLayer, DrawingDxfLineType, DrawingDxfOptions } from './exchange/drawingDxfTypes.js';
 
 export * from './part/namedViews.js';

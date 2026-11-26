@@ -716,7 +716,7 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.errors[1]).toEqual({
       featureId: fixture.faceA.faceFeatureId,
       code: 'kernelFailed',
-      text: plainText('面を作れませんでした: 面が閉じていません'),
+      text: { key: 'partError.sketchKernel.face', parameters: { reason: plainText('面が閉じていません') } },
     });
   });
 
@@ -732,7 +732,7 @@ describe('部品の再計算(要件§6.3)', () => {
       faceA.faceFeatureId,
       faceB.faceFeatureId,
     ]);
-    expect(plainTextValue(result.errors[0].text)).toBe('面を作れませんでした: Worker が落ちました');
+    expect(result.errors.map(({ text }) => text)).toEqual(Array.from({ length: 2 }, () => ({ key: 'assembly.error.internal', parameters: {} })));
   });
 
   it('進捗をそのまま呼び出し側へ伝える(NFR-PF-4)', async () => {

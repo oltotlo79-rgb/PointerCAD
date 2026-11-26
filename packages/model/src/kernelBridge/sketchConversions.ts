@@ -1,6 +1,6 @@
 /** スケッチのオフセット・投影・断面の依頼と結果を変換する。Workerの接続と実行は持たない。 */
 import type {
-  OffsetJoinType, PlaneCurve, SketchOffsetItem, SketchOffsetOutcome, SketchPlaneFrame,
+  SketchTessellationFailure, OffsetJoinType, PlaneCurve, SketchOffsetItem, SketchOffsetOutcome, SketchPlaneFrame,
   SketchProjectionItem, SketchProjectionOutcome, SketchSectionItem, Vec2Tuple,
 } from '@pointercad/kernel';
 import type { WorkPlane } from '../sketch/planeMath.js';
@@ -9,7 +9,7 @@ import { addVec3, scaleVec3, type Vec3 } from '../sketch/vec3.js';
 import { toCurveSpec, fromCurveSpec } from './curveConversions.js';
 import { toSubShapeQuery } from './subShapeQuery.js';
 import type {
-  SketchOffsetRequestItem, SketchOffsetEntry, SketchOffsetFailure, SketchOffsetResult,
+  SketchFaceFailure, SketchOffsetRequestItem, SketchOffsetEntry, SketchOffsetFailure, SketchOffsetResult,
   SketchProjectionRequestItem, SketchProjectionEntry, SketchProjectionFailure, SketchProjectionResult,
 } from './sketchContracts.js';
 
@@ -31,6 +31,25 @@ export function toOffsetItem(request: SketchOffsetRequestItem): SketchOffsetItem
 /** オフセットが返らなかったとき(カーネルが id を返さなかったとき)に付ける理由。 */
 const MISSING_OFFSET_MESSAGE = 'カーネルからオフセットの結果が返りませんでした。';
 
+export function modelSketchFailure(failure: SketchTessellationFailure): SketchFaceFailure {
+  return {
+    featureId: failure.id,
+    message: failure.message,
+    ...(failure.reason === undefined ? {} : { reason: failure.reason }),
+  };
+}
+
+/** An incomplete reply is an internal error. Record all affected IDs once per batch. */
+export function unreportedSketchFailures(
+  requests: readonly { readonly featureId: string }[],
+  reported: ReadonlySet<string>,
+  message: string,
+): SketchFaceFailure[] {
+  const missing = requests.filter(({ featureId }) => !reported.has(featureId));
+  if (missing.length > 0) console.error('PointerCAD sketch geometry', message, missing.map(({ featureId }) => featureId));
+  return missing.map(({ featureId }) => ({ featureId, message, reason: { code: 'internal' } }));
+}
+
 /**
  * オフセットの結果を model の言葉へ詰め替える。
  * 頼んだのに結果も理由も返らなかった id は、理由を補って失敗として扱う(FR-504。
@@ -47,20 +66,13 @@ export function toOffsetResult(
       closed: contour.closed,
     })),
   }));
-  const failures: SketchOffsetFailure[] = outcome.failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-  }));
+  const failures: SketchOffsetFailure[] = outcome.failures.map(modelSketchFailure);
 
   const reported = new Set<string>(results.map((result) => result.featureId));
   for (const failure of failures) {
     reported.add(failure.featureId);
   }
-  for (const request of requests) {
-    if (!reported.has(request.featureId)) {
-      failures.push({ featureId: request.featureId, message: MISSING_OFFSET_MESSAGE });
-    }
-  }
+  failures.push(...unreportedSketchFailures(requests, reported, MISSING_OFFSET_MESSAGE));
 
   return { results, failures };
 }

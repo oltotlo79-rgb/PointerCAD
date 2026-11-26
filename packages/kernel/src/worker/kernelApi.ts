@@ -6,7 +6,7 @@ import { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './r
 
 import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
 import { inspectImportedBrep } from '../occt/inspectImportedBrep.js';
-import type { ImportedMeshData } from '../occt/exchangeShared.js';
+import { withShapeImportDiagnostic, type ImportedMeshData } from '../occt/exchangeShared.js';
 import type { ExportMesh } from '../occt/exportMesh.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
 import { buildRequestExportMeshes } from './exportMeshReuse.js';
@@ -19,6 +19,7 @@ import {
 } from '../occt/inspectPrintability.js';
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
+import { sketchInputReason } from '../occt/kernelStepError.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { hiddenLineViewForBodies, type HiddenLineSource } from '../occt/makeHiddenLineViews.js';
 import { createAllocations } from '../occt/allocations.js';
@@ -37,12 +38,13 @@ import { readStepAssembly } from '../occt/readStepAssembly.js';
 import { readStl } from '../occt/readStl.js';
 import { measureVolume } from '../occt/solidMesh.js';
 import { measureClosedBodyVolume, shapeBodyKind, type CadBodyKind } from '../occt/shapeBodyKind.js';
-import { tessellate } from '../occt/tessellate.js';
+import { TESSELLATION_ADMISSION_MESSAGE, tessellate, type TessellationLimit } from '../occt/tessellate.js';
 import * as Comlink from 'comlink';
 import { AnalysisBoundaryError, analysisMeshBuffers, buildAnalysisSurfaceMesh,
   type AnalysisSurfaceMeshRequest, type AnalysisSurfaceMeshResult } from '../occt/analysisSurfaceMesh.js';
 import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
 import { writeIges } from '../occt/writeIges.js';
+import { ShapeExportError } from '../occt/shapeExportDiagnostic.js';
 import { writeStep } from '../occt/writeStep.js';
 import { writeStl } from '../occt/writeStl.js';
 import { writeStepAssembly } from '../occt/xcafAssembly.js';
@@ -59,6 +61,8 @@ import type {
   MeasureRequest,
   MeasureResult,
   ShapeExportBrepBody,
+  ShapeExportDiagnosticRequest,
+  ShapeExportReply,
   ShapeExportAssembly,
   ShapeExportItem,
   ShapeExportMeshBody,
@@ -68,6 +72,7 @@ import type {
   ShapeImportBody,
   ShapeImportAssembly,
   ShapeImportRequest,
+  ShapeImportReply,
   ShapeImportResult,
   ShapeInspectMeshIdentity,
   ShapeInspectRequest,
@@ -105,7 +110,7 @@ import {
 } from './recomputeSolids.js';
 import { createShapeCache, finalMeshJsAccounting, meshBackingBytes, type AcquireToken, type AcquiringShapeCache,
   type ShapeCache, type ShapeCacheStats } from './shapeCache.js';
-import { ExportWorkBudget, checkedExportAdd, checkedExportMultiply,
+import { ExportWorkBudget, ExportWorkLimitError, checkedExportAdd, checkedExportMultiply,
   exportSerializationReserve, EXPORT_TRIANGLE_LIMIT } from './exportWorkLimits.js';
 import {
   checkInterference as runCheckInterference, snapshotInterferenceRequest, prepareInterference,
@@ -310,7 +315,11 @@ function buildExportMeshes(
   shapes: readonly TopoDS_Shape[],
   quality: ShapeExportMeshQuality,
   work: ExportWorkBudget,
+  reportLimits = false,
 ): ExportMesh[] {
+  const rejectLimit = reportLimits ? (code: TessellationLimit): never => {
+    throw new ShapeExportError(work.meshLimitDiagnostic(code), TESSELLATION_ADMISSION_MESSAGE);
+  } : undefined;
   return buildRequestExportMeshes(shapes, work, (shape) =>
     buildExportMesh(oc, shape, quality.deviationMm, {
       angularDeflectionRad: quality.angularDeflectionRad,
@@ -318,8 +327,9 @@ function buildExportMeshes(
         remainingTriangles: work.remainingTriangles,
         remainingJsBytes: work.remainingJsBytes,
         checkDeadline: () => work.checkDeadline(),
+        rejectLimit,
       },
-    }));
+    }), rejectLimit);
 }
 
 function exportMetadataCodeUnits(request: ShapeExportRequest): number {
@@ -655,7 +665,10 @@ export interface KernelApi {
    * (測定と違って結果に「失敗」の枝を作らないのは、書き出しが 1 回 1 ファイルの操作で、
    * 一部だけ書けても利用者には渡せないためである。断りは画面がそのまま見せられる)。
    */
-  exportShapes(request: ShapeExportRequest): Promise<ShapeExportResult>;
+  exportShapes: {
+    (request: ShapeExportRequest & { readonly reportDiagnostics?: never }): Promise<ShapeExportResult>;
+    (request: ShapeExportRequest | ShapeExportDiagnosticRequest): Promise<ShapeExportReply>;
+  };
   /**
    * ファイルの中身から形を読み込む(FR-802、FR-811)。
    *
@@ -908,6 +921,15 @@ function createWorkerAssemblyOperations(geometry: CachedWorkerGeometry): Pick<An
   };
 }
 
+function sketchGeometryFailure(id: string, operation: 'face' | 'offset', error: unknown): SketchTessellationFailure {
+  if (error instanceof Error) {
+    const reason = sketchInputReason(error);
+    if (reason !== undefined) return { id, message: error.message, reason };
+  }
+  console.error('PointerCAD sketch geometry', operation, id, error);
+  return { id, message: 'Internal sketch computation error', reason: { code: 'internal' } };
+}
+
 function createWorkerSketchTessellation(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundaryKernelApi,
   'tessellateSketch'> {
   return {
@@ -945,10 +967,7 @@ function createWorkerSketchTessellation(loadOcct: LoadWorkerOcct): Pick<Analysis
             handle.delete();
           }
         } catch (error) {
-          failures.push({
-            id: faceRequest.id,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          failures.push(sketchGeometryFailure(faceRequest.id, 'face', error));
         }
       }
 
@@ -1111,10 +1130,7 @@ function createWorkerSketchOperations(geometry: CachedWorkerGeometry): Pick<Anal
           });
           results.push({ id: item.id, contours });
         } catch (error) {
-          failures.push({
-            id: item.id,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          failures.push(sketchGeometryFailure(item.id, 'offset', error));
         }
       }
 
@@ -1385,127 +1401,154 @@ function createWorkerMeasurement(geometry: CachedWorkerGeometry): Pick<AnalysisB
 function createWorkerShapeExport(geometry: CachedWorkerGeometry, exportTriangleLimit: number): Pick<AnalysisBoundaryKernelApi,
   'exportShapes' | 'supportsIges'> {
   const { cache, loadOcct, withAcquiredKeys } = geometry;
-  return {
-    async exportShapes(request): Promise<ShapeExportResult> {
-      const work = new ExportWorkBudget(() => performance.now(), exportTriangleLimit);
-      const exportItems = exportItemsOf(request);
-      return withAcquiredKeys(exportItems.map((body) => body.bodyKey), async () => {
-        work.checkDeadline();
-        const oc = await loadOcct();
-        work.checkDeadline();
-        const shapes = resolveExportShapes(cache, exportItems, request.partId ?? DEFAULT_PART_ID);
-        work.checkDeadline();
+  async function writeShapes(request: ShapeExportRequest, reportLimits: boolean): Promise<ShapeExportResult> {
+    const work = new ExportWorkBudget(() => performance.now(), exportTriangleLimit);
+    const exportItems = exportItemsOf(request);
+    return withAcquiredKeys(exportItems.map((body) => body.bodyKey), async () => {
+      work.checkDeadline();
+      const oc = await loadOcct();
+      work.checkDeadline();
+      const shapes = resolveExportShapes(cache, exportItems, request.partId ?? DEFAULT_PART_ID);
+      work.checkDeadline();
 
-        // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
-        // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
-        switch (request.format) {
-          case 'step': {
-            // 立体が 1 つも無いときの断り(「書き出せるソリッドがありません。」)は
-            // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
-            // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
-            // `nothingToExport` で先に断る)。
-            const written = request.assembly === undefined
-              ? writeStep(
-                  oc,
-                  request.bodies.map((item, index) => ({
-                    shape: shapes[index],
-                    name: item.name,
-                    color: item.color,
-                    // 面ごとの色。`StepWriteEntry`(= `XcafShapeEntry`)が
-                    // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
-                    faceColors: item.faceColors,
-                  })),
-                  { withColors: request.withColors ?? true },
-                )
-              : writeStepAssembly(oc, assemblyWithShapes(request.assembly, shapes), {
-                  withColors: request.withColors ?? true,
-                });
-            work.admitNativeOutput(written.bytes.byteLength);
-            return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
-          }
-          case 'iges': {
-            const written = writeIges(oc, request.bodies.map((item, index) => ({
-              shape: shapes[index], name: item.name, color: item.color,
-            })), { withColors: request.withColors, unit: request.unit });
-            work.admitNativeOutput(written.bytes.byteLength);
-            return { format: 'iges', ...written };
-          }
-          case 'stl': {
-            // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ。
-            // 色は書かない(仕様に無い)ので、依頼の名前と色は使わない。
-            const meshes = buildExportMeshes(oc, shapes, request, work);
-            work.reserveOutput(exportSerializationReserve(request.ascii ? 'stl-ascii' : 'stl-binary',
-              work.triangleCount, meshes.length, exportMetadataCodeUnits(request)));
-            const written = writeStl(meshes, {
-              ascii: request.ascii ?? false,
-            });
-            work.verifySerializedOutput(written.bytes.byteLength);
-            if (shapes.length > 0 && written.triangleCount === 0) {
-              throw new Error('STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。');
-            }
-            return {
-              format: 'stl',
-              files: [
-                { fileName: `${normalizeBaseName(request.baseName)}.stl`, bytes: written.bytes },
-              ],
-              triangleCount: written.triangleCount,
-              droppedTriangleCount: written.droppedTriangleCount,
-            };
-          }
-          // OBJ と glTF は書き手が同じ(`writeCafMesh`)で、違うのは組み立てるファイルだけ。
-          // 依頼の `format` がそのまま書き手の `CafMeshFormat` になるので、2 つを 1 つの枝で受ける。
-          case 'obj':
-          case 'gltf': {
-            const meshes = buildExportMeshes(oc, shapes, request, work);
-            work.reserveOutput(exportSerializationReserve(request.format, work.triangleCount,
-              meshes.length, exportMetadataCodeUnits(request)));
-            const written = writeCafMesh(
-              request.bodies.map((item, index) => ({
-                mesh: meshes[index],
-                name: item.name,
-                color: item.color,
-                // 面ごとの色。`meshes[index]` は `buildExportMesh` の
-                // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
-                faceColors: item.faceColors,
-              })),
-              { format: request.format, baseName: request.baseName },
-            );
-            work.verifySerializedOutput(written.files.reduce((sum, file) =>
-              checkedExportAdd(sum, file.bytes.byteLength), 0));
-            return {
-              format: request.format,
-              files: written.files,
-              triangleCount: written.triangleCount,
-              droppedTriangleCount: written.droppedTriangleCount,
-            };
-          }
-          case 'mesh': {
-            const meshes = buildExportMeshes(oc, shapes, request, work);
-            work.checkDeadline();
-            const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
-              bodyKey: item.bodyKey,
-              // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない。
-              triangles: meshes[index],
-            }));
-            return { format: 'mesh', bodies };
-          }
-          case 'brep': {
-            const bodies: ShapeExportBrepBody[] = [];
-            for (const [index, item] of request.bodies.entries()) {
-              work.checkDeadline();
-              const bytes = writeBrepBytes(oc, shapes[index]);
-              work.admitNativeOutput(bytes.byteLength);
-              bodies.push({ bodyKey: item.bodyKey, bytes });
-            }
-            return { format: 'brep', bodies };
-          }
+      // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
+      // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
+      switch (request.format) {
+        case 'step': {
+          // 立体が 1 つも無いときの断り(「書き出せるソリッドがありません。」)は
+          // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
+          // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
+          // `nothingToExport` で先に断る)。
+          const written = request.assembly === undefined
+            ? writeStep(
+                oc,
+                request.bodies.map((item, index) => ({
+                  shape: shapes[index],
+                  name: item.name,
+                  color: item.color,
+                  // 面ごとの色。`StepWriteEntry`(= `XcafShapeEntry`)が
+                  // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
+                  faceColors: item.faceColors,
+                })),
+                { withColors: request.withColors ?? true },
+              )
+            : writeStepAssembly(oc, assemblyWithShapes(request.assembly, shapes), {
+                withColors: request.withColors ?? true,
+              });
+          work.admitNativeOutput(written.bytes.byteLength);
+          return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
         }
-      });
-    },
+        case 'iges': {
+          const written = writeIges(oc, request.bodies.map((item, index) => ({
+            shape: shapes[index], name: item.name, color: item.color,
+          })), { withColors: request.withColors, unit: request.unit });
+          work.admitNativeOutput(written.bytes.byteLength);
+          return { format: 'iges', ...written };
+        }
+        case 'stl': {
+          // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ。
+          // 色は書かない(仕様に無い)ので、依頼の名前と色は使わない。
+          const meshes = buildExportMeshes(oc, shapes, request, work, reportLimits);
+          work.reserveOutput(exportSerializationReserve(request.ascii ? 'stl-ascii' : 'stl-binary',
+            work.triangleCount, meshes.length, exportMetadataCodeUnits(request)));
+          const written = writeStl(meshes, {
+            ascii: request.ascii ?? false,
+          });
+          work.verifySerializedOutput(written.bytes.byteLength);
+          if (shapes.length > 0 && written.triangleCount === 0) {
+            throw new ShapeExportError({ code: 'noTriangle' },
+              'STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。');
+          }
+          return {
+            format: 'stl',
+            files: [
+              { fileName: `${normalizeBaseName(request.baseName)}.stl`, bytes: written.bytes },
+            ],
+            triangleCount: written.triangleCount,
+            droppedTriangleCount: written.droppedTriangleCount,
+          };
+        }
+        // OBJ と glTF は書き手が同じ(`writeCafMesh`)で、違うのは組み立てるファイルだけ。
+        // 依頼の `format` がそのまま書き手の `CafMeshFormat` になるので、2 つを 1 つの枝で受ける。
+        case 'obj':
+        case 'gltf': {
+          const meshes = buildExportMeshes(oc, shapes, request, work);
+          work.reserveOutput(exportSerializationReserve(request.format, work.triangleCount,
+            meshes.length, exportMetadataCodeUnits(request)));
+          const written = writeCafMesh(
+            request.bodies.map((item, index) => ({
+              mesh: meshes[index],
+              name: item.name,
+              color: item.color,
+              // 面ごとの色。`meshes[index]` は `buildExportMesh` の
+              // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
+              faceColors: item.faceColors,
+            })),
+            { format: request.format, baseName: request.baseName },
+          );
+          work.verifySerializedOutput(written.files.reduce((sum, file) =>
+            checkedExportAdd(sum, file.bytes.byteLength), 0));
+          return {
+            format: request.format,
+            files: written.files,
+            triangleCount: written.triangleCount,
+            droppedTriangleCount: written.droppedTriangleCount,
+          };
+        }
+        case 'mesh': {
+          const meshes = buildExportMeshes(oc, shapes, request, work);
+          work.checkDeadline();
+          const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
+            bodyKey: item.bodyKey,
+            // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない。
+            triangles: meshes[index],
+          }));
+          return { format: 'mesh', bodies };
+        }
+        case 'brep': {
+          const bodies: ShapeExportBrepBody[] = [];
+          for (const [index, item] of request.bodies.entries()) {
+            work.checkDeadline();
+            const bytes = writeBrepBytes(oc, shapes[index]);
+            work.admitNativeOutput(bytes.byteLength);
+            bodies.push({ bodyKey: item.bodyKey, bytes });
+          }
+          return { format: 'brep', bodies };
+        }
+      }
+    });
+  }
 
-    async supportsIges() { return hasIgesBindings(await loadOcct()); },
-  };
+  async function exportShapes(
+    request: ShapeExportRequest & { readonly reportDiagnostics?: never },
+  ): Promise<ShapeExportResult>;
+  async function exportShapes(request: ShapeExportRequest | ShapeExportDiagnosticRequest): Promise<ShapeExportReply>;
+  async function exportShapes(request: ShapeExportRequest | ShapeExportDiagnosticRequest): Promise<ShapeExportReply> {
+    const reportDiagnostics = 'reportDiagnostics' in request && request.reportDiagnostics === true
+      && (request.format === 'step' || request.format === 'stl');
+    try {
+      return await writeShapes(request, reportDiagnostics);
+    } catch (error) {
+      if (!reportDiagnostics) throw error;
+      if (error instanceof MissingBodiesError) {
+        return { kind: 'failed', message: error.message, diagnostic: { code: 'missingShape' } };
+      }
+      if (error instanceof ShapeExportError || error instanceof ExportWorkLimitError) {
+        const diagnostic = error.diagnostic;
+        if (diagnostic !== undefined) return { kind: 'failed', message: error.message, diagnostic };
+      }
+      console.error('PointerCAD exchange', request.format.toUpperCase(), error);
+      return { kind: 'failed', message: '', diagnostic: { code: 'internal' } };
+    }
+  }
+
+  return { exportShapes, async supportsIges() { return hasIgesBindings(await loadOcct()); } };
 }
+
+/** Comlink の公開口。直呼出しの Import API は従来どおり例外を返す。 */
+export type WorkerKernelApi = Omit<AnalysisBoundaryKernelApi, 'importShape'> & {
+  importShape(request: ShapeImportRequest): Promise<ShapeImportReply>;
+};
 
 function createWorkerShapeImport(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundaryKernelApi,
   'importShape' | 'inspectImportedBrep'> {
@@ -1536,13 +1579,7 @@ function createWorkerShapeImport(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundar
             return {
               bodies: read.definitions.map((body) =>
                 // 読み手が検出した開面との混在を、そのまま保存と表示へ渡す。
-                toImportBody(
-                  oc,
-                  body.shape,
-                  body.name,
-                  body.color,
-                  body.kind,
-                ),
+                withShapeImportDiagnostic(() => toImportBody(oc, body.shape, body.name, body.color, body.kind)),
               ),
               unit: read.unit,
               unitNames: read.unitNames,

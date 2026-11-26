@@ -12,6 +12,13 @@
  * 座標も色も同じ規則で書ける。
  */
 
+export type ThreeMfDataErrorCode = 'number' | 'positions' | 'indices' | 'color';
+
+/** 公開のメッセージと、Workerを越えて伝える診断の符号を持つ。 */
+export class ThreeMfDataError extends Error {
+  constructor(readonly code: ThreeMfDataErrorCode, message: string) { super(message); }
+}
+
 /** 数が有限でない・XML へ書けないほど大きいときの断り(FR-504、NFR-UX-5)。 */
 export const XML_INVALID_NUMBER_MESSAGE = 'ファイルへ書けない数が含まれています。';
 
@@ -92,7 +99,7 @@ export function escapeXmlAttribute(value: string): string {
  */
 export function formatXmlNumber(value: number): string {
   if (!Number.isFinite(value)) {
-    throw new Error(XML_INVALID_NUMBER_MESSAGE);
+    throw new ThreeMfDataError('number', XML_INVALID_NUMBER_MESSAGE);
   }
   const rounded = Math.round(value * SCALE) / SCALE;
   // `-0 === 0` なので、丸めて 0 になった負の数もここで符号が消える。
@@ -102,7 +109,7 @@ export function formatXmlNumber(value: number): string {
   const text = rounded.toString();
   if (text.includes('e')) {
     // 10 の 21 乗以上でしか起きない。mm の座標としては現実に無い大きさなので、書かずに断る。
-    throw new Error(XML_INVALID_NUMBER_MESSAGE);
+    throw new ThreeMfDataError('number', XML_INVALID_NUMBER_MESSAGE);
   }
   return text;
 }

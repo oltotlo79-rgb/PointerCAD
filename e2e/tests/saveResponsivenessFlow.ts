@@ -637,6 +637,7 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     const record = {
       environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown', target,
       mib, repeat, rawBytes, triangleCount, savedBytes: savedArchive.byteLength,
+      savedArchiveSha256: createHash('sha256').update(savedArchive).digest('hex'),
       input, platform: process.platform, engineVersion,
       inputs: samples.length, p95, activeP95, activeInputs: activeSamples.length, samples, activeSamples, responseObservation,
       // Per input in input order: page stage, event time (page clock), page latency and Node key round trip.
@@ -660,6 +661,7 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     // 段の時刻(saveMs・releaseMs・保存の段・OPFS の書込み)と、WS と private の山の時刻・段も出す(山がどの段かをログだけで決める)。
     console.log('[記憶量記録]', JSON.stringify({ label: responseObservation.label, environment: record.environment, target,
       input, platform: record.platform, engineVersion, method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS,
+      readback: { zippedBytes: record.savedBytes, archiveSha256: record.savedArchiveSha256, mesh3: record.savedHash },
       budgetBytes: extraMemoryBudgetBytes, complete: record.memory.complete, baseline, peak, released,
       extraPeak: record.memory.extraPeak, extraAfterRelease: record.memory.extraAfterRelease, counts: record.memory.counts,
       saveMs: Math.round(record.saveMs), releaseMs: Math.round(record.releaseMs), phases: phaseSummary,

@@ -4,7 +4,7 @@ import { IO_LIMITS } from '../limits.js';
 import { drawingBundleEntries, drawingEntriesWithMeshes } from './drawingBundle.js';
 import { drawingTemplateEntries } from './drawingTemplateFile.js';
 import { bundleEntriesWithMeshes, documentBundleEntries, dropAssemblySaveExtras, ownedMeshEntryBytes,
-  partEntriesWithMeshes, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX, zipPcadEntriesPartsAsync,
+  partEntriesWithMeshes, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX, streamedMeshEntryBytes, zipPcadEntriesPartsAsync,
   type ImportedMeshBytes, type PcadZipEntries, type WriteDocumentBundleOptions, type WritePcadFileOptions, type WritePcaddFileOptions } from './pcadFile.js';
 import { concatZipParts, hasSteppedZipEntry, packOwnedZipEntries, zipEntriesWithOwnedBuffersPartsAsync, type ZipChunkedBytes, type ZipStepEntry } from './zipSteps.js';
 import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
@@ -16,6 +16,7 @@ export type SaveDocumentInput =
   | { readonly kind: 'drawing'; readonly document: DrawingDocument; readonly options: WritePcaddFileOptions }
   | { readonly kind: 'drawingTemplate'; readonly template: DrawingTemplate; readonly savedAt: string };
 
+/** `compressing` starts ZIP work; deferred mesh entries still have source readers during that stage. */
 export type SaveEncodingStage = 'preparing' | 'compressing';
 export interface SaveEncodingControl {
   readonly signal?: AbortSignal;
@@ -35,6 +36,12 @@ export interface SaveEncodingControl {
 /** The callback owns the input views and may release a component after its last use. */
 export interface OwnedSaveEncodingControl extends SaveEncodingControl {
   readonly onMeshComponentWritten: (component: Float32Array | Uint32Array) => void;
+  /**
+   * Owned Worker input can be consumed during compression when no saved result needs the prepared bytes.
+   * If an entry still reads source meshes during compression, use onMeshComponentWritten for their lifetime.
+   * In that case the bulk release boundary onEntriesBuilt is not called.
+   */
+  readonly streamMeshEntries?: boolean;
 }
 
 export type SaveDocumentEncoder = (input: SaveDocumentInput, control?: SaveEncodingControl) => Promise<Uint8Array>;
@@ -66,9 +73,31 @@ export const encodeSaveDocumentParts: SaveDocumentPartsEncoder = async (input, c
 export function encodeOwnedSaveDocumentParts(input: SaveDocumentInput, control: OwnedSaveEncodingControl): Promise<readonly Uint8Array[]> {
   const results = input.kind === 'part' ? input.options.analysisResults
     : input.kind === 'assembly' ? input.bundle.analysisResults : undefined;
+  if (control.streamMeshEntries && (results === undefined || results.size === 0)) {
+    return encodeStreamedOwnedSaveDocumentParts(input, control);
+  }
   // The saved-result writer may still use raw data during preparation.
   const release = results === undefined || results.size === 0 ? control.onMeshComponentWritten : undefined;
   return encodeSaveParts(input, control, mesh => ownedMeshEntryBytes(mesh, release));
+}
+
+/** Worker path. Large meshes are materialized at the corresponding ZIP entry. */
+function encodeStreamedOwnedSaveDocumentParts(input: SaveDocumentInput,
+  control: OwnedSaveEncodingControl): Promise<readonly Uint8Array[]> {
+  const { onMeshComponentWritten } = control;
+  const prepared: (Float32Array | Uint32Array)[] = [];
+  let deferredMeshes = false;
+  return encodeSaveParts(input, { ...control, onEntriesBuilt: () => {
+    for (const component of prepared) onMeshComponentWritten(component);
+    prepared.length = 0;
+    if (!deferredMeshes) control.onEntriesBuilt?.();
+  } }, mesh => {
+    const entry = streamedMeshEntryBytes(mesh, onMeshComponentWritten);
+    // Hash and result writers may still read small meshes during preparation.
+    if (entry instanceof Uint8Array) prepared.push(mesh.positions, mesh.normals, mesh.indices);
+    else if (entry !== null) deferredMeshes = true;
+    return entry;
+  });
 }
 
 type OwnedEntries = PcadZipEntries<ZipChunkedBytes>;

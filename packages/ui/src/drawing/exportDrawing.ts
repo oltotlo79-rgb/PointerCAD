@@ -2,6 +2,7 @@ import { drawingDimensionContext } from '@pointercad/model';
 import { renderDrawing, UnknownDrawingPaperError, toPdf, toSvg, type DrawingDocument, type RenderDocument } from '@pointercad/drawing';
 import { resolveDrawingDimensions, resolveDrawingGdt, resolveDrawingWelds } from '@pointercad/model';
 import { writeDrawingDxf } from '@pointercad/io';
+import { dxfFailureMessage } from '../file/exchangeFailureMessage.js';
 import { saveFileAsThrough } from '../file/fileGateway.js';
 import { hasSaveRecoveryCopy } from '../file/saveFailure.js';
 import { t } from '../i18n/t.js';
@@ -63,6 +64,11 @@ function exportFailureText(error: unknown): string {
   return error instanceof Error ? error.message : t('drawing.error.outputFailed');
 }
 
+function encodeDrawingDxf(...input: Parameters<typeof writeDrawingDxf>): ReturnType<typeof writeDrawingDxf> {
+  try { return writeDrawingDxf(...input); }
+  catch (error) { throw new Error(dxfFailureMessage(error), { cause: error }); }
+}
+
 const exporting = new Set<string>();
 
 export async function exportDrawing(options: { readonly format: DrawingOutputFormat; readonly dpi?: DrawingDpi }): Promise<boolean> {
@@ -81,7 +87,7 @@ export async function exportDrawing(options: { readonly format: DrawingOutputFor
       const outlineTextOwnerIds = new Set<string>([...drawing.datums, ...drawing.gdtFrames, ...drawing.weldSymbols].map((item) => item.id));
       for (const item of [...drawing.datums, ...drawing.gdtFrames]) if (item.sizeDimensionId !== undefined) outlineTextOwnerIds.add(item.sizeDimensionId);
       for (const frame of drawing.gdtFrames) for (const segment of frame.segments) for (const id of segment.basicDimensionIds) outlineTextOwnerIds.add(id);
-      const result = writeDrawingDxf(prepared.render, drawing.layers, 0.001, { outlineTextOwnerIds });
+      const result = encodeDrawingDxf(prepared.render, drawing.layers, 0.001, { outlineTextOwnerIds });
       bytes = new TextEncoder().encode(result.text);
       notice = t('drawing.export.dxfDetails').replace('{omitted}', String(result.skippedPrimitiveCount))
         .replace('{colors}', String(result.approximatedColorCount)).replace('{curves}', String(result.flattenedCurveCount))

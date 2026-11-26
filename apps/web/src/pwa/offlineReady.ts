@@ -50,27 +50,42 @@ async function readMarker(baseUrl: URL, cacheName: string, storage: OfflineReadS
  */
 export async function inspectPreparedOfflineEdition(baseUrl: URL, cacheName: string, storage: OfflineReadStoragePort,
   signal: AbortSignal): Promise<ReadyMarker> {
+  return (await inspectPreparedOfflineNavigation(baseUrl, cacheName, storage, signal)).ready;
+}
+
+/** The navigation can take the exact response whose bytes were just authenticated in this inspection. */
+export async function inspectPreparedOfflineNavigation(baseUrl: URL, cacheName: string, storage: OfflineReadStoragePort,
+  signal: AbortSignal, navigation?: URL): Promise<{ ready: ReadyMarker; response?: Response }> {
   let reason: 'marker' | 'asset' = 'marker';
+  let navigationResponse: Response | undefined;
   try {
     signal.throwIfAborted();
     const ready = await readMarker(baseUrl, cacheName, storage, signal);
     reason = 'asset';
     for (const asset of ready.manifest.assets) {
       signal.throwIfAborted();
-      const response = await storage.match(new URL(asset.url, baseUrl).href, { cacheName });
+      const stored = new URL(asset.url, baseUrl);
+      const response = await storage.match(stored.href, { cacheName });
+      const servesNavigation = navigation !== undefined && (navigation.href === stored.href
+        || navigation.href === offlineAssetRequestUrl(baseUrl, asset.url).href);
       if (response === undefined) throw new OfflineEditionError('asset');
       try {
-        await verifyOfflineAssetResponse(baseUrl, asset, response, signal, () => undefined);
+        const verified = await verifyOfflineAssetResponse(baseUrl, asset, response, signal, () => undefined);
+        if (servesNavigation) {
+          void navigationResponse?.body?.cancel().catch(() => undefined);
+          navigationResponse = verified;
+        }
       } finally {
-        // Verification reads the clone. Release the unused original branch as well.
-        void response.body?.cancel().catch(() => undefined);
+        // Verification reads a clone. A selected page keeps the unopened branch for serving.
+        if (navigationResponse !== response) void response.body?.cancel().catch(() => undefined);
       }
     }
     reason = 'marker';
     const after = await readMarker(baseUrl, cacheName, storage, signal);
     if (after.manifest.buildId !== ready.manifest.buildId) throw new OfflineEditionError('marker');
-    return ready;
+    return { ready, response: navigationResponse };
   } catch (error) {
+    void navigationResponse?.body?.cancel().catch(() => undefined);
     if (signal.aborted) throw new OfflineEditionError('cancelled', { cause: error });
     if (error instanceof OfflineEditionError) throw error;
     throw new OfflineEditionError(reason, { cause: error });

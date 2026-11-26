@@ -1,7 +1,7 @@
 /** Worker-owned optional exact evaluation. Construction of a concrete engine belongs to its host. */
 import { MathInputProblem, type MathEvaluation, type MathNode } from './mathInputContract.js';
 import { createMathWorkEnvelope, decodeMathWorkEnvelope } from './mathWorkRequest.js';
-import { executeMathWorkRequest, MathDeadlineExceeded, type MathExecutionBackend, type MathExecutionReply } from './mathWorkExecution.js';
+import { executeMathWorkRequest, internalMathEvaluation, mathProblemEvaluation, MathDeadlineExceeded, type MathExecutionBackend, type MathExecutionReply, type MathInternalErrorReporter } from './mathWorkExecution.js';
 import { coefficientExpressionMap, substituteCoefficientExpressions } from './mathCoefficientExpression.js';
 import { prepareExactMathCalculation } from './prepareMathCalculation.js';
 import { evaluateExactMathResult } from './evaluateExactMathResult.js';
@@ -23,6 +23,7 @@ export interface ExactMathWorkOptions {
   readonly engine: ExactMathEngine;
   /** The host owns the finite deadline and terminates the Worker to interrupt a blocked engine. */
   readonly shouldStop: () => 'cancelled' | 'deadline' | undefined;
+  readonly reportInternalError?: MathInternalErrorReporter;
 }
 function needsExactResult(value: MathEvaluation): boolean {
   // A bound sequence term may discharge its integer conditions only at the
@@ -91,7 +92,7 @@ async function executeWithRecalculation(value: unknown, options: ExactMathWorkOp
     ...(request.presentationNotation === undefined ? {} : { presentation: null }),
     ...(request.renameCoefficient === undefined && request.renameDeclaration === undefined ? {} : { renamedDefinition: null }) };
   const clock = watchWallClock(options, recalculation), backend = clock.backend;
-  const original = clock.stage(() => executeMathWorkRequest(envelope, backend), reply => reply.evaluation,
+  const original = clock.stage(() => executeMathWorkRequest(envelope, backend, options.reportInternalError), reply => reply.evaluation,
     reply => ({ ...reply, evaluation: timeLimit() }));
   if (original.expression === null || request.renameCoefficient !== undefined || request.renameDeclaration !== undefined || request.functionScope !== undefined
     || !needsExactResult(original.evaluation)) return original;
@@ -161,10 +162,7 @@ async function executeWithRecalculation(value: unknown, options: ExactMathWorkOp
     const stop = options.shouldStop(); if (stop !== undefined) return reply({ status: 'stopped', reason: stop });
     if (error instanceof ExactMathEngineStopped) return reply({ status: 'stopped', reason: error.reason });
     if (error instanceof MathDeadlineExceeded) return reply(timeLimit());
-    if (error instanceof MathInputProblem) {
-      if (error.code === 'budget') return reply({ status: 'stopped', reason: 'budget' });
-      return reply({ status: 'invalid', reason: error.code === 'forbidden' ? 'unsupported' : error.code, detail: error.message });
-    }
-    return reply({ status: 'invalid', reason: 'unsupported', detail: 'この式の厳密な結果を決定できませんでした。入力と条件を確認してください。' });
+    if (error instanceof MathInputProblem) return reply(mathProblemEvaluation(error));
+    return reply(internalMathEvaluation('exact', error, 'この式の厳密な結果を決定できませんでした。入力と条件を確認してください。', options.reportInternalError));
   }
 }

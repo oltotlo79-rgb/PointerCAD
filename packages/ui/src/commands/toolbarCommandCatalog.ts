@@ -70,7 +70,8 @@ function toolbarDocumentKinds(group: ToolbarCommandGroup, id: string): readonly 
   if (group === 'file' || (group === 'fileMenu' && (id === 'saveAs' || id === 'savePoints'))) return ['part', 'assembly', 'drawing'];
   if (group === 'drawing') return ['drawing'];
   if (group === 'analysis') return ANALYSIS_MENU_ITEMS.find(item => item.id === id)?.documentKinds ?? [];
-  if (group === 'view') return ['section', 'chaining', 'snap', 'matchWorkPlane'].includes(id) ? ['part'] : ['part', 'assembly'];
+  if (group === 'view') return ['section', 'chaining', 'matchWorkPlane'].includes(id) ? ['part'] : ['part', 'assembly'];
+  if (group === 'snap' && (id === 'endpoint' || id === 'grid')) return ['part', 'assembly'];
   if (group === 'assembly' || group === 'mate' || group === 'assemblyUtility') return ['assembly'];
   if (group === 'projection' || (group === 'look' && id === 'strength')) return ['part', 'assembly'];
   if (group === 'fileMenu' && ['newAssembly', 'newDrawingFromPart', 'newDrawingFromTemplate'].includes(id)) return ['part', 'assembly'];

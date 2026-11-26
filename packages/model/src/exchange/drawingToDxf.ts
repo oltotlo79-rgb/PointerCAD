@@ -86,11 +86,20 @@ function textOutlineTransform(text: RenderText): AffineTransform2 | null {
   return transform.every(Number.isFinite) && exceedsMagnitude(transform[0] * transform[3] - transform[1] * transform[2], 1e-12) ? transform : null;
 }
 
+/** 図面の用紙寸法・許容差・レイヤー指定で起きる検証失敗。 */
+export class DrawingDxfInputError extends Error {
+  constructor(readonly code: 'invalidPaper' | 'duplicateLayer') {
+    super('図面の用紙またはレイヤーが正しくありません。');
+  }
+}
+
 /** 用紙上の共通IRを既存のR12書き手へ渡す。新しいDXF実体を混ぜず、省略は件数で返す。 */
 export function drawingToDxf(document: RenderDocument, layers: readonly DrawingLayer[], toleranceMm = 0.001,
   options: DrawingDxfConversionOptions = {}): DrawingDxfGeometry {
-  if (![document.widthMm, document.heightMm, toleranceMm].every((value) => Number.isFinite(value) && value > 0)
-    || new Set(layers.map((layer) => layer.id)).size !== layers.length) throw new Error('図面の用紙またはレイヤーが正しくありません。');
+  if (![document.widthMm, document.heightMm, toleranceMm].every((value) => Number.isFinite(value) && value > 0))
+    throw new DrawingDxfInputError('invalidPaper');
+  if (new Set(layers.map((layer) => layer.id)).size !== layers.length)
+    throw new DrawingDxfInputError('duplicateLayer');
   const byId = new Map(layers.map((layer) => [layer.id, layer]));
   const entities: DrawingDxfEntity[] = [];
   let skippedPrimitiveCount = 0, flattenedCurveCount = 0, approximatedColorCount = 0, outlinedTextCount = 0;

@@ -16,6 +16,7 @@ import type {
 import type { PlacementSpec, ShapeAssemblyNode } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { ShapeImportError, withShapeImportDiagnostic } from './exchangeShared.js';
 import {
   classifyStepUnit,
   prepareStepReadUnit,
@@ -134,6 +135,14 @@ export function readStepAssembly(
   bytes: Uint8Array,
   options: StepReadOptions = {},
 ): StepAssemblyReadResult {
+  return withShapeImportDiagnostic(() => readStepAssemblyFile(oc, bytes, options));
+}
+
+function readStepAssemblyFile(
+  oc: OpenCascadeInstance,
+  bytes: Uint8Array,
+  options: StepReadOptions,
+): StepAssemblyReadResult {
   const fileName = options.fileName ?? 'import.step';
   const withColors = options.withColors ?? true;
   prepareStepReadUnit(oc);
@@ -149,7 +158,7 @@ export function readStepAssembly(
       reader.SetNameMode(true);
       const range = keep(new oc.Message_ProgressRange_1());
       if (!reader.Perform_2(path, handle, range)) {
-        throw new Error(STEP_READ_FAILED_MESSAGE);
+        throw new ShapeImportError({ code: 'unreadable' }, STEP_READ_FAILED_MESSAGE);
       }
       const unitNames = readStepUnitNames(oc, reader, keep);
       const main = keep(xcafDocument.Main());
@@ -158,7 +167,7 @@ export function readStepAssembly(
       const free = keep(new oc.TDF_LabelSequence_1());
       shapeTool.GetFreeShapes(free);
       if (Number(free.Length()) === 0) {
-        throw new Error(STEP_NO_SHAPE_MESSAGE);
+        throw new ShapeImportError({ code: 'noShape' }, STEP_NO_SHAPE_MESSAGE);
       }
 
       const definitions: StepAssemblyDefinition[] = [];
@@ -191,17 +200,20 @@ export function readStepAssembly(
       ): ShapeAssemblyNode[] => {
         const labels = keep(new oc.TDF_LabelSequence_1());
         if (!oc.XCAFDoc_ShapeTool.GetComponents(assembly, labels, false)) {
-          throw new Error(STEP_ASSEMBLY_COMPONENT_MESSAGE);
+          throw new ShapeImportError(
+            { code: 'internal', detail: 'XCAF GetComponents failed for an assembly label' },
+            STEP_ASSEMBLY_COMPONENT_MESSAGE,
+          );
         }
         const children: ShapeAssemblyNode[] = [];
         for (let index = 1; index <= Number(labels.Length()); index += 1) {
           const occurrence = keep(labels.Value(index));
           const referred = keep(new oc.TDF_Label());
           if (!oc.XCAFDoc_ShapeTool.GetReferredShape(occurrence, referred)) {
-            throw new Error(STEP_ASSEMBLY_COMPONENT_MESSAGE);
+            throw new ShapeImportError({ code: 'missingComponent' }, STEP_ASSEMBLY_COMPONENT_MESSAGE);
           }
           if (containsLabel(ancestors, referred)) {
-            throw new Error(STEP_ASSEMBLY_CYCLE_MESSAGE);
+            throw new ShapeImportError({ code: 'assemblyCycle' }, STEP_ASSEMBLY_CYCLE_MESSAGE);
           }
           const location = keep(oc.XCAFDoc_ShapeTool.GetLocation(occurrence));
           const id = `${pathPrefix}/${String(index)}`;
@@ -252,7 +264,7 @@ export function readStepAssembly(
         }
       }
       if (!solidFound) {
-        throw new Error(STEP_NO_SOLID_MESSAGE);
+        throw new ShapeImportError({ code: 'noSolid' }, STEP_NO_SOLID_MESSAGE);
       }
       return {
         name: rootNames.length === 1 ? rootNames[0] ?? null : null,

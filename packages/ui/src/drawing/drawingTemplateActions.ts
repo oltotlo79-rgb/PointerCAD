@@ -6,7 +6,7 @@ import { openFileThrough, saveFileAsThrough } from '../file/fileGateway.js';
 import { queueDocumentSave, reportSaveEncodingFailure } from '../file/documentSaveQueue.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { t } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { createDrawingFromCurrentPart } from './createDrawingCommands.js';
 
 interface DrawingSheetDraft {
@@ -116,16 +116,26 @@ export async function createDrawingFromTemplateFile(): Promise<boolean> {
     return current.document === state.document && current.assembly === state.assembly && current.drawing === null
       && current.assemblyLibrary === state.assemblyLibrary && current.activeDocumentId === state.activeDocumentId;
   };
-  try {
-    const picked = await openFileThrough(state.fileGateway, ['pcadt']);
-    if (picked === null || !stillCurrent()) return false;
-    const result = readDrawingTemplateFile(picked.bytes);
-    if (!result.ok) {
-      useAppStore.setState({ fileMessage: { key: 'drawing.template.invalidFile', failed: true } }); return false;
-    }
-    return await createDrawingFromCurrentPart(result.template);
-  } catch {
-    if (stillCurrent()) useAppStore.setState({ fileMessage: { key: 'drawing.template.invalidFile', failed: true } });
+  const report = (key: MessageKey): false => {
+    if (stillCurrent()) useAppStore.getState().setFileMessage({ key, failed: true });
     return false;
+  };
+  const picked = await openFileThrough(state.fileGateway, ['pcadt']).catch((error: unknown) => {
+    if (import.meta.env.DEV) console.error('PointerCAD drawing template open', error);
+    report('file.openFailed');
+    return null;
+  });
+  if (picked === null || !stillCurrent()) return false;
+  try {
+    const result = readDrawingTemplateFile(picked.bytes);
+    if (result.ok) return await createDrawingFromCurrentPart(result.template);
+    const error = result.error;
+    if (import.meta.env.DEV) console.error('PointerCAD drawing template read', error);
+    if (error.code === 'missingDocument') return report('drawing.template.missingSettings');
+    if ('diagnostic' in error && error.diagnostic === 'invalidUtf8') return report('drawing.template.invalidUtf8');
+    return report('drawing.template.invalidFile');
+  } catch (error) {
+    if (import.meta.env.DEV) console.error('PointerCAD drawing template read', error);
+    return report('assembly.error.internal');
   }
 }

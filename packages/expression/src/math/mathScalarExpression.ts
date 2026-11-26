@@ -6,7 +6,8 @@ import type { MathWorkResult } from './mathWorkReply.js';
 
 export type MathScalarIssue =
   | { readonly code: 'invalidEvaluation'; readonly evaluation: Extract<MathEvaluation, { status: 'invalid' }> }
-  | { readonly code: 'stopped' | 'notUniqueReal' | 'inexactCoordinate' | 'outOfRange' | 'sourceUnavailable' }
+  | { readonly code: 'stopped'; readonly evaluation: Extract<MathEvaluation, { status: 'stopped' }> }
+  | { readonly code: 'notUniqueReal' | 'inexactCoordinate' | 'outOfRange' | 'sourceUnavailable' }
   | { readonly code: 'internal'; readonly reason: 'decimal' | 'coordinate'; readonly cause: unknown };
 
 interface MathScalarFailure { readonly ok: false; readonly issue: MathScalarIssue }
@@ -24,7 +25,7 @@ export type MathScalarValueResult =
 /** Coordinates and constant parts of geometry use the same finite-real/precision policy. */
 function inspectMathScalarValue(evaluation: MathEvaluation): MathScalarCoordinate | MathScalarFailure {
   if (evaluation.status === 'invalid') return { ok: false, issue: { code: 'invalidEvaluation', evaluation } };
-  if (evaluation.status === 'stopped') return { ok: false, issue: { code: 'stopped' } };
+  if (evaluation.status === 'stopped') return { ok: false, issue: { code: 'stopped', evaluation } };
   if (evaluation.status !== 'value' || evaluation.kind !== 'real') {
     return { ok: false, issue: { code: 'notUniqueReal' } };
   }
@@ -53,7 +54,13 @@ function inspectMathScalarValue(evaluation: MathEvaluation): MathScalarCoordinat
 /** Classify acceptance failures for the editor without changing stored or worker results. */
 export function inspectMathScalarExpression(result: MathWorkResult): MathScalarExpressionValue | MathScalarFailure {
   const { definition, evaluation } = result;
-  if (definition === null) return { ok: false, issue: { code: 'sourceUnavailable' } };
+  if (definition === null) {
+    if ((evaluation.status === 'invalid' && evaluation.diagnostic !== undefined) || evaluation.status === 'stopped') {
+      const failure = inspectMathScalarValue(evaluation);
+      if (!failure.ok) return failure;
+    }
+    return { ok: false, issue: { code: 'sourceUnavailable' } };
+  }
   const scalar = inspectMathScalarValue(evaluation);
   return scalar.ok ? { ok: true, decimal: scalar.decimal, value: { source: definition.source,
     value: scalar.value, display: scalar.display, mathDefinition: definition } } : scalar;
@@ -80,5 +87,7 @@ export function mathScalarValue(evaluation: MathEvaluation): MathScalarValueResu
 
 export function mathScalarExpression(result: MathWorkResult): MathScalarExpressionResult {
   const scalar = inspectMathScalarExpression(result);
-  return scalar.ok ? scalar : { ok: false, message: legacyScalarIssueText(scalar.issue) };
+  return scalar.ok ? scalar : { ok: false, message: legacyScalarIssueText(
+    result.definition === null ? { code: 'sourceUnavailable' } : scalar.issue,
+  ) };
 }

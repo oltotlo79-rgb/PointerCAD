@@ -20,6 +20,16 @@ describe('配置の方眼への吸着', () => {
     expect(placementGridSnapFor({ ...base, snapKinds: DEFAULT_SNAP_KINDS.filter(kind => kind !== 'grid') })).toBeNull();
   });
 
+  it('幅か線の数が設定範囲の外なら配置に固定方眼を使わない', () => {
+    const base = { grid: FIXED, snapEnabled: true, snapKinds: DEFAULT_SNAP_KINDS, radiusPixels: 12 };
+    for (const stepMm of [0, -1, 0.01, Infinity, NaN]) {
+      expect(placementGridSnapFor({ ...base, grid: { ...FIXED, stepMm } })).toBeNull();
+    }
+    for (const count of [0, 1.5, 51]) {
+      expect(placementGridSnapFor({ ...base, grid: { ...FIXED, count } })).toBeNull();
+    }
+  });
+
   it('一筆書きの点は、画面で半径の中の格子点へ吸い付き、遠い時・広がりの外では元の点のまま(高さの面の上でも同じ格子)', () => {
     const level = { ...WORK_PLANES.xy, origin: [0, 0, 300] as Vec3 };
     expect(snapStrokePointToGrid(level, [405, 195, 300], SNAP, topView, [405, 195])).toEqual([400, 200, 300]);

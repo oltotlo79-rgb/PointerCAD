@@ -2,6 +2,7 @@ import { createPaperFrame, paperSizeOf, type DrawingDocument, type DrawingView, 
 import { resolveViewConstructions } from '@pointercad/model';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
 
 export function startConstructedDrawingView(kind: DrawingViewConstruction['kind']): boolean {
@@ -37,7 +38,7 @@ export function commitConstructedDrawingView(expected: DrawingDocument, draft: {
   const next = { ...document, views: previous === undefined ? [...document.views, view]
     : document.views.map((entry) => entry.id === previous.id ? view : entry) };
   const resolved = resolveViewConstructions(next, source);
-  if (!resolved.ok) { state.setDrawingMessage(resolved.message); return false; }
+  if (!resolved.ok) { state.setDrawingMessage(resolved.text === undefined ? resolved.message : failureMessage(resolved.text)); return false; }
   if (previous !== undefined && JSON.stringify(previous) === JSON.stringify(view)) return true;
   state.applyDrawing(next); state.selectDrawingIds([view.id]); state.setDrawingMessage(null);
   return true;

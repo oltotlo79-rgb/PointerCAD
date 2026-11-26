@@ -1,4 +1,4 @@
-import type { ReadPcadFileErrorCode } from '@pointercad/io';
+import type { ReadPcadFileError, ReadPcadFileErrorCode } from '@pointercad/io';
 import { MAX_SUB_ASSEMBLY_DEPTH } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
 
@@ -33,6 +33,14 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
 };
 
 /** 文に差し込む値(差し込みの無い理由は持たない)。 */
+const ARCHIVE_DIAGNOSTIC_KEYS: Readonly<Record<NonNullable<ReadPcadFileError['diagnostic']>, MessageKey>> = {
+  embeddedDocument: 'file.error.embeddedDocument',
+  partAttachmentInvalid: 'file.error.partAttachmentInvalid',
+  partAttachmentMissing: 'file.error.partAttachmentMissing',
+  partAttachmentDigestMissing: 'file.error.partAttachmentDigestMissing',
+  partAttachmentDigestMismatch: 'file.error.partAttachmentDigestMismatch',
+};
+
 const OPEN_ERROR_PARAMETERS: Partial<Readonly<Record<ReadPcadFileErrorCode, Readonly<Record<string, string>>>>> = {
   subAssemblyDepth: { max: String(MAX_SUB_ASSEMBLY_DEPTH) },
 };
@@ -44,21 +52,28 @@ const OPEN_ERROR_PARAMETERS: Partial<Readonly<Record<ReadPcadFileErrorCode, Read
  * 使えるようにここへ 1 つだけ口を開けてある。表そのものは外へ出さない(理由と文言の
  * 対応を書き換える場所を 1 か所に閉じるため)。
  */
-export function openErrorMessageKey(code: ReadPcadFileErrorCode): MessageKey {
-  return OPEN_ERROR_KEYS[code];
+export function openErrorMessageKey(error: ReadPcadFileErrorCode | ReadPcadFileError): MessageKey {
+  return openErrorMessage(error).key;
 }
 
 /**
  * 読めなかった理由を、文の鍵と差し込む値の組にする(画面の知らせ FileMessage へ広げて渡せる形)。差し込む値のある理由(入れ子の深さ)が
  * 出うる読み取り(アセンブリ・図面の出どころ・自動保存の控え)は、鍵だけの openErrorMessageKey でなく、この口を使う。
  */
-export function openErrorMessage(code: ReadPcadFileErrorCode): { readonly key: MessageKey; readonly parameters?: Readonly<Record<string, string>> } {
+export function openErrorMessage(error: ReadPcadFileErrorCode | ReadPcadFileError): { readonly key: MessageKey; readonly parameters?: Readonly<Record<string, string>> } {
+  const code = typeof error === 'string' ? error : error.code;
+  const diagnostic = typeof error === 'string' ? undefined : error.diagnostic;
+  if (typeof error !== 'string' && import.meta.env.DEV
+    && (diagnostic !== undefined || code === 'missingField' || code === 'invalidField')) {
+    console.error('PointerCAD document read', error);
+  }
+  const key = diagnostic === undefined ? OPEN_ERROR_KEYS[code] : ARCHIVE_DIAGNOSTIC_KEYS[diagnostic];
   const parameters = OPEN_ERROR_PARAMETERS[code];
-  return parameters === undefined ? { key: OPEN_ERROR_KEYS[code] } : { key: OPEN_ERROR_KEYS[code], parameters };
+  return parameters === undefined ? { key } : { key, parameters };
 }
 
 /** 復元できない理由の案内(RestorePrompt の reasonKey・reasonParameters)へ広げて渡せる形。 */
-export function openErrorReason(code: ReadPcadFileErrorCode): { readonly reasonKey: MessageKey; readonly reasonParameters?: Readonly<Record<string, string>> } {
-  const { key, parameters } = openErrorMessage(code);
+export function openErrorReason(error: ReadPcadFileErrorCode | ReadPcadFileError): { readonly reasonKey: MessageKey; readonly reasonParameters?: Readonly<Record<string, string>> } {
+  const { key, parameters } = openErrorMessage(error);
   return parameters === undefined ? { reasonKey: key } : { reasonKey: key, reasonParameters: parameters };
 }

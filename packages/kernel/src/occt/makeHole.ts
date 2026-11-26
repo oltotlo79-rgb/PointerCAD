@@ -51,6 +51,7 @@ import { buildBooleanShape } from './buildBooleanShape.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
+import { HoleFailure, internalHoleFailure } from './holeFailure.js';
 import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /** 面が選び直せなかったとき(FR-504)。 */
@@ -252,7 +253,7 @@ function readPlaneFrame(
   keep: Allocations['keep'],
 ): PlaneFrame {
   const basis = readNativePlanarBasis(oc, face, keep);
-  if (basis === null) throw new Error('平面の外向きを決定できません。');
+  if (basis === null) throw internalHoleFailure('平面の外向きを決定できません。', 'Native plane basis unavailable');
   return { normal: basis.normal, xAxis: basis.xAxis, yAxis: basis.yAxis, pointOnPlane: basis.origin };
 }
 
@@ -352,7 +353,7 @@ function resolveFaceOfKind(
     throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   if (info.surfaceKind !== surfaceKind) {
-    throw new Error(wrongKindMessage);
+    throw new HoleFailure(surfaceKind === 'plane' ? 'hole-not-planar' : 'hole-not-cylindrical', wrongKindMessage);
   }
 
   const face = faceAt(oc, shape, match.match.index);
@@ -400,17 +401,18 @@ interface CylinderFrame {
 function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: Allocations['keep']): CylinderFrame {
   const orientation = face.Orientation_1();
   if (orientation !== oc.TopAbs_Orientation.TopAbs_FORWARD && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) {
-    throw new Error(CYLINDER_FRAME_MESSAGE);
+    throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Cylinder face has no material-side orientation');
   }
   // 第 2 引数 true: 面の境界(トリム)を読み込み、パラメーターの範囲を面の実際の範囲にする。
   const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, true));
   if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) {
-    throw new Error(NOT_CYLINDRICAL_MESSAGE);
+    throw internalHoleFailure(NOT_CYLINDRICAL_MESSAGE, 'Native surface disagrees with the selected cylinder');
   }
   // 高さは mm で測るので、拡大縮小を含む形は断る(パラメーター v が mm にならない)。
   const scale = keep(adaptor.Trsf()).ScaleFactor();
-  if (!Number.isFinite(scale) || exceedsMagnitude(Math.abs(scale) - 1, 1e-12)) {
-    throw new Error(CYLINDER_FRAME_MESSAGE);
+  if (!Number.isFinite(scale)) throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Nonfinite cylinder scale');
+  if (exceedsMagnitude(Math.abs(scale) - 1, 1e-12)) {
+    throw new HoleFailure('hole-cylinder-scaled', CYLINDER_FRAME_MESSAGE);
   }
   const cylinder = keep(adaptor.Cylinder());
   const position = keep(cylinder.Position());
@@ -424,11 +426,11 @@ function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: All
   const point: Vec3Tuple = [location.X(), location.Y(), location.Z()];
   if (zAxis === null || xAxis === null || !Number.isFinite(radius) || radius <= 0 || !bounds.every(Number.isFinite)
     || !isFiniteTuple(point) || exceedsMagnitude(dot(zAxis, xAxis), 1e-9)) {
-    throw new Error(CYLINDER_FRAME_MESSAGE);
+    throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Invalid cylinder basis or bounds');
   }
   const uFirst = adaptor.FirstUParameter(), uLast = adaptor.LastUParameter();
   const vFirst = adaptor.FirstVParameter(), vLast = adaptor.LastVParameter();
-  if (!(uLast > uFirst) || !(vLast > vFirst)) throw new Error(CYLINDER_FRAME_MESSAGE);
+  if (!(uLast > uFirst) || !(vLast > vFirst)) throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Empty cylinder parameter bounds');
   return { adaptor, location: point, zAxis, xAxis, yAxis: cross(zAxis, xAxis), radius, direct: position.Direct(),
     uFirst, uLast, vFirst, vLast, orientationSign: orientation === oc.TopAbs_Orientation.TopAbs_FORWARD ? 1 : -1 };
 }
@@ -454,14 +456,14 @@ function cylinderLocationFrame(
   keep: Allocations['keep'],
 ): { readonly origin: Vec3Tuple; readonly direction: Vec3Tuple; readonly concave: boolean } {
   if (!Number.isFinite(height) || !Number.isFinite(angle)) {
-    throw new Error(CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
+    throw new HoleFailure('hole-cylinder-coordinates', CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
   }
   const period = 2 * Math.PI;
   const v = frame.vFirst + height;
   const turned = frame.direct ? angle : -angle;
   const u = frame.uFirst + (((turned - frame.uFirst) % period) + period) % period;
   if (v < frame.vFirst || v > frame.vLast || u > frame.uLast) {
-    throw new Error(CYLINDER_OUTSIDE_MESSAGE);
+    throw new HoleFailure('hole-cylinder-outside', CYLINDER_OUTSIDE_MESSAGE);
   }
   const classify = (uu: number) => keep(new oc.BRepClass_FaceClassifier_3(face, keep(new oc.gp_Pnt2d_3(uu, v)),
     CYLINDER_LINEAR_TOLERANCE, false, CYLINDER_LINEAR_TOLERANCE)).State();
@@ -474,14 +476,14 @@ function cylinderLocationFrame(
     const neighbours = [fold(u + delta), fold(u - delta)];
     if (state !== oc.TopAbs_State.TopAbs_ON
       || neighbours.some((uu) => uu > frame.uLast || classify(uu) !== oc.TopAbs_State.TopAbs_IN)) {
-      throw new Error(CYLINDER_OUTSIDE_MESSAGE);
+      throw new HoleFailure('hole-cylinder-outside', CYLINDER_OUTSIDE_MESSAGE);
     }
   }
   const point = keep(new oc.gp_Pnt_1()), du = keep(new oc.gp_Vec_1()), dv = keep(new oc.gp_Vec_1());
   frame.adaptor.D1(u, v, point, du, dv);
   const natural = toUnit(cross([du.X(), du.Y(), du.Z()], [dv.X(), dv.Y(), dv.Z()]));
   const origin: Vec3Tuple = [normalizeZero(point.X()), normalizeZero(point.Y()), normalizeZero(point.Z())];
-  if (natural === null || !isFiniteTuple(origin)) throw new Error(CYLINDER_FRAME_MESSAGE);
+  if (natural === null || !isFiniteTuple(origin)) throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Invalid cylinder point or normal');
   const outward: Vec3Tuple = [natural[0] * frame.orientationSign, natural[1] * frame.orientationSign, natural[2] * frame.orientationSign];
   const radial: Vec3Tuple = [
     Math.cos(angle) * frame.xAxis[0] + Math.sin(angle) * frame.yAxis[0],
@@ -498,7 +500,7 @@ function cylinderLocationFrame(
   const scale = Math.max(1, radius, Math.abs(v), Math.hypot(location[0], location[1], location[2]));
   if (Math.hypot(origin[0] - expected[0], origin[1] - expected[1], origin[2] - expected[2]) > CYLINDER_LINEAR_TOLERANCE * scale
     || exceedsMagnitude(Math.abs(dot(outward, radial)) - 1, 1e-9)) {
-    throw new Error(CYLINDER_FRAME_MESSAGE);
+    throw internalHoleFailure(CYLINDER_FRAME_MESSAGE, 'Native and analytic cylinder frames disagree');
   }
   // 材料の外向きが軸の側を向く(放射方向と逆)なら凹んだ面(管の内面)。
   return { origin, direction: [normalizeZero(-outward[0]), normalizeZero(-outward[1]), normalizeZero(-outward[2])],
@@ -517,14 +519,14 @@ function resolveCylindricalHoleFrame(
   origins?: CurrentOriginIndex,
 ): HoleFrame {
   if (spec.cylindrical.kind !== 'cylinder-face' || spec.centers.length !== 0 || spec.tiltAngle !== 0 || spec.tiltAzimuth !== 0) {
-    throw new Error(CYLINDER_UNSUPPORTED_MESSAGE);
+    throw new HoleFailure('hole-cylinder-unsupported', CYLINDER_UNSUPPORTED_MESSAGE);
   }
   if (spec.cylindrical.locations.length === 0) {
-    throw new Error(NO_CYLINDER_LOCATION_MESSAGE);
+    throw new HoleFailure('hole-cylinder-no-location', NO_CYLINDER_LOCATION_MESSAGE);
   }
   for (const location of spec.cylindrical.locations) {
     if (!Number.isFinite(location.height) || !Number.isFinite(location.angle)) {
-      throw new Error(CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
+      throw new HoleFailure('hole-cylinder-coordinates', CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
     }
   }
   const diagonal = boundingDiagonal(oc, shape);
@@ -538,9 +540,12 @@ function resolveCylindricalHoleFrame(
     const placed = spec.cylindrical.locations.map(location =>
       cylinderLocationFrame(oc, face, frame, location.height, location.angle, keep));
     const first = placed[0];
-    if (first === undefined) throw new Error(NO_CYLINDER_LOCATION_MESSAGE);
+    if (first === undefined) throw new HoleFailure('hole-cylinder-no-location', NO_CYLINDER_LOCATION_MESSAGE);
     return { direction: first.direction, origins: placed.map(row => row.origin), directions: placed.map(row => row.direction),
       concaveRadii: placed.map(row => (row.concave ? frame.radius : null)), diagonal };
+  } catch (error) {
+    if (error instanceof HoleFailure) throw error;
+    throw internalHoleFailure(error instanceof Error ? error.message : CYLINDER_FRAME_MESSAGE, error);
   } finally {
     release();
   }
@@ -628,11 +633,11 @@ export function resolveHoleFrame(
   const planar = spec.planar;
   if (planar !== undefined && (spec.cylindrical !== undefined || spec.centers.length !== 0)) {
     if (planar.kind === 'edge-distance') throw new EdgeDistanceHoleError('combination');
-    throw new Error('面内X・Yと中心点・円筒配置は同時に指定できません。');
+    throw new HoleFailure('hole-planar-conflict', '面内X・Yと中心点・円筒配置は同時に指定できません。');
   }
   if (planar?.kind === 'plane-face' && (planar.locations.length === 0
     || planar.locations.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) {
-    throw new Error('面内X・Yには1つ以上の有限な位置を指定してください。');
+    throw new HoleFailure('hole-planar-coordinates', '面内X・Yには1つ以上の有限な位置を指定してください。');
   }
   if (planar?.kind === 'edge-distance' && (planar.locations.length === 0
     || planar.locations.some(p => !Number.isFinite(p.distance1) || !Number.isFinite(p.distance2)))) {
@@ -642,19 +647,19 @@ export function resolveHoleFrame(
     return resolveCylindricalHoleFrame(oc, shape, faces, { ...spec, cylindrical: spec.cylindrical }, origins);
   }
   if (planar === undefined && spec.centers.length === 0) {
-    throw new Error(NO_CENTER_MESSAGE);
+    throw new HoleFailure('hole-no-center', NO_CENTER_MESSAGE);
   }
   for (const center of spec.centers) {
     if (!isFiniteTuple(center)) {
-      throw new Error(CENTER_NOT_FINITE_MESSAGE);
+      throw new HoleFailure('hole-center-not-finite', CENTER_NOT_FINITE_MESSAGE);
     }
   }
   // 角度はラジアン(度からの換算は model の責務)。
   if (!Number.isFinite(spec.tiltAngle) || spec.tiltAngle < 0 || spec.tiltAngle >= Math.PI / 2) {
-    throw new Error(TILT_ANGLE_MESSAGE);
+    throw new HoleFailure('hole-tilt-angle', TILT_ANGLE_MESSAGE, { parameters: { minimum: '0', maximum: '90' } });
   }
   if (!Number.isFinite(spec.tiltAzimuth)) {
-    throw new Error(TILT_AZIMUTH_MESSAGE);
+    throw new HoleFailure('hole-tilt-azimuth', TILT_AZIMUTH_MESSAGE);
   }
 
   // 境界箱の対角長は、指紋の物差しと工具の長さの両方が使う。段で 1 回だけ測って持ち回る
@@ -668,7 +673,7 @@ export function resolveHoleFrame(
     const planeFrame = readPlaneFrame(oc, face, keep);
     const direction = drillDirection(planeFrame, spec.tiltAngle, spec.tiltAzimuth);
     if (direction === null) {
-      throw new Error(HOLE_FAILED_MESSAGE);
+      throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'No drill direction for a validated tilt');
     }
     if (planar?.kind === 'edge-distance') {
       // 面の縁の表は、同じ指紋の照合で面の通し番号を引き直して読む(resolvePlanarFace は面の実体だけを返す)。
@@ -679,18 +684,25 @@ export function resolveHoleFrame(
     }
     return {
       direction,
-      origins: planar === undefined ? spec.centers.map((center) => projectOntoPlane(center, planeFrame))
+      origins: planar === undefined ? spec.centers.map(center => {
+          const point = projectOntoPlane(center, planeFrame);
+          if (!isFiniteTuple(point)) throw new HoleFailure('hole-center-not-finite', CENTER_NOT_FINITE_MESSAGE);
+          return point;
+        })
         : planar.locations.map(({ x, y }): Vec3Tuple => {
           const o = planeFrame.pointOnPlane, u = planeFrame.xAxis, v = planeFrame.yAxis;
           const point: Vec3Tuple = [o[0] + x * u[0] + y * v[0], o[1] + x * u[1] + y * v[1], o[2] + x * u[2] + y * v[2]];
-          if (!isFiniteTuple(point)) throw new Error(CENTER_NOT_FINITE_MESSAGE);
+          if (!isFiniteTuple(point)) throw new HoleFailure('hole-center-not-finite', CENTER_NOT_FINITE_MESSAGE);
           const native = keep(new oc.gp_Pnt_3(point[0], point[1], point[2]));
           const classifier = keep(new oc.BRepClass_FaceClassifier_4(face, native, 1e-7, false, 1e-7));
-          if (classifier.State() !== oc.TopAbs_State.TopAbs_IN) throw new Error('面内X・Yの位置が選択面の内側にありません。');
+          if (classifier.State() !== oc.TopAbs_State.TopAbs_IN) throw new HoleFailure('hole-planar-outside', '面内X・Yの位置が選択面の内側にありません。');
           return point;
         }),
       diagonal,
     };
+  } catch (error) {
+    if (error instanceof HoleFailure || error instanceof KernelStepError || error instanceof EdgeDistanceHoleError) throw error;
+    throw internalHoleFailure(error instanceof Error ? error.message : HOLE_FAILED_MESSAGE, error);
   } finally {
     release();
   }
@@ -706,22 +718,25 @@ function checkHoleEntry(entry: HoleEntrySpec, diameter: number): void {
       return;
     case 'counterbore':
       if (!Number.isFinite(entry.diameter) || entry.diameter <= diameter) {
-        throw new Error(COUNTERBORE_DIAMETER_MESSAGE);
+        throw new HoleFailure('hole-counterbore-diameter', COUNTERBORE_DIAMETER_MESSAGE);
       }
       if (!Number.isFinite(entry.depth) || entry.depth <= 0) {
-        throw new Error(COUNTERBORE_DEPTH_MESSAGE);
+        throw new HoleFailure('hole-counterbore-depth', COUNTERBORE_DEPTH_MESSAGE);
       }
       return;
-    case 'countersink':
+    case 'countersink': {
       // 角度を先に見るのは、深さの式 `(頭径 − 穴の径)/2 / tan(角度/2)` が
       // 角度の正しさに乗っているためである(0 度なら 0 除算、180 度なら深さ 0)。
       if (!Number.isFinite(entry.angle) || entry.angle <= 0 || entry.angle >= Math.PI) {
-        throw new Error(COUNTERSINK_ANGLE_MESSAGE);
+        throw new HoleFailure('hole-countersink-angle', COUNTERSINK_ANGLE_MESSAGE, { parameters: { minimum: '0', maximum: '180' } });
       }
       if (!Number.isFinite(entry.diameter) || entry.diameter <= diameter) {
-        throw new Error(COUNTERSINK_DIAMETER_MESSAGE);
+        throw new HoleFailure('hole-countersink-diameter', COUNTERSINK_DIAMETER_MESSAGE);
       }
+      const depth = holeEntryDepth(entry, diameter);
+      if (!Number.isFinite(depth) || depth <= 0) throw new HoleFailure('hole-entry-depth', ENTRY_FAILED_MESSAGE);
       return;
+    }
   }
 }
 
@@ -802,7 +817,7 @@ function fuseEntryTool(
   try {
     return keep(booleanOp(oc, 'union', drill, entryTool, undefined, onBuilt)).shape;
   } catch (error) {
-    throw new Error(ENTRY_FAILED_MESSAGE, { cause: error });
+    throw internalHoleFailure(ENTRY_FAILED_MESSAGE, error);
   }
 }
 
@@ -852,20 +867,20 @@ export function makeHoleTools(
   { entry = PLAIN_ENTRY, naming }: HoleToolsOptions = {},
 ): HoleToolsHandle {
   if (!Number.isFinite(diameter) || diameter <= 0) {
-    throw new Error(DIAMETER_MESSAGE);
+    throw new HoleFailure('hole-diameter', DIAMETER_MESSAGE);
   }
   if (depth !== null && (!Number.isFinite(depth) || depth <= 0)) {
-    throw new Error(DEPTH_MESSAGE);
+    throw new HoleFailure('hole-depth', DEPTH_MESSAGE);
   }
   checkHoleEntry(entry, diameter);
   if (frame.origins.length === 0) {
-    throw new Error(NO_CENTER_MESSAGE);
+    throw new HoleFailure('hole-no-center', NO_CENTER_MESSAGE);
   }
 
   const { diagonal } = frame;
   if (!Number.isFinite(diagonal) || diagonal <= 0) {
     // 中身の無い形。ここまで来ることは無い想定だが、0 長の円柱を作らせない。
-    throw new Error(HOLE_FAILED_MESSAGE);
+    throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Degenerate drill frame bounds');
   }
 
   // 貫通穴の余裕。面とちょうど接する円柱は OCCT のブーリアンが最も苦手と
@@ -875,14 +890,17 @@ export function makeHoleTools(
   const length = depth === null ? diagonal + 2 * margin : depth + margin;
   // 円筒の側面の穴は位置ごとに向きが違う。並びが食い違えば作らない(取り違えた向きで掘らない)。
   if (frame.directions !== undefined && (frame.directions.length !== frame.origins.length || entry.kind === 'countersink')) {
-    throw new Error(frame.directions.length !== frame.origins.length ? HOLE_FAILED_MESSAGE : CYLINDER_UNSUPPORTED_MESSAGE);
+    if (frame.directions.length !== frame.origins.length) {
+      throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Drill points and directions disagree');
+    }
+    throw new HoleFailure('hole-cylinder-unsupported', CYLINDER_UNSUPPORTED_MESSAGE);
   }
   if (frame.concaveRadii !== undefined && frame.concaveRadii.length !== frame.origins.length) {
-    throw new Error(HOLE_FAILED_MESSAGE);
+    throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Drill points and inner radii disagree');
   }
   const placements = transformsOrIdentity(transforms);
   if (naming !== undefined && (naming.centerAnchors.length !== frame.origins.length
-    || naming.placementRoles.length !== transforms.length)) throw new Error('Hole producer roles do not match the operation');
+    || naming.placementRoles.length !== transforms.length)) throw internalHoleFailure('Hole producer roles do not match the operation', 'Unexpected number of hole provenance roles');
   const placementRoles: readonly HolePlacementRole[] = transforms.length === 0
     ? [{ kind: 'original' }] : naming?.placementRoles ?? [];
   // Bound new proof allocation without lowering the existing geometry input scale.
@@ -903,7 +921,7 @@ export function makeHoleTools(
       const concaveRadius = frame.concaveRadii?.[centerOffset] ?? null;
       const largestToolRadius = (entry.kind === 'counterbore' ? entry.diameter : diameter) / 2;
       if (concaveRadius !== null && largestToolRadius >= concaveRadius) {
-        throw new Error(CYLINDER_BORE_TOO_SMALL_MESSAGE);
+        throw new HoleFailure('hole-cylinder-bore', CYLINDER_BORE_TOO_SMALL_MESSAGE);
       }
       // 内面では plain でも太い刃物の入口が margin より盛り上がる。始点を空洞の軸まで戻せば、最大刃径が Ri 未満のとき
       // 入口全体を空洞内へ収め、反対側の壁には届かない。深さは戻り量ではなく入口から測る。
@@ -953,7 +971,7 @@ export function makeHoleTools(
         const role = placementRoles[placementOffset];
         const placedFaces: NativeHoleToolFace[] = fusedFaces.map((producer): NativeHoleToolFace => {
           if (producer.origin === undefined || role === undefined) return { face: producer.face, reason: 'unsupported-producer' };
-          if (producer.origin.identity.kind !== 'hole-face') throw new Error('Unexpected hole tool producer');
+          if (producer.origin.identity.kind !== 'hole-face') throw internalHoleFailure('Unexpected hole tool producer', producer.origin.identity.kind);
           return { face: producer.face, origin: { ...producer.origin, identity: { ...producer.origin.identity, placement: role } } };
         });
         if (isIdentityTransform(placement)) {
@@ -1002,7 +1020,7 @@ function cutHoles(
     return booleanOp(oc, 'subtract', target, tools, semantic);
   } catch (error) {
     if (isNothingLeft(error)) throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE, { cause: error });
-    throw new Error(HOLE_FAILED_MESSAGE, { cause: error });
+    throw internalHoleFailure(HOLE_FAILED_MESSAGE, error);
   }
 }
 
@@ -1020,9 +1038,9 @@ export function hasHoleMaterialRemoval(
   try {
     const copy = (shape: TopoDS_Shape): TopoDS_Shape => {
       const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(shape, true, true));
-      if (!copier.IsDone()) throw new Error(HOLE_FAILED_MESSAGE);
+      if (!copier.IsDone()) throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Native shape copy failed');
       const copied = owned.keep(copier.Shape());
-      if (copied.IsNull() || copied.IsSame(shape)) throw new Error(HOLE_FAILED_MESSAGE);
+      if (copied.IsNull() || copied.IsSame(shape)) throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Removal measurement has no independent copy');
       return copied;
     };
     const removed = buildBooleanShape(oc, 'subtract', copy(target), [copy(result)],
@@ -1031,7 +1049,10 @@ export function hasHoleMaterialRemoval(
     const properties = owned.keep(new oc.GProp_GProps_1());
     const error = oc.BRepGProp.VolumeProperties_2(removed, properties, 1e-9, false, false);
     const volume = properties.Mass();
-    return Number.isFinite(error) && belowMagnitude(error, 1e-8) && Number.isFinite(volume) && volume > 0;
+    if (!Number.isFinite(error) || !belowMagnitude(error, 1e-8) || !Number.isFinite(volume) || volume < 0) {
+      throw internalHoleFailure(NOTHING_REMOVED_MESSAGE, { integrationError: error, measuredVolume: volume });
+    }
+    return volume > 0;
   } finally { owned.release(); }
 }
 
@@ -1073,9 +1094,9 @@ export function makeHole(
     // freeze that TShape even in non-destructive mode. Work on independently
     // copied topology, geometry and mesh; never restore flags on shared input.
     const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(target, true, true));
-    if (!copier.IsDone()) throw new Error(HOLE_FAILED_MESSAGE);
+    if (!copier.IsDone()) throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Native shape copy failed');
     const workingTarget = owned.keep(copier.Shape());
-    if (workingTarget.IsNull() || workingTarget.IsSame(target)) throw new Error(HOLE_FAILED_MESSAGE);
+    if (workingTarget.IsNull() || workingTarget.IsSame(target)) throw internalHoleFailure(HOLE_FAILED_MESSAGE, 'Cut has no independent target copy');
     const workingOrigins = origins === undefined ? undefined
       : rebindTransformedOrigins(oc, origins, target, copier, workingTarget);
     const result = owned.keep(cutHoles(oc, workingTarget, tools.shape,
@@ -1085,7 +1106,7 @@ export function makeHole(
     // Ambiguous volume differences require checking the actual removed solid.
     const removed = measureVolume(oc, target) - result.volume;
     if (!hasHoleMaterialRemoval(oc, workingTarget, result.shape, removed)) {
-      throw new Error(NOTHING_REMOVED_MESSAGE);
+      throw new HoleFailure('hole-no-removal', NOTHING_REMOVED_MESSAGE);
     }
     return { ...result, delete: owned.release,
       ...(tools.originProofLimitExceeded
@@ -1095,6 +1116,7 @@ export function makeHole(
     };
   } catch (error) {
     owned.release();
-    throw error;
+    if (error instanceof HoleFailure || error instanceof KernelStepError || error instanceof EdgeDistanceHoleError) throw error;
+    throw internalHoleFailure(error instanceof Error ? error.message : HOLE_FAILED_MESSAGE, error);
   }
 }

@@ -74,7 +74,7 @@ export class MathSymbolScope {
 
   coefficient(label: string): MathNode {
     const reference = this.coefficients.get(label);
-    if (!reference) throw new MathInputProblem('syntax', `係数「${label}」を係数一覧へ登録してください。`);
+    if (!reference) throw new MathInputProblem('syntax', `係数「${label}」を係数一覧へ登録してください。`, { key: 'math.input.unknownCoefficient', parameters: { name: label } });
     return { kind: 'symbol', reference };
   }
 
@@ -100,20 +100,20 @@ export class MathSymbolScope {
     if (constant) return { kind: 'constant', name: constant };
     const axis = axisOf(name);
     if (axis) {
-      if (!this.context.axes.has(axis)) throw new MathInputProblem('syntax', `この式では軸${axis}の値を指定してください。`);
+      if (!this.context.axes.has(axis)) throw new MathInputProblem('syntax', `この式では軸${axis}の値を指定してください。`, { key: 'math.input.axisScope', parameters: { name: axis } });
       return { kind: 'symbol', reference: { role: 'axis', name: axis } };
     }
     const parameter = parameterOf(name);
     if (parameter) {
-      if (!this.context.parameters.has(parameter)) throw new MathInputProblem('syntax', `この式では媒介変数${parameter}を使用しません。`);
+      if (!this.context.parameters.has(parameter)) throw new MathInputProblem('syntax', `この式では媒介変数${parameter}を使用しません。`, { key: 'math.input.parameterScope', parameters: { name: parameter } });
       return { kind: 'symbol', reference: { role: 'parameter', name: parameter } };
     }
     const declared = this.declared.get(name);
     if (declared) return { kind: 'symbol', reference: declared };
     if (this.coefficients.has(name)) {
-      throw new MathInputProblem('syntax', `係数「${name}」は係数一覧から挿入してください。`);
+      throw new MathInputProblem('syntax', `係数「${name}」は係数一覧から挿入してください。`, { key: 'math.input.explicitCoefficient', parameters: { name: name } });
     }
-    throw new MathInputProblem('syntax', `記号「${name}」の意味を指定してください。`);
+    throw new MathInputProblem('syntax', `記号「${name}」の意味を指定してください。`, { key: 'math.input.unknownSymbol', parameters: { name: name } });
   }
 }
 

@@ -10,6 +10,7 @@ import { shapeBodyKind, type CadBodyKind } from './shapeBodyKind.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { withVirtualFileInput } from './virtualFile.js';
+import { ShapeImportError, withShapeImportDiagnostic } from './exchangeShared.js';
 import type { RgbTuple } from './xcafDocument.js';
 
 /**
@@ -281,6 +282,14 @@ export function readStep(
   bytes: Uint8Array,
   options: StepReadOptions = {},
 ): StepReadResult {
+  return withShapeImportDiagnostic(() => readStepFile(oc, bytes, options));
+}
+
+function readStepFile(
+  oc: OpenCascadeInstance,
+  bytes: Uint8Array,
+  options: StepReadOptions,
+): StepReadResult {
   const fileName = options.fileName ?? 'import.step';
   const withColors = options.withColors ?? true;
 
@@ -309,7 +318,7 @@ export function readStep(
       const range = keep(new oc.Message_ProgressRange_1());
       if (!reader.Perform_2(path, handle, range)) {
         // 壊れたバイト列でも例外は飛ばず false が返る(冒頭の実測)。
-        throw new Error(STEP_READ_FAILED_MESSAGE);
+        throw new ShapeImportError({ code: 'unreadable' }, STEP_READ_FAILED_MESSAGE);
       }
 
       const unitNames = readStepUnitNames(oc, reader, keep);
@@ -323,7 +332,7 @@ export function readStep(
       shapeTool.GetFreeShapes(labels);
       const count = Number(labels.Length());
       if (count === 0) {
-        throw new Error(STEP_NO_SHAPE_MESSAGE);
+        throw new ShapeImportError({ code: 'noShape' }, STEP_NO_SHAPE_MESSAGE);
       }
 
       const bodies: StepReadBody[] = [];
@@ -341,7 +350,7 @@ export function readStep(
         });
       }
       if (!solidFound) {
-        throw new Error(STEP_NO_SOLID_MESSAGE);
+        throw new ShapeImportError({ code: 'noSolid' }, STEP_NO_SOLID_MESSAGE);
       }
 
       return { bodies, unit: classifyStepUnit(unitNames), unitNames, delete: release };

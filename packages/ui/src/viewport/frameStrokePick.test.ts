@@ -41,6 +41,16 @@ describe('一筆書きの押下の当たり', () => {
     expect(frameStrokeHitAt(source({ suppressed: true }), scene, [100, 0], STROKE)).toEqual({ kind: 'level', point: [100, 0, 40] });
   });
 
+  it('頂点が優先で、頂点への吸着を切ると同じ画面位置で方眼を拾う', () => {
+    const grid = { spacing: 20, radiusPixels: 12, extent: 100 };
+    expect(frameStrokeHitAt(source(), scene, [104, 3], STROKE, 6, grid))
+      .toEqual({ kind: 'vertex', point: [100, 0, 10] });
+    expect(frameStrokeHitAt(source(), scene, [104, 3], STROKE, null, grid))
+      .toEqual({ kind: 'grid', point: [100, 0, 40] });
+    expect(frameStrokeHitAt(source(), scene, [122, 3], STROKE, null, grid))
+      .toEqual({ kind: 'level', point: [122, 3, 40] });
+  });
+
   it('面と視線が平行(面の上の点が無い)・面の口が無い時は null', () => {
     expect(frameStrokeHitAt(source(), { ...scene, screenToPlanePoint: () => null }, [120, 30], STROKE)).toBeNull();
     expect(frameStrokeHitAt(source(), { worldToScreen: scene.worldToScreen }, [120, 30], STROKE)).toBeNull();

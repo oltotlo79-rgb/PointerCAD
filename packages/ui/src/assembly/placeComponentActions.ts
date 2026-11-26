@@ -111,7 +111,7 @@ export async function startPlaceComponent(deps: PlaceComponentDeps = DEFAULT_DEP
       current.activeDocumentId !== documentId) return;
   if (!result.ok) {
     useAppStore.setState({ assemblyPlacement: null });
-    current.setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
+    current.setFileMessage({ ...openErrorMessage(result.error), failed: true });
     return;
   }
   if (result.bundle.kind !== 'part') {

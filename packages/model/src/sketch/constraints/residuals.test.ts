@@ -606,7 +606,7 @@ describe('縮退では残差を作らず、日本語の理由を返す(NaN を�
     const report = buildResidualReport([constraint], set, collapsedLine(set));
     expect(report.rows.some((row) => row.constraintId === 'c1')).toBe(false);
     expect(report.skipped[0]).toMatchObject({ constraintId: 'c1', reason: 'degenerate' });
-    expect(report.skipped[0].message).toContain('平行1');
+    expect(report.skipped[0].text).toEqual({ key: 'partError.sketchConstraint.degenerate', parameters: { label: '平行1' } });
   });
 
   it('長さ 0 の線分に直角拘束・角度拘束・等しい拘束も断る', () => {
@@ -691,7 +691,7 @@ describe('縮退では残差を作らず、日本語の理由を返す(NaN を�
     // 端点 2 つのうち、重ねた側だけが断られる。
     expect(report.rows).toHaveLength(1);
     expect(report.skipped[0].reason).toBe('degenerate');
-    expect(report.skipped[0].message).toContain('arc-1');
+    expect(report.skipped[0].text).toEqual({ key: 'partError.sketchConstraint.arcDegenerate', parameters: { featureId: 'arc-1' } });
   });
 
   it('水平・垂直は長さ 0 の線分でも断らない(単位ベクトルを作らないため)', () => {
@@ -727,7 +727,7 @@ describe('縮退では残差を作らず、日本語の理由を返す(NaN を�
     }
     expect(report.skipped.length).toBeGreaterThan(0);
     for (const entry of report.skipped) {
-      expect(entry.message.length).toBeGreaterThan(0);
+      expect(entry.text.key).toMatch(/^partError\.sketchConstraint\./u);
     }
   });
 });
@@ -747,7 +747,7 @@ describe('材料が足りない拘束は残差を作らず、理由を返す(FR-
     const report = buildResidualReport([constraint], set, set.initial);
     expect(report.rows).toHaveLength(0);
     expect(report.skipped[0]).toMatchObject({ constraintId: 'c1', reason: 'dangling' });
-    expect(report.skipped[0].message).toContain('一致1');
+    expect(report.skipped[0].text).toEqual({ key: 'partError.sketchConstraint.dangling', parameters: { label: '一致1' } });
   });
 
   it('消された要素を指す拘束があっても、他の拘束は正しく式になる', () => {

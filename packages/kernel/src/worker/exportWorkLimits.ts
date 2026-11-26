@@ -1,3 +1,6 @@
+import type { TessellationLimit } from '../occt/tessellate.js';
+import type { ShapeExportDiagnostic } from '../types.js';
+
 /** Bounds for one export request. Native/WASM allocation during a synchronous call has its own owner. */
 export const EXPORT_TRIANGLE_LIMIT = 1_000_000;
 const EXPORT_JS_BYTE_LIMIT = 512 * 1024 * 1024;
@@ -5,6 +8,10 @@ export const EXPORT_DEADLINE_MS = 25_000;
 
 export class ExportWorkLimitError extends Error {
   override readonly name = 'ExportWorkLimitError';
+
+  constructor(message: string, readonly diagnostic?: ShapeExportDiagnostic) {
+    super(message);
+  }
 }
 
 function nonNegativeSafe(value: number): number {
@@ -57,8 +64,12 @@ export class ExportWorkBudget {
 
   checkDeadline(): void {
     const elapsed = this.now() - this.startedAt;
-    if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed >= EXPORT_DEADLINE_MS) {
+    if (!Number.isFinite(elapsed) || elapsed < 0) {
       throw new ExportWorkLimitError('書き出しが時間制限を超えました。');
+    }
+    if (elapsed >= EXPORT_DEADLINE_MS) {
+      throw new ExportWorkLimitError('書き出しが時間制限を超えました。',
+        { code: 'deadline', limit: EXPORT_DEADLINE_MS });
     }
   }
 
@@ -67,13 +78,15 @@ export class ExportWorkBudget {
     this.checkDeadline();
     const nextTriangles = checkedExportAdd(this.triangles, triangleCount);
     if (nextTriangles > this.triangleLimit) {
-      throw new ExportWorkLimitError('書き出しの三角形は合計100万枚までです。');
+      throw new ExportWorkLimitError('書き出しの三角形は合計100万枚までです。',
+        this.meshLimitDiagnostic('triangleLimit'));
     }
     const arrays = checkedExportAdd(checkedExportAdd(positionBytes, normalBytes), indexBytes);
     const rangeEstimate = checkedExportMultiply(faceRanges, 64);
     const nextBytes = checkedExportAdd(this.bytes, checkedExportAdd(arrays, rangeEstimate));
     if (nextBytes > EXPORT_JS_BYTE_LIMIT) {
-      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。');
+      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。',
+        this.meshLimitDiagnostic('memoryLimit'));
     }
     this.triangles = nextTriangles;
     this.bytes = nextBytes;
@@ -83,7 +96,8 @@ export class ExportWorkBudget {
     this.checkDeadline();
     const next = checkedExportAdd(this.bytes, bytes);
     if (next > EXPORT_JS_BYTE_LIMIT) {
-      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。');
+      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。',
+        this.meshLimitDiagnostic('memoryLimit'));
     }
     this.bytes = next;
     this.reservedOutput = bytes;
@@ -94,7 +108,8 @@ export class ExportWorkBudget {
     this.checkDeadline();
     const next = checkedExportAdd(this.bytes, bytes);
     if (next > EXPORT_JS_BYTE_LIMIT) {
-      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。');
+      throw new ExportWorkLimitError('書き出しの追加メモリは512MiBまでです。',
+        this.meshLimitDiagnostic('memoryLimit'));
     }
     this.bytes = next;
   }
@@ -104,6 +119,10 @@ export class ExportWorkBudget {
     if (nonNegativeSafe(bytes) > this.reservedOutput) {
       throw new ExportWorkLimitError('書き出しの見積りを超えました。');
     }
+  }
+
+  meshLimitDiagnostic(code: TessellationLimit): ShapeExportDiagnostic {
+    return { code, limit: code === 'triangleLimit' ? this.triangleLimit : EXPORT_JS_BYTE_LIMIT };
   }
 
   get triangleCount(): number { return this.triangles; }

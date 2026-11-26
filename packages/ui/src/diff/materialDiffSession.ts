@@ -19,7 +19,11 @@ export function createMaterialDiffSession(): MaterialDiffSession {
       if (disposed) return;
       disposed = true;
       // 中止は独立Workerを終え、計算途中の所有者と借用中の形をまとめて手放す。
-      try { recompute.releaseOwner(bridge); } finally { bridge.dispose(); }
+      const failures: unknown[] = [];
+      try { recompute.releaseOwner(bridge); } catch (error) { failures.push(error); }
+      try { bridge.dispose(); } catch (error) { failures.push(error); }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) throw new AggregateError(failures, 'Material comparison session disposal failed');
     },
   };
 }

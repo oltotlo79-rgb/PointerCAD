@@ -19,16 +19,25 @@ import {
 } from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
 import { FramePanelDetails } from './FramePanelDetails.js';
+import { FrameMemberTools } from './FrameMemberTools.js';
+import { PlacePointButton } from './PlacePointButton.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
+interface HookState { readonly values: unknown[]; index: number }
+
+const hooks = vi.hoisted(() => ({ current: null as HookState | null }));
+const newHookState = (): HookState => ({ values: [], index: 0 });
+let pickerHooks = newHookState();
+let familyHooks: { readonly key: React.Key | null; readonly state: HookState } | null = null;
 vi.mock('react', async (importOriginal) => {
   const original = await importOriginal<typeof ImportedReactTypes>();
   return { ...original, useState: <S,>(initial: S | (() => S)) => {
-    const index = hooks.state++;
-    if (index === hooks.values.length) hooks.values.push(typeof initial === 'function' ? (initial as () => S)() : initial);
-    return [hooks.values[index] as S, (next: SetStateAction<S>) => {
-      hooks.values[index] = typeof next === 'function' ? (next as (previous: S) => S)(hooks.values[index] as S) : next;
+    const state = hooks.current;
+    if (state === null) return original.useState(initial);
+    const index = state.index++;
+    if (index === state.values.length) state.values.push(typeof initial === 'function' ? (initial as () => S)() : initial);
+    return [state.values[index] as S, (next: SetStateAction<S>) => {
+      state.values[index] = typeof next === 'function' ? (next as (previous: S) => S)(state.values[index] as S) : next;
     }];
   } };
 });
@@ -43,26 +52,29 @@ function elements(node: ReactNode): Element[] {
   });
   return found;
 }
-/** 今の窓を描き、木の根が機械要素の窓なら、その中身も描いて返す。 */
-function render(): Element[] {
-  hooks.state = 0;
+function renderComponent(state: HookState, component: () => ReactNode): Element[] {
+  state.index = 0;
   let tree: ReactNode = null;
-  function Probe(): null { tree = StandardPartPicker(); return null; }
-  renderToStaticMarkup(<Probe />);
-  const root = elements(tree)[0];
-  if (root?.type !== CatalogFamilyPicker) return elements(tree);
-  const props = root.props as unknown as CatalogFamilyPickerProps;
-  let inner: ReactNode = null;
-  function Inner(): null { inner = CatalogFamilyPicker(props); return null; }
-  renderToStaticMarkup(<Inner />);
-  return [root, ...elements(inner)];
+  function Probe(): null { tree = component(); return null; }
+  hooks.current = state;
+  try { renderToStaticMarkup(<Probe />); }
+  finally { hooks.current = null; }
+  return elements(tree);
 }
+
+/** 親と族の窓の状態を分け、React と同じく子の key が変われば作り直す。 */
+function render(): Element[] {
+  const nodes = renderComponent(pickerHooks, StandardPartPicker);
+  const root = nodes[0];
+  if (root?.type !== CatalogFamilyPicker) { familyHooks = null; return nodes; }
+  if (familyHooks === null || familyHooks.key !== root.key) familyHooks = { key: root.key, state: newHookState() };
+  const props = root.props as unknown as CatalogFamilyPickerProps;
+  return [root, ...renderComponent(familyHooks.state, () => CatalogFamilyPicker(props))];
+}
+
 /** 切断の一覧の表(族の窓の中の部品)を描いて、その中身を返す。 */
 function stockTable(): Element[] {
-  let tree: ReactNode = null;
-  function Probe(): null { tree = CatalogStockTable(); return null; }
-  renderToStaticMarkup(<Probe />);
-  return elements(tree);
+  return renderComponent(newHookState(), CatalogStockTable);
 }
 function one(nodes: Element[], predicate: (element: Element) => boolean): Element {
   const matches = nodes.filter(predicate);
@@ -104,7 +116,7 @@ function registeredKindNames(group: FamilyPickerCategory): string[] {
 }
 
 beforeEach(() => {
-  hooks.values = []; hooks.state = 0;
+  pickerHooks = newHookState(); familyHooks = null;
   resetTestStore();
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
   useAppStore.getState().openAssembly(createAssemblyDocument('機械要素の選択'));
@@ -129,20 +141,55 @@ it('注文寸法の板だけ枠への配置を表示し、材質の変更に追�
 });
 
 describe('選ぶ窓の機械要素', () => {
+  it('族を選び直すと以前の置く点の指定を閉じ、線材の欄を出さない', async () => {
+    await loadAll();
+    const nodes = mechanical();
+    const control = one(nodes, (element) => element.type === PlacePointButton);
+    const createPlacement = control.props.placement as NonNullable<React.ComponentProps<typeof PlacePointButton>['placement']>;
+    const placement = createPlacement();
+    if (!placement.ok) throw new Error(placement.reason);
+    const state = useAppStore.getState();
+    state.toggleComponentPick('placementPoint', [], placement.value);
+    expect(useAppStore.getState().assemblyComponentPick?.placement).toBe(placement.value);
+    const form = one(nodes, (element) => element.type === 'form');
+    (form.props.onChangeCapture as () => void)();
+    const updated = change(select(nodes, 'catalog.mechanical.kindGuide'), 'wrapped-bush');
+    expect(updated.some((element) => element.type === FrameMemberTools)).toBe(false);
+    expect(useAppStore.getState().answerComponentPickPoint([20, 40, 0])).toBe(false);
+    expect(useAppStore.getState().assembly).toBe(state.assembly);
+  });
+
   it('分類の欄の最後に「機械要素」があり、選ぶと機械要素の窓に替わり、分類を戻すと今の窓に戻る', () => {
-    const categories = options(select(render(), 'assembly.guide.standardCategory'));
+    const category = select(render(), 'assembly.guide.standardCategory');
+    expect(category.props.value).toBe('hexBolt');
+    const categories = options(category);
     expect(categories.at(-1)?.props.value).toBe(MECHANICAL_PICKER_CATEGORY);
     expect(categories.at(-1)?.props.children).toBe(t('catalog.mechanical.category'));
     let nodes = mechanical();
     expect(nodes[0]?.type).toBe(CatalogFamilyPicker);
     expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe(MECHANICAL_PICKER_CATEGORY);
+    const initialFamily = catalogFamilyEntries(MECHANICAL_PICKER_CATEGORY)[0]?.id;
+    expect(select(nodes, 'catalog.mechanical.kindGuide').props.value).toBe(initialFamily);
+    const otherFamily = catalogFamilyEntries(MECHANICAL_PICKER_CATEGORY)[1]?.id;
+    if (otherFamily === undefined) throw new Error('Expected a second mechanical family');
+    nodes = change(select(nodes, 'catalog.mechanical.kindGuide'), otherFamily);
+    expect(select(nodes, 'catalog.mechanical.kindGuide').props.value).toBe(otherFamily);
     nodes = change(select(nodes, 'assembly.guide.standardCategory'), 'hexNut');
     expect(nodes.some((item) => item.type === CatalogFamilyPicker)).toBe(false);
     expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe('hexNut');
+    expect(select(mechanical(), 'catalog.mechanical.kindGuide').props.value).toBe(initialFamily);
   });
 
-  it('表を読み込む前は呼びの欄を出さず「読み込むと選べます」と出し、置かない', () => {
-    const nodes = mechanical();
+  it('選んだ族の表だけが未読込なら、呼びの欄と点指定を出さず置かない', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['wrapped-bush']);
+    const other = PRODUCT_CATALOG_REGISTRY.loaded('wrapped-bush');
+    expect(other).toBeDefined();
+    // Store reset leaves the registry's cache intact. Model this load state for this test only.
+    vi.spyOn(PRODUCT_CATALOG_REGISTRY, 'loaded').mockImplementation(id => id === other?.id ? other : undefined);
+    const nodes = change(select(mechanical(), 'catalog.mechanical.kindGuide'), 'cam-follower-stud-metric');
+    expect(select(nodes, 'catalog.mechanical.kindGuide').props.value).toBe('cam-follower-stud-metric');
+    expect(one(nodes, item => item.type === 'button' && item.props.type === 'submit').props.disabled).toBe(true);
+    expect(one(nodes, item => item.type === PlacePointButton).props.placement).toBeNull();
     expect(nodes.some((item) => item.type === 'select' && item.props.title === t('catalog.mechanical.sizeGuide'))).toBe(false);
     expect(nodes.some((item) => item.type === 'p' && elements(item.props.children as ReactNode).length === 0
       && item.props.children === t('catalog.mechanical.notLoaded'))).toBe(true);
@@ -156,6 +203,7 @@ describe('選ぶ窓の機械要素', () => {
     let nodes = mechanical();
     const kinds = options(select(nodes, 'catalog.mechanical.kindGuide'));
     expect(kinds.map((item) => item.props.children)).toEqual(registeredKindNames(MECHANICAL_PICKER_CATEGORY));
+    nodes = change(select(nodes, 'catalog.mechanical.kindGuide'), 'cam-follower-stud-metric');
     // 材質の違う行が無い族では、材質の欄も長さの欄も出さない。
     expect(nodes.some((item) => item.type === 'select' && item.props.title === t('catalog.mechanical.materialGuide'))).toBe(false);
     expect(nodes.some((item) => item.type === 'input')).toBe(false);

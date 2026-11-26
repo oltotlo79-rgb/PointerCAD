@@ -63,13 +63,13 @@ export function unfoldSheetBody(body: ResolvedSheetBody, fixedPanelId: string, s
   const frames = new Map<string, SheetTangentFrame>();
   for (const panel of body.panels) {
     const frame = panelFrame(panel);
-    if (frame === null) return { ok: false, message: '展開するパネルに平面外の輪郭があります。元の輪郭を確認してください。' };
+    if (frame === null) return { ok: false, message: '展開するパネルに平面外の輪郭があります。元の輪郭を確認してください。', text: { key: 'sheetMetal.flatNonPlanar', parameters: {} } };
     frames.set(panel.id, frame);
   }
   const connections: SheetPanelConnection[] = [];
   for (const bend of body.bends) {
     const parent = frames.get(bend.parentPanelId), child = frames.get(bend.childPanelId);
-    if (parent === undefined || child === undefined) return { ok: false, message: '曲げの接続先パネルが見つかりません。元の板金を確認してください。' };
+    if (parent === undefined || child === undefined) return { ok: false, message: '曲げの接続先パネルが見つかりません。元の板金を確認してください。', text: { key: 'sheetMetal.flatMissingConnectedPanel', parameters: {} } };
     connections.push({ id: bend.id, first: localEdge(bend.parentPanelId, bend.parentEdge, parent),
       second: localEdge(bend.childPanelId, bend.childEdge, child), allowance: bend.allowance,
       ...(bend.parallelGroupId === undefined ? {} : { parallelGroupId: bend.parallelGroupId }) });
@@ -79,7 +79,7 @@ export function unfoldSheetBody(body: ResolvedSheetBody, fixedPanelId: string, s
     const reasons = { duplicateId: 'パネル・曲げ・継ぎ目に重複があります。', unknownPanel: '固定面か接続先が見つかりません。',
       invalidEdge: '曲げの接線境界か中立長が不正です。', unknownSeam: '指定した継ぎ目が見つかりません。',
       cycle: '曲げが周回しています。切り離す継ぎ目を指定してください。', disconnected: '展開が複数に分かれます。継ぎ目と接続を確認してください。' };
-    return { ok: false, message: reasons[flat.error] };
+    return { ok: false, message: reasons[flat.error], text: { key: `sheetMetal.flatGraph.${flat.error}`, parameters: {} } };
   }
   const transforms = new Map([...flat.traversal.transforms].map(([id, transform]) => [id, flatFrame(transform)]));
   const panels: SheetPanelGeometry[] = [];

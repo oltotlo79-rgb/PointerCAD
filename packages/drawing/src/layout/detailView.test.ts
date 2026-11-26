@@ -13,6 +13,6 @@ describe('部分拡大図', () => {
   it('文字高さは拡大しない', () => { const result = createDetailView(input); if (result.ok) expect(result.textHeight).toBe(3.5); });
   it('見出しはA (2:1)', () => { const result = createDetailView(input); if (result.ok) expect(result.title).toBe('A (2:1)'); });
   it('円が図の外なら理由を返す', () => expect(createDetailView({ ...input, sourceCenter: [1000, 1000] })).toEqual({
-    ok: false, message: 'この円は図の外にあります。図の上に置いてください。',
+    ok: false, message: 'drawing.error.detailOutside', text: { key: 'drawing.error.detailOutside', parameters: {} },
   }));
 });

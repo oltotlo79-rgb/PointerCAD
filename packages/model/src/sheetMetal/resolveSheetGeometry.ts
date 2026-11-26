@@ -105,12 +105,14 @@ export function resolveSheetFlange(feature: SheetFlangeFeature, source: Resolved
   });
   for (const reference of ordered) {
     const panel = source.panels.find((item) => item.id === reference.panelId);
-    if (panel === undefined) return { ok: false, message: 'フランジの元のパネルが見つかりません。板金の縁を選び直してください。' };
+    if (panel === undefined) return { ok: false, message: 'フランジの元のパネルが見つかりません。板金の縁を選び直してください。',
+      text: { key: 'sheetMetal.missingFlangePanel', parameters: {} } };
     const tangent = sheetTangentFrame(panel, reference.boundaryId, feature.startOffset.value, feature.endOffset.value);
     if (!tangent.ok) return tangent;
     const available = availableSheetBoundaryEdges(source, panel.id); if (!available.ok) return available;
     if (!available.value.some((edge) => edge.id === reference.boundaryId))
-      return { ok: false, message: 'この縁にはすでに曲げがあります。別の縁を選んでください。' };
+      return { ok: false, message: 'この縁にはすでに曲げがあります。別の縁を選んでください。',
+      text: { key: 'sheetMetal.flangeBoundaryOccupied', parameters: {} } };
     const { frame, width } = tangent.value;
     const boundaryId = JSON.stringify([reference.panelId, reference.boundaryId]);
     const child = feature.profile === null

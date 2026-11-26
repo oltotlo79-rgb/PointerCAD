@@ -23,7 +23,9 @@ describe('破断図', () => {
   });
   it('区間2つは断る', () => expect(applyBreak([line], [
     { axis: 'u', from: 10, to: 20, keepGap: 2 }, { axis: 'u', from: 30, to: 40, keepGap: 2 },
-  ])).toEqual({ ok: false, message: '破断区間は1つだけ指定してください。' }));
+  ])).toEqual({ ok: false, message: 'drawing.error.breakIntervalCount', text: {
+    key: 'drawing.error.breakIntervalCount', parameters: { count: '1' },
+  } }));
   it('縦方向も全長300から160へ詰める', () => {
     const result = applyBreak([{ kind: 'segment', from: [0, 0], to: [0, 300] }], { axis: 'v', from: 100, to: 250, keepGap: 10 });
     expect(result.ok && result.curves).toEqual([
@@ -48,5 +50,8 @@ describe('破断図', () => {
   });
   it('非数の区間は処理を始めずに断る', () => {
     expect(applyBreak([line], { axis: 'u', from: 0, to: Infinity, keepGap: 10 }).ok).toBe(false);
+    expect(applyBreak([line], { axis: 'u', from: 100, to: 250, keepGap: 150 })).toEqual({
+      ok: false, message: 'drawing.error.breakIntervalInvalid', text: { key: 'drawing.error.breakIntervalInvalid', parameters: {} },
+    });
   });
 });

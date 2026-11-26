@@ -154,6 +154,8 @@ export {
 // DXF の読み書き(FR-813)。字句(タグ)→ 曲線の換算 → 実体の読み取り、の 3 段を
 // この順で並べる。**座標の単位は換算していない**(`DxfReadResult.unit` を見て上の段が決める)。
 export {
+  DxfDataError,
+  type DxfDataErrorCode,
   DXF_TOO_LARGE_MESSAGE,
   DXF_UNSUPPORTED_FORMAT_MESSAGE,
   formatDxfTags,
@@ -216,6 +218,8 @@ export {
   escapeXmlText,
   formatXmlNumber,
   XML_INVALID_NUMBER_MESSAGE,
+  ThreeMfDataError,
+  type ThreeMfDataErrorCode,
 } from './threemf/xmlText.js';
 export {
   DEFAULT_THREE_MF_COLOR,

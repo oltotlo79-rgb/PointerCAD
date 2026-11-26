@@ -25,6 +25,22 @@ import { planMathCandidates } from './absoluteValueCandidates.js';
 
 import type { MathExecutionBackend } from './geometryCalculationClock.js';
 export { geometryCalculationClock, MathDeadlineExceeded, GEOMETRY_CALCULATION_MS, type MathExecutionBackend } from './geometryCalculationClock.js';
+/** Keep the older detail for callers that still consume the calculation text. */
+export function mathProblemEvaluation(error: MathInputProblem): MathEvaluation {
+  const diagnostic = error.diagnostic === undefined ? {} : { diagnostic: error.diagnostic };
+  return error.code === 'budget' ? { status: 'stopped', reason: 'budget', ...diagnostic }
+    : { status: 'invalid', reason: error.code === 'forbidden' ? 'unsupported' : error.code, detail: error.message, ...diagnostic };
+}
+
+export type MathInternalErrorReporter = (stage: string, cause: unknown) => void;
+
+export function internalMathEvaluation(stage: string, cause: unknown, legacyDetail: string,
+  report?: MathInternalErrorReporter): MathEvaluation {
+  report?.(stage, cause);
+  return { status: 'invalid', reason: 'unsupported', detail: legacyDetail,
+    diagnostic: { key: 'assembly.error.internal', parameters: {} } };
+}
+
 export interface MathExecutionReply {
   readonly kind:'math-result';readonly serial:number;readonly identity:MathWorkRequest['identity'];
   readonly source:string;readonly notation:MathWorkRequest['notation'];readonly angleUnit:MathWorkRequest['angleUnit'];
@@ -51,7 +67,8 @@ function containsIndefiniteIntegral(expression:MathNode):boolean {
   return false;
 }
 /** Scalar editor scope. Geometry requests will explicitly supply axes/parameters with their own validated wire type. */
-export function executeMathWorkRequest(value:unknown,backend:MathExecutionBackend):MathExecutionReply {
+export function executeMathWorkRequest(value:unknown,backend:MathExecutionBackend,
+  report?: MathInternalErrorReporter):MathExecutionReply {
   const {request,serial}=decodeMathWorkEnvelope(value);
   let expression:MathNode|null=null;
   let presentation: StoredMathExpression | null = null;
@@ -121,7 +138,7 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
           if (declaration.valueSource === undefined) continue;
           // Prime the enclosing request before the nested request captures its parent deadline.
           backend.prepareDeadline?.(parseMathDeclaredValue(declaration.valueSource));
-          const value = executeMathWorkRequest(createMathWorkEnvelope(serial, mathDeclaredValueRequest(request, declaration.valueSource)), backend);
+          const value = executeMathWorkRequest(createMathWorkEnvelope(serial, mathDeclaredValueRequest(request, declaration.valueSource)), backend, report);
           if (value.expression === null) return reply(value.evaluation);
           const problem = checkMathDeclaredValue(declaration, value.expression, value.evaluation);
           if (problem !== null) return reply(problem);
@@ -168,10 +185,7 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
         : plusMinusEvaluation(candidates.map(expression => ({ expression, evaluation: evaluate(expression) }))));
     });
   }catch(error) {
-    if(error instanceof MathInputProblem) {
-      if(error.code==='budget')return reply({status:'stopped',reason:'budget'});
-      return reply({status:'invalid',reason:error.code==='forbidden'?'unsupported':error.code,detail:error.message});
-    }
-    return reply({status:'invalid',reason:'unsupported',detail:'この式の結果を決定できませんでした。入力と条件を確認してください。'});
+    if (error instanceof MathInputProblem) return reply(mathProblemEvaluation(error));
+    return reply(internalMathEvaluation('scalar', error, 'この式の結果を決定できませんでした。入力と条件を確認してください。', report));
   }
 }

@@ -120,7 +120,7 @@ export function Toolbar(): React.JSX.Element {
       <NamedViewsMenu />
       <DisplayStyleGroup />
       <DrawingAidsGroup />
-      {documentKind === 'part' ? <SnapGroup /> : null}
+      <SnapGroup />
       <ViewpointGroup />
 
       {/*

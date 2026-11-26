@@ -3,6 +3,7 @@ import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Wire, gp_Pnt } from 'open
 import type { Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import type { OcctFaceHandle } from './makePlanarFace.js';
+import { sketchInputError } from './kernelStepError.js';
 import { distanceBetween } from './measureShape.js';
 import { isValidShape, measureArea } from './solidMesh.js';
 import { exceedsMagnitude } from './tolerances.js';
@@ -42,24 +43,25 @@ function inside(oc: OpenCascadeInstance, face: TopoDS_Face, point: gp_Pnt, keep:
 
 interface HoleCheck {
   readonly outer: TopoDS_Face; readonly boundaries: readonly TopoDS_Wire[];
-  readonly previous: readonly TopoDS_Face[]; readonly label: string;
+  readonly previous: readonly TopoDS_Face[]; readonly index: string;
 }
 
 function checkHole(oc: OpenCascadeInstance, hole: TopoDS_Face, context: HoleCheck, keep: Keep): TopoDS_Wire {
-  const { outer, boundaries, previous, label } = context;
+  const { outer, boundaries, previous, index } = context;
+  const label = `穴${index}`;
   const frame = planeFrame(oc, outer, keep), inner = planeFrame(oc, hole, keep);
   const alignment = frame.normal.reduce((sum, value, axis) => sum + value * inner.normal[axis], 0);
   const offset = frame.normal.reduce((sum, value, axis) => sum + value * (inner.point[axis] - frame.point[axis]), 0);
   if (exceedsMagnitude(Math.abs(alignment) - 1, PLANE_ALIGNMENT_TOLERANCE) || exceedsMagnitude(offset, TOLERANCE_MM)) {
-    throw new Error(`${label}が外周と同じ平面にありません。`);
+    throw sketchInputError({ code: 'holeNotPlanar', index }, `${label}が外周と同じ平面にありません。`);
   }
   const wire = keep(oc.BRepTools.OuterWire(hole)), point = wirePoint(oc, wire, keep);
   if (boundaries.some(boundary => distanceBetween(oc, boundary, wire).distance <= TOLERANCE_MM)) {
-    throw new Error(`${label}が外周または別の穴に接するか交差しています。輪郭を離してください。`);
+    throw sketchInputError({ code: 'holeIntersection', index }, `${label}が外周または別の穴に接するか交差しています。輪郭を離してください。`);
   }
-  if (!inside(oc, outer, point, keep)) throw new Error(`${label}が外周の外にはみ出しています。`);
+  if (!inside(oc, outer, point, keep)) throw sketchInputError({ code: 'holeOutside', index }, `${label}が外周の外にはみ出しています。`);
   if (previous.some((face, index) => inside(oc, face, point, keep) || inside(oc, hole, wirePoint(oc, boundaries[index + 1], keep), keep))) {
-    throw new Error(`${label}が別の穴と重なっています。穴を入れ子にしないでください。`);
+    throw sketchInputError({ code: 'holeNested', index }, `${label}が別の穴と重なっています。穴を入れ子にしないでください。`);
   }
   if (alignment > 0) wire.Reverse();
   return wire;
@@ -77,17 +79,17 @@ export function addPlanarFaceHoles(oc: OpenCascadeInstance, outer: OcctFaceHandl
   const expected = measureArea(oc, outer.face) - holes.reduce((sum, hole) => sum + measureArea(oc, hole.face), 0);
   const boundaries = [keep(oc.BRepTools.OuterWire(outer.face))], previous: TopoDS_Face[] = [];
   const wires = holes.map((hole, index) => {
-    const wire = checkHole(oc, hole.face, { outer: outer.face, boundaries, previous, label: `穴${String(index + 1)}` }, keep);
+    const wire = checkHole(oc, hole.face, { outer: outer.face, boundaries, previous, index: String(index + 1) }, keep);
     boundaries.push(wire); previous.push(hole.face);
     return wire;
   });
   const maker = keep(new oc.BRepBuilderAPI_MakeFace_2(outer.face));
   for (const wire of wires) maker.Add(wire);
-  if (!maker.IsDone()) throw new Error('外周と穴から面を張れませんでした。');
+  if (!maker.IsDone()) throw sketchInputError({ code: 'holeBuild' }, '外周と穴から面を張れませんでした。');
   const face = keep(maker.Face()), area = measureArea(oc, face);
   if (!isValidShape(oc, face) || expected <= 0 || !Number.isFinite(area)
     || exceedsMagnitude(area - expected, Math.max(1, Math.abs(expected)) * AREA_RELATIVE_TOLERANCE)) {
-    throw new Error('穴つきの面の向きまたは面積を確かめられませんでした。輪郭を確認してください。');
+    throw sketchInputError({ code: 'holeArea' }, '穴つきの面の向きまたは面積を確かめられませんでした。輪郭を確認してください。');
   }
   return { ...outer, face, boundaryPositions: boundaryPositions([outer, ...holes]),
     boundaryEdgeCount: outer.boundaryEdgeCount + holes.reduce((sum, hole) => sum + hole.boundaryEdgeCount, 0) };

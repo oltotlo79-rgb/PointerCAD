@@ -15,6 +15,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, edgesTouchingVertex } from './subShapes.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { EdgeTreatmentFailure, faultyFilletContours, unexpectedEdgeTreatmentFailure } from './edgeTreatmentFailure.js';
 import { KernelStepError } from './kernelStepError.js';
 
 /**
@@ -45,11 +46,6 @@ const BUILD_FAILED_MESSAGE = '丸められませんでした。半径を小さ�
 
 /** 丸められたが、結果が立体になっていないとき。 */
 const NOT_SOLID_MESSAGE = '丸めた結果がソリッドになりませんでした。半径を小さくしてください。';
-
-/** 丸められなかった輪郭の本数を添えた理由。 */
-function faultyContourMessage(count: number): string {
-  return `丸められない辺が ${count} 本ありました。半径を小さくしてください。`;
-}
 
 /**
  * BRepFilletAPI_MakeFillet の構築は列挙(ChFi3d_FilletShape)を引数に取り、
@@ -163,18 +159,6 @@ export function resolveFilletEdges(
 }
 
 /**
- * 例外を利用者へ見せる日本語へ揃える。
- *
- * OCCT の C++ 側が投げる例外は、embind を通ると**数値(実体へのポインタ)**として
- * 飛んでくる(2026-09-03 実測。辺を 1 本も足さずに Build したときは `18979680` だった)。
- * そのまま外へ出すと画面に数字が並ぶだけなので、こちらで理由へ置き換える。
- * 自分で投げた Error(すでに日本語)はそのまま通す。
- */
-function toJapaneseFailure(error: unknown, message: string): Error {
-  return error instanceof Error ? error : new Error(message);
-}
-
-/**
  * R 面取り(FR-407)。**対象は消費せず、新しい形を返す。**
  *
  * 手順は、①指紋で辺を選び直す → ②`Add_2(radius, edge)` →
@@ -208,26 +192,26 @@ export function makeFillet(
   tables: SubShapeTables,
   semantic?: { readonly featureId: string; readonly origins: CurrentOriginIndex },
 ): OcctShapeHandle {
-  if (!Number.isFinite(spec.radius) || spec.radius <= 0) {
-    throw new Error(RADIUS_MESSAGE);
-  }
-
-  // 位置の点を正規化する長さ。境界箱の対角長の半分(matchSubShape.ts の scorePosition)。
-  const scale = boundingDiagonal(oc, target) * 0.5;
-  const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
-  if (edgeIndices.length === 0) {
-    throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
-  }
-
-  // 列挙値は unknown を経由してから述語ガードで絞る(isFilletShape の注釈)。
-  const filletShape: unknown = oc.ChFi3d_FilletShape.ChFi3d_Rational;
-  if (!isFilletShape(filletShape)) {
-    throw new Error(KERNEL_NOT_READY_MESSAGE);
-  }
-
   const { keep, release } = createAllocations();
 
   try {
+    if (!Number.isFinite(spec.radius) || spec.radius <= 0) {
+      throw new EdgeTreatmentFailure('fillet-radius', RADIUS_MESSAGE);
+    }
+
+    // 位置の点を正規化する長さ。境界箱の対角長の半分(matchSubShape.ts の scorePosition)。
+    const scale = boundingDiagonal(oc, target) * 0.5;
+    const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
+    if (edgeIndices.length === 0) {
+      throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
+    }
+
+    // 列挙値は unknown を経由してから述語ガードで絞る(isFilletShape の注釈)。
+    const filletShape: unknown = oc.ChFi3d_FilletShape?.ChFi3d_Rational;
+    if (!isFilletShape(filletShape) || typeof oc.BRepFilletAPI_MakeFillet !== 'function') {
+      throw new EdgeTreatmentFailure('edge-treatment-kernel-unavailable', KERNEL_NOT_READY_MESSAGE);
+    }
+
     const maker = keep(new oc.BRepFilletAPI_MakeFillet(target, filletShape));
 
     for (const index of edgeIndices) {
@@ -248,31 +232,30 @@ export function makeFillet(
     try {
       maker.Build(range);
     } catch (error) {
-      // 辺が 1 本も無いまま Build すると C++ 例外が飛ぶ(実測)。
-      // ここへ来るのは上の 0 本の門番をすり抜けた別の理由のときだけだが、
-      // 数値のまま外へ出さず理由へ直す。
-      throw toJapaneseFailure(error, BUILD_FAILED_MESSAGE);
+      // embind が OCCT の C++ 例外を数値のポインタで返す。
+      if (typeof error !== 'number') throw error;
+      throw new EdgeTreatmentFailure('fillet-build', BUILD_FAILED_MESSAGE, { cause: error });
     }
 
     // 個数の戻り型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直す。
     const faultyContours = Number(maker.NbFaultyContours());
     if (faultyContours > 0) {
-      throw new Error(faultyContourMessage(faultyContours));
+      throw faultyFilletContours(faultyContours);
     }
 
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
     // (フィレットも同じ扱いにする)。
     if (!maker.IsDone()) {
-      throw new Error(BUILD_FAILED_MESSAGE);
+      throw new EdgeTreatmentFailure('fillet-build', BUILD_FAILED_MESSAGE);
     }
 
     const shape = keep(maker.Shape());
 
     if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw new EdgeTreatmentFailure('fillet-result', NOT_SOLID_MESSAGE);
     }
     if (!isValidShape(oc, shape)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw new EdgeTreatmentFailure('fillet-result', NOT_SOLID_MESSAGE);
     }
 
     let origins: CurrentOriginIndex | undefined;
@@ -288,6 +271,6 @@ export function makeFillet(
     return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
-    throw error;
+    throw unexpectedEdgeTreatmentFailure(error);
   }
 }

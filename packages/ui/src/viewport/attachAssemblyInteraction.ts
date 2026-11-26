@@ -26,6 +26,8 @@ import { flattenAssemblyGeometry } from './createAssemblyLayer.js';
 import type { AssemblyComponentPickObservation, AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
 import { componentDragPlane } from './dragComponent.js';
 import { frameStrokeHitAt } from './frameStrokePick.js';
+import { nextFrameStrokePoint } from '../assembly/frameStroke.js';
+import { createSketchInteractionIndicators } from './sketchInteractionIndicators.js';
 import { pointSnapRadiusPixels, vertexSnapRadiusPixels } from '../settings/snapRadiusSetting.js';
 import { currentGridSetting } from '../settings/gridSetting.js';
 import { placementGridSnapFor, snapDragPointToGrid, type PlacementGridSnap } from '../assembly/placementGridSnap.js';
@@ -245,6 +247,30 @@ function answerTargetPick(state: MateInputState, target: BoltedJointPickTarget):
 /** 置く点の当たり(G1): 一筆書きの最初の点と同じ(頂点か、高さ 0 の水平な面の上。固定の方眼なら格子点)。 */
 const GROUND_STROKE = { points: [], closed: false, up: 'z' } as const;
 
+/** 一筆書きと点指定配置の候補。吸着の設定は候補の表示と押下の両方で同じものを読む。 */
+function assemblyPlacementHitAt(state: MateInputState, scene: AssemblyPickScene, at: readonly [number, number],
+  stroke: Parameters<typeof frameStrokeHitAt>[3]): ReturnType<typeof frameStrokeHitAt> {
+  const { assembly, assemblyView } = state;
+  if (assembly === null || assemblyView === null) return null;
+  const snapVertex = state.snapEnabled && state.snapKinds.includes('endpoint')
+    && assemblyView.sourceDocument === assembly && scene.assemblyDisplayInvalidated?.() !== true;
+  return frameStrokeHitAt({ components: assembly.components, placements: assemblyView.resolved.placements,
+    partKeys: assemblyView.resolved.partKeys, bodies: assemblyView.bodies }, scene, at, stroke,
+  snapVertex ? vertexSnapRadiusPixels(state.displaySettings) : null, placementGridSnap(state));
+}
+
+/** 一筆書きは軸に縛った後の点、点指定配置は部品の原点を置く点に既存の吸着の印を出す。 */
+function placementSnapIndicator(state: MateInputState, scene: AssemblyPickScene, at: readonly [number, number], lockAxis: boolean):
+  MateInputState['snapIndicator'] {
+  const stroke = state.frameStroke?.active === true ? state.frameStroke : null;
+  if (stroke?.closed === true) return null;
+  const hit = assemblyPlacementHitAt(state, scene, at, stroke ?? GROUND_STROKE);
+  if (hit === null || hit.kind === 'level') return null;
+  const point = stroke === null ? hit.point : nextFrameStrokePoint(stroke, hit, stroke.up, lockAxis);
+  const screen = scene.worldToScreen(point);
+  return screen === null ? null : { screen, kind: hit.kind === 'vertex' ? 'endpoint' : 'grid', elementId: null };
+}
+
 /**
  * 3D の画面で置く点を受ける頼み(G1。componentPickActions)の間の押下: 押した所の点を頼みへ渡し、選択・合致・ドラッグへは渡さない。
  * 頼みが無ければ false(呼び手は今までどおり振り分ける)。
@@ -252,10 +278,7 @@ const GROUND_STROKE = { points: [], closed: false, up: 'z' } as const;
 function placementPointPointerDown(state: MateInputState, scene: AssemblyPickScene, at: readonly [number, number],
   observation: AssemblyMateInputObservation | undefined, dragInput: AssemblyDragInput | undefined): boolean {
   if (componentPickAccepts(state) !== 'point') return false;
-  const hit = state.assembly === null || state.assemblyView === null ? null : frameStrokeHitAt({
-    components: state.assembly.components, placements: state.assemblyView.resolved.placements,
-    partKeys: state.assemblyView.resolved.partKeys, bodies: state.assemblyView.bodies,
-  }, scene, at, GROUND_STROKE, vertexSnapRadiusPixels(state.displaySettings), placementGridSnap(state));
+  const hit = assemblyPlacementHitAt(state, scene, at, GROUND_STROKE);
   const accepted = hit !== null && state.answerComponentPickPoint(hit.point);
   if (observation !== undefined) observation.addAccepted = accepted;
   reportMateInput(observation, dragInput);
@@ -275,10 +298,7 @@ function snappedDragPoint(drag: NonNullable<MateInputState['assemblyDrag']>, poi
 function frameStrokePointerDown(state: MateInputState, scene: AssemblyPickScene, at: readonly [number, number], lockAxis: boolean,
   observation: AssemblyMateInputObservation | undefined, dragInput: AssemblyDragInput | undefined): boolean {
   if (state.frameStroke?.active !== true) return false;
-  const hit = state.assembly === null || state.assemblyView === null ? null : frameStrokeHitAt({
-    components: state.assembly.components, placements: state.assemblyView.resolved.placements,
-    partKeys: state.assemblyView.resolved.partKeys, bodies: state.assemblyView.bodies,
-  }, scene, at, state.frameStroke, vertexSnapRadiusPixels(state.displaySettings), placementGridSnap(state));
+  const hit = assemblyPlacementHitAt(state, scene, at, state.frameStroke);
   const added = hit !== null && state.addFrameStrokeHit(hit, lockAxis) !== 'unchanged';
   if (observation !== undefined) observation.addAccepted = added;
   reportMateInput(observation, dragInput);
@@ -781,6 +801,8 @@ function createAssemblyPointerDown(canvas: AssemblyInputCanvas, scene: AssemblyP
 
 export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: AssemblyPickScene, dragInput?: AssemblyDragInput): AssemblyInteraction {
   const gesture: AssemblyPointerState = { detached: false, pendingMate: null, captured: null };
+  const placementIndicators = createSketchInteractionIndicators();
+  const clearPlacementPreview = placementIndicators.clearOwnedIndicators;
   const cancelMate = (cause = 'cancelled'): void => { const previous = gesture.pendingMate; gesture.pendingMate = null; previous?.finish(false, cause); };
   let frame: number | null = null;
   let pending: Vec3 | null = null;
@@ -795,7 +817,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     try { if (oldCapture !== null) canvas.releasePointerCapture?.(oldCapture); } catch { released = false; }
     return released;
   };
-  const cancelDrag = (): void => { cancelMate(); cancelComponentDrag(releaseInput() ? 'cancelled' : 'failed'); };
+  const cancelDrag = (): void => {
+    clearPlacementPreview(); cancelMate(); cancelComponentDrag(releaseInput() ? 'cancelled' : 'failed');
+  };
   const pointer = (event: PointerEvent): readonly [number, number] => {
     const rect = canvas.getBoundingClientRect();
     return [event.clientX - rect.left, event.clientY - rect.top];
@@ -825,7 +849,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   const { pick, idleWeldChildBeadPath } = createAssemblyPicking(scene, pointer, dragInput);
   const onPointerDown = createAssemblyPointerDown(canvas, scene, dragInput, gesture, {
     pick, idleWeldChildBeadPath, pointer, releaseInput, cancelMate, queueDragMove,
-    cancelHover: () => { hoverRepick.cancel(); },
+    cancelHover: () => { hoverRepick.cancel(); clearPlacementPreview(); },
   });
   // 失効で片付けた表示の hover は、取り直しの後に同じ点で 1 回だけ拾い直す(拾い直しは頼み直さない)。
   const hoverRepick = createHoverRepick(canvas, dragInput?.prepareHoverInput, (event) => {
@@ -851,12 +875,19 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       if (event.pointerId === gesture.captured) queueDragMove(event);
       return;
     }
-    if (event.altKey || event.buttons !== 0) return;
+    if (event.altKey || event.buttons !== 0) { clearPlacementPreview(); return; }
+    if (state.frameStroke?.active === true || componentPickAccepts(state) === 'point') {
+      if (state.hoveredElementId !== null) state.setHovered(null);
+      const indicator = placementSnapIndicator(state, scene, pointer(event), event.shiftKey);
+      if (indicator === null) clearPlacementPreview();
+      else placementIndicators.showSnap(indicator);
+      return;
+    }
     const target = pick(event);
     decideHover(state, event, target, scene.assemblyDisplayInvalidated?.() === true, hoverRepick);
   };
   const onPointerLeave = (event: PointerEvent): void => {
-    hoverRepick.cancel();
+    hoverRepick.cancel(); clearPlacementPreview();
     const state = useAppStore.getState();
     if (state.assembly === null || state.partEdit !== null) return;
     event.stopImmediatePropagation();
@@ -877,6 +908,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     else finishComponentDrag(point);
   };
   const onPointerCancel = (event: PointerEvent): void => {
+    clearPlacementPreview();
     // 離した時に返した一時の capture の lostpointercapture は、その押下も次の入力も取り消さない。
     if (gesture.pendingMate?.pointerId === event.pointerId
       && !(event.type === 'lostpointercapture' && gesture.pendingMate.capture === 'released')) cancelMate('pointercancel');
@@ -893,6 +925,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (event.key === 'Escape') cancelMate('escape');
     if (event.key === 'Escape' && gesture.captured !== null) {
       event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return;
+    }
+    if (event.key === 'Escape' && componentPickAccepts(state) === 'point') {
+      event.preventDefault(); event.stopImmediatePropagation(); state.cancelComponentPick(); return;
     }
     // 一筆書きの点を打っている間の Backspace・Esc も、ここで受ける(frameStrokeKey)。
     if (handleMateKey(event.key, event.isComposing) || frameStrokeKey(state, event.key)) {
@@ -928,6 +963,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     }
     // Unhandled keys continue to the common file and command shortcuts.
   };
+  const onPreviewModifier = (event: KeyboardEvent): void => {
+    if (event.key === 'Shift' || event.key === 'Alt') clearPlacementPreview();
+  };
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerleave', onPointerLeave);
@@ -935,7 +973,16 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('lostpointercapture', onPointerCancel);
   canvas.addEventListener('keydown', onKeyDown);
-  const unsubscribe = useAppStore.subscribe((state) => {
+  canvas.addEventListener('keydown', onPreviewModifier);
+  canvas.addEventListener('keyup', onPreviewModifier);
+  canvas.addEventListener('wheel', clearPlacementPreview);
+  const unsubscribe = useAppStore.subscribe((state, previous) => {
+    if (state.assemblyComponentPick !== previous.assemblyComponentPick || state.frameStroke !== previous.frameStroke
+      || state.activeDocumentId !== previous.activeDocumentId || state.assemblyView !== previous.assemblyView
+      || state.assembly !== previous.assembly || state.standardPartPickerOpen !== previous.standardPartPickerOpen
+      || state.assemblyPlacement?.kind !== previous.assemblyPlacement?.kind
+      || state.partEdit !== previous.partEdit || state.displaySettings !== previous.displaySettings
+      || state.snapEnabled !== previous.snapEnabled || state.snapKinds !== previous.snapKinds) clearPlacementPreview();
     const staleField = gesture.pendingMate?.stale() ?? null;
     if (gesture.pendingMate !== null && staleField !== null) cancelMate(`store:${staleField}`);
     if (gesture.captured !== null && (state.assemblyDrag === null || !currentComponentDrag(state.assemblyDrag))) cancelDrag();
@@ -943,7 +990,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   return { cancelDrag, detach: () => {
     if (gesture.detached) return;
     gesture.detached = true;
-    cancelMate('detached'); hoverRepick.cancel();
+    cancelMate('detached'); hoverRepick.cancel(); clearPlacementPreview();
     const actions = [
       () => canvas.removeEventListener('pointerdown', onPointerDown),
       () => canvas.removeEventListener('pointermove', onPointerMove),
@@ -951,7 +998,10 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       () => canvas.removeEventListener('pointerup', onPointerEnd),
       () => canvas.removeEventListener('pointercancel', onPointerCancel),
       () => canvas.removeEventListener('lostpointercapture', onPointerCancel),
-      () => canvas.removeEventListener('keydown', onKeyDown), unsubscribe,
+      () => canvas.removeEventListener('keydown', onKeyDown),
+      () => canvas.removeEventListener('keydown', onPreviewModifier),
+      () => canvas.removeEventListener('keyup', onPreviewModifier),
+      () => canvas.removeEventListener('wheel', clearPlacementPreview), unsubscribe,
     ];
     let released = releaseInput();
     for (const action of actions) { try { action(); } catch { released = false; } }

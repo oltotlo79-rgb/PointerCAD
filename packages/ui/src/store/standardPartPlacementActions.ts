@@ -7,6 +7,7 @@ import { commitCatalogItemChoice } from '../assembly/catalogFamilyChoices.js';
 import { frameMembersDocument, type FrameMembersPlacement, type FrameMembersRequest } from '../assembly/frameMembersPlacement.js';
 import { commitStandardPartChoice, type StandardPartCategory } from '../assembly/standardPartPicker.js';
 import type { AppState } from './appState.js';
+import { endComponentPickFor } from './componentPickActions.js';
 
 export interface StandardPartPlacementSlice {
   readonly openStandardPartPicker: () => boolean;
@@ -98,7 +99,8 @@ export function createStandardPartPlacementActions(set: (patch: Partial<AppState
       return true;
     },
     closeStandardPartPicker: () => {
-      set({ standardPartPickerOpen: false });
+      const state = get();
+      set({ standardPartPickerOpen: false, ...endComponentPickFor(state, ['placementPoint']) });
     },
     placeStandardPart: (category, choiceKey, lengthSource, dimensionSeries, threadSeries, options) => {
       const selected = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);

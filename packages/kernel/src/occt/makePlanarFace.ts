@@ -6,6 +6,7 @@ import { continuousCurvePieces } from './continuousCurvePieces.js';
 import type { NativeProfileCurve, NativeProfileLine } from './subShapeOrigins.js';
 import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { createAllocations } from './allocations.js';
+import { sketchInputError } from './kernelStepError.js';
 import { addPlanarFaceHoles } from './planarFaceHoles.js';
 
 /** OCCT の面と、そのために確保した領域の解放手続き。 */
@@ -66,7 +67,7 @@ export function makePlanarFace(
   holes: readonly (readonly CurveSpec[])[] = [],
 ): OcctFaceHandle {
   if (curves.length === 0) {
-    throw new Error('面を作るには曲線が 1 本以上必要です。');
+    throw sketchInputError({ code: 'faceNoCurves' }, '面を作るには曲線が 1 本以上必要です。');
   }
 
   const owned = createAllocations();
@@ -146,26 +147,26 @@ export function makePlanarFace(
 
 
     if (!wireMaker.IsDone()) {
-      throw new Error('選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
+      throw sketchInputError({ code: 'notConnected' }, '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
     }
 
     const wire = owned.keep(wireMaker.Wire());
 
     if (!wire.Closed_1()) {
-      throw new Error('輪郭が閉じていないため、面を張れませんでした。');
+      throw sketchInputError({ code: 'faceOpen' }, '輪郭が閉じていないため、面を張れませんでした。');
     }
 
     // 第2引数 true は「平面だけを許す」。非平面のループはここで失敗し、FR-312(Could)へ回る。
     const faceMaker = owned.keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
 
     if (!faceMaker.IsDone()) {
-      throw new Error('輪郭が同じ平面に乗っていないため、面を張れませんでした。');
+      throw sketchInputError({ code: 'faceNotPlanar' }, '輪郭が同じ平面に乗っていないため、面を張れませんでした。');
     }
 
     const face = owned.keep(faceMaker.Face());
 
     if (!oc.BRepAlgo.IsValid_1(face)) {
-      throw new Error('輪郭が自分自身と交わっているため、面を張れませんでした。');
+      throw sketchInputError({ code: 'faceSelfIntersection' }, '輪郭が自分自身と交わっているため、面を張れませんでした。');
     }
 
     const outer: OcctFaceHandle = {

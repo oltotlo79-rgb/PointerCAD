@@ -3,6 +3,7 @@ import { mathScalarExpression, type AngleUnit, type ExpressionValue, type Stored
 import { FUNCTION_DEFINITION_FORMAT, FunctionPlotBounds, checkGeometryDerivedFunctionOperations,
   mathGeometryDerivedCoefficientIds, mathGeometryDerivedParameters, type FunctionDefinition, type FunctionPlotAxis,
   type MathGeometryOutcome, type PartDocument, type SketchFunctionCurveFeature, type FunctionSurfaceFeature } from '@pointercad/model';
+import { MathInputProblem, type MathEvaluation } from '@pointercad/expression/math/contracts';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { prepareDocumentMathEnvironment } from '../math/prepareDocumentMathEditor.js';
 import { t } from '../i18n/t.js';
@@ -121,14 +122,34 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
       if (!current()) return null;
       if (result.status !== 'result') { fields.set(field, t('math.workerFailed')); return null; }
       return result.result;
-    } catch (error) { if (current()) fields.set(field, error instanceof Error ? error.message : t('math.workerFailed')); return null; }
+    } catch (error) {
+      if (!current()) return null;
+      if (error instanceof MathInputProblem) {
+        fields.set(field, error.diagnostic === undefined ? error.message : failureMessage(error.diagnostic));
+      } else {
+        console.error('PointerCAD function formula', error);
+        fields.set(field, t('assembly.error.internal'));
+      }
+      return null;
+    }
+  };
+  // Keep the form's legacy fallback for replies without a text-input diagnostic.
+  const formulaFailure = (evaluation: MathEvaluation): string => {
+    if ((evaluation.status === 'invalid' || evaluation.status === 'stopped') && evaluation.diagnostic !== undefined) {
+      return failureMessage(evaluation.diagnostic);
+    }
+    return evaluation.status === 'invalid' ? evaluation.detail : t('math.invalidSource');
   };
   for (const key of scalarFields) {
     const input = draft.scalars[key], completion = await calculate(key, input.source, input.angleUnit, input.accepted?.mathDefinition, false);
     if (!current()) return failed();
     if (completion === null) continue;
     const scalar = mathScalarExpression(completion);
-    if (!scalar.ok) fields.set(key, scalar.message); else values.set(key, scalar.value);
+    if (!scalar.ok) {
+      const evaluation = completion.evaluation;
+      const diagnostic = evaluation.status === 'invalid' || evaluation.status === 'stopped' ? evaluation.diagnostic : undefined;
+      fields.set(key, diagnostic === undefined ? scalar.message : failureMessage(diagnostic));
+    } else values.set(key, scalar.value);
   }
   for (const axis of activeFunctionOutputs(draft)) {
     const input = draft.outputs[axis], completion = await calculate(axis, input.source, input.angleUnit, input.accepted, true);
@@ -136,7 +157,7 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     if (completion === null) continue;
     // A refused formula keeps its own reason (e.g. an indefinite integral); other states stay generic.
     if (completion.definition === null || completion.evaluation.status !== 'value' || completion.evaluation.kind !== 'function') {
-      fields.set(axis, completion.evaluation.status === 'invalid' ? completion.evaluation.detail : t('math.invalidSource'));
+      fields.set(axis, formulaFailure(completion.evaluation));
     } else outputs.set(axis, completion.definition);
   }
   let equation:StoredMathExpression|undefined;
@@ -145,7 +166,7 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     if(!current()) return failed();
     if(completion!==null){
       if(completion.definition===null || completion.evaluation.status!=='value' || completion.evaluation.kind!=='function') {
-        fields.set('equation',completion.evaluation.status==='invalid' ? completion.evaluation.detail : t('math.invalidSource'));
+        fields.set('equation',formulaFailure(completion.evaluation));
       } else if(implicitEqualsRootRejected(completion.definition.expression)) fields.set('equation',t('functionPlot.implicitEqualsNotSupported'));
       else equation=completion.definition;
     }

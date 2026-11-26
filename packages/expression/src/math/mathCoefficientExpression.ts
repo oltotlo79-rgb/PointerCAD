@@ -40,7 +40,7 @@ export function decodeCoefficientExpression(value: unknown, spend?: () => void):
     if ('kind' in item && item.kind === 'symbol' && 'reference' in item) {
       const reference = item.reference;
       if (reference === null || typeof reference !== 'object' || !('role' in reference) || reference.role !== 'bound') {
-        throw new MathInputProblem('syntax', '係数の原式には未確定の座標や変数を含められません。');
+        throw new MathInputProblem('syntax', '係数の原式には未確定の座標や変数を含められません。', { key: 'math.input.coefficientOpen', parameters: {} });
       }
     }
     pending.push(...nestedObjects(item));
@@ -66,7 +66,7 @@ export function substituteCoefficientExpressions(source: MathNode, values: Reado
   const pending: object[] = [source];
   let scopeBudget = MATH_INPUT_LIMITS.nodes * 8;
   while (pending.length > 0) {
-    if (--scopeBudget < 0) throw new MathInputProblem('budget', '係数を展開する式が大きすぎます。');
+    if (--scopeBudget < 0) throw new MathInputProblem('budget', '係数を展開する式が大きすぎます。', { key: 'math.input.coefficientScopeLimit', parameters: { limit: String(MATH_INPUT_LIMITS.nodes * 8) } });
     const node = pending.pop();
     if (node === undefined) break;
     if ('id' in node && typeof node.id === 'string') occupied.add(node.id);
@@ -79,11 +79,11 @@ export function substituteCoefficientExpressions(source: MathNode, values: Reado
     return id;
   };
   function visit(node: MathNode, depth: number, names: ReadonlyMap<string, string>, replacement: boolean): MathNode {
-    if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '係数の原式を展開する範囲が大きすぎます。');
+    if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '係数の原式を展開する範囲が大きすぎます。', { key: 'math.input.coefficientExpansionLimit', parameters: { nodes: String(MATH_INPUT_LIMITS.nodes), depth: String(MATH_INPUT_LIMITS.depth) } });
     if (node.kind === 'symbol') {
       if (node.reference.role === role && !replacement) {
         const value = values.get(node.reference.id);
-        if (value === undefined) throw new MathInputProblem('syntax', '係数の原式を再計算できません。');
+        if (value === undefined) throw new MathInputProblem('syntax', '係数の原式を再計算できません。', { key: 'math.input.coefficientReference', parameters: { name: node.reference.label } });
         return visit(value, depth + 1, new Map(), true);
       }
       if (node.reference.role === 'bound') {
@@ -121,7 +121,7 @@ export function originalCoefficientExpression(value: ExpressionValue, names: Leg
   if (declared.length > 0) {
     const values = new Map<string, MathNode>();
     for (const declaration of declared) {
-      if (declaration.valueSource === undefined) throw new MathInputProblem('syntax', '係数に使う記号の値が指定されていません。');
+      if (declaration.valueSource === undefined) throw new MathInputProblem('syntax', '係数に使う記号の値が指定されていません。', { key: 'math.input.coefficientDeclaration', parameters: { name: declaration.label } });
       values.set(declaration.id, parseMathDeclaredValue(declaration.valueSource));
     }
     own = substituteCoefficientExpressions(own, values, 'declared');
@@ -146,6 +146,6 @@ export function exactCoefficientScalar(expression: MathNode): { readonly value: 
   if (exact === null) return null;
   const result = new ExpressionDecimal(exact.numerator.toString()).div(exact.denominator.toString());
   const value = result.toNumber();
-  if (!Number.isFinite(value) || (value === 0 && exact.numerator !== 0n)) throw new MathInputProblem('domain', '係数の原式の値を有限の座標で表せません。');
+  if (!Number.isFinite(value) || (value === 0 && exact.numerator !== 0n)) throw new MathInputProblem('domain', '係数の原式の値を有限の座標で表せません。', { key: 'math.input.coefficientCoordinate', parameters: {} });
   return { value, decimal: result.toString(), display: result.toSignificantDigits(DISPLAY_SIGNIFICANT_DIGITS).toString() };
 }

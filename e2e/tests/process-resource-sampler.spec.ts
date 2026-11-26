@@ -1,17 +1,18 @@
 import { execFile, spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, frameClockStages, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, frameClockStages, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type RawFrame, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames, windowsRootContextScript } from './readResidentSampler.js';
 import { windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
 import { windowsSavePointOwnerScript } from './namedSavePointsFlow.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
 const OWNED_STOP_MS = 10_000;
+const OBSERVATION_WINDOW_MS = DISCOVERY_INTERVAL_MS * 3;
+const MIN_OBSERVATION_FRAMES = OBSERVATION_WINDOW_MS / (INTERVAL_MS * 2);
 
 async function within<T>(work: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -60,7 +61,8 @@ test(`process sampler records actual cadence quality through repeated discoverie
     const started = sampler;
     await expect.poll(() => started.frames.length, { timeout: 30_000 }).toBeGreaterThan(0);
     waitStart = { atEpochMs: Date.now(), count: started.frames.length };
-    await delay(DISCOVERY_INTERVAL_MS * 3);
+    // Completion times come from the sampler. A runner timer can expire before enough frames have arrived.
+    await expect.poll(() => hasSamplerObservation(started.frames)).toBe(true);
     waitEnd = { atEpochMs: Date.now(), count: started.frames.length };
   } catch (error: unknown) {
     primary = { error };
@@ -85,7 +87,7 @@ test(`process sampler records actual cadence quality through repeated discoverie
   if (sampler === undefined) throw new Error('Sampler was not started');
   const frames = sampler.frames.map(frame => ({ ...frame, phase: 'baseline' as const }));
   expect(sampler.failures).toEqual([]);
-  expect(frames.length, countMessage).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
+  expect(frames.length, countMessage).toBeGreaterThanOrEqual(MIN_OBSERVATION_FRAMES);
   if (platform() === 'win32') {
     // The start-up stages arrive as their own lines, in order, before the first frame read; none is a frame.
     // script-start uses the framework clock (before Add-Type); every later stage uses the precise clock.
@@ -165,6 +167,27 @@ interface FrameCountCheckpoint {
   readonly count: number;
 }
 
+function samplerObservationSpan(frames: readonly Pick<RawFrame, 'atEpochMs'>[]): number | null {
+  const first = frames[0], last = frames.at(-1);
+  return first === undefined || last === undefined ? null : last.atEpochMs - first.atEpochMs;
+}
+
+function hasSamplerObservation(frames: readonly Pick<RawFrame, 'atEpochMs'>[]): boolean {
+  return frames.length >= MIN_OBSERVATION_FRAMES && (samplerObservationSpan(frames) ?? 0) >= OBSERVATION_WINDOW_MS;
+}
+
+test('sampler observation waits for both the recorded duration and the delivered frame count', () => {
+  const atIntervals = (count: number, ms: number) =>
+    Array.from({ length: count }, (_, index) => ({ atEpochMs: 1_000 + index * ms }));
+  expect(hasSamplerObservation([])).toBe(false);
+  expect(hasSamplerObservation([{ atEpochMs: 1_000 }])).toBe(false);
+  expect(hasSamplerObservation(atIntervals(24, 270))).toBe(false);
+  expect(hasSamplerObservation(atIntervals(30, 100))).toBe(false);
+  const frames = atIntervals(29, 200);
+  expect(hasSamplerObservation([...frames, { atEpochMs: 6_999 }])).toBe(false);
+  expect(hasSamplerObservation([...frames, { atEpochMs: 7_000 }])).toBe(true);
+});
+
 // The runner counts delivered frames at each boundary. The sampler timestamps describe acquisition.
 function samplerFrameCounts(sampler: Sampler, waitStart: FrameCountCheckpoint | null, waitEnd: FrameCountCheckpoint | null) {
   const frames = sampler.frames;
@@ -183,6 +206,7 @@ function samplerFrameCounts(sampler: Sampler, waitStart: FrameCountCheckpoint | 
     receivedDuringWait: waitStart === null || waitEnd === null ? null : waitEnd.count - waitStart.count,
     receivedDuringStop: waitEnd === null ? null : frames.length - waitEnd.count,
     lastFrameAtEpochMs: frames.at(-1)?.atEpochMs ?? null,
+    observationSpanMs: samplerObservationSpan(frames),
     distinctDiscoveries: new Set(frames.map(frame => frame.discoveredAtEpochMs)).size,
     staleRetries: staleRetrySummary(frames), gapsOverTwoIntervals, longestGap,
     longestGapStages: gapEnd === undefined || longestGap === null ? null : frameClockStages(gapEnd, frames[longestGap.frameIndex + 1]),

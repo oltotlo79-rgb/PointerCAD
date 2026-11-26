@@ -59,7 +59,7 @@ import { magnitudeAtLeast, azimuthToEllipseParameter, sampleSpline, splineCurveD
 import { dxfString, type DxfWriteEntity, type DxfWriteOptions } from './dxfDrawingTypes.js';
 
 import type { DxfPoint2d } from './dxfCurves.js';
-import { formatDxfTags, type DxfTag } from './dxfTags.js';
+import { DxfDataError, formatDxfTags, type DxfTag } from './dxfTags.js';
 import type {
   DxfArcEntity,
   DxfEllipseEntity,
@@ -146,12 +146,12 @@ export function dxfFlattenedCurveMessage(count: number): string {
  */
 export function formatDxfNumber(value: number): string {
   if (!Number.isFinite(value)) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   // `toFixed` は 10 の 21 乗以上で指数表記になる。その形は下の点検で断る。
   const fixed = value.toFixed(DECIMALS);
   if (fixed.includes('e') || fixed.includes('E')) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   // `toFixed` は必ず小数点を書くので、末尾の 0 と小数点は同じ 1 つの式で落とせる。
   const trimmed = fixed.replace(/\.?0+$/, '');
@@ -187,7 +187,7 @@ function numberTag(code: number, value: number): DxfTag {
  */
 function layerName(entity: DxfEntityBase): string {
   if (entity.layer.includes('\n') || entity.layer.includes('\r')) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   return entity.layer === '' ? DEFAULT_LAYER : dxfString(entity.layer);
 }
@@ -202,12 +202,12 @@ function baseTags(entity: DxfEntityBase): DxfTag[] {
   const tags: DxfTag[] = [tag(8, layerName(entity))];
   if (entity.color !== null) {
     if (!Number.isInteger(entity.color) || entity.color < MIN_COLOR || entity.color > MAX_COLOR) {
-      throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
     }
     tags.push(tag(62, String(entity.color)));
   }
   if ('lineType' in entity) {
-    if (typeof entity.lineType !== 'string' || entity.lineType.length === 0) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    if (typeof entity.lineType !== 'string' || entity.lineType.length === 0) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
     tags.push(tag(6, dxfString(entity.lineType)));
   }
   return tags;
@@ -247,7 +247,7 @@ function writeLineEntity(entity: DxfLineEntity): DxfTag[] {
  */
 function writeArcEntity(entity: DxfArcEntity): DxfTag[] {
   if (!(entity.radius > 0)) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const head = [...baseTags(entity), ...pointTags(10, entity.center), numberTag(40, entity.radius)];
   const sweep = entity.endAngle - entity.startAngle;
@@ -304,7 +304,7 @@ function writePolyline(
  */
 function writeEllipseEntity(entity: DxfEllipseEntity): DxfTag[] {
   if (!(entity.majorRadius > 0) || !(entity.minorRadius > 0)) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const sweep = entity.endAngle - entity.startAngle;
   const closed = magnitudeAtLeast(sweep, FULL_TURN_DEGREES - FULL_TURN_EPSILON) || sweep === 0;
@@ -342,11 +342,11 @@ function functionCurveShape(entity: DxfSplineEntity): { readonly degree?: 1 | 3;
   const knots: unknown = 'knots' in entity ? entity.knots : undefined;
   if (degree === undefined && knots === undefined) return {};
   if ((degree !== 1 && degree !== 3) || (knots !== undefined && (!Array.isArray(knots) || degree !== 3))
-    || (degree === 3 && knots === undefined)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    || (degree === 3 && knots === undefined)) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   const checked: number[] = [];
   if (Array.isArray(knots)) {
     for (const knot of knots) {
-      if (typeof knot !== 'number' || !Number.isFinite(knot)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      if (typeof knot !== 'number' || !Number.isFinite(knot)) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
       checked.push(knot);
     }
   }
@@ -375,13 +375,13 @@ function writeSplineEntity(entity: DxfSplineEntity): DxfTag[] {
   };
   // A function curve that cannot be evaluated is refused, never redrawn from its poles as a uniform spline.
   if ((spline.degree !== undefined || spline.knots !== undefined) && splineCurveData(spline) === null) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const sampled = sampleSpline(spline);
   // 閉じた曲線の折れ線は先頭へ戻る点で終わるので、その 1 点を落としてから閉じる旗を立てる。
   const trimmed = entity.closed ? sampled.slice(0, -1) : sampled;
   if (trimmed.length < 2) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const points = trimmed.map((point): DxfPoint2d => ({ x: point[0], y: point[1] }));
   return writePolyline(entity, points, entity.closed);
@@ -392,7 +392,7 @@ function writeEntity(entity: DxfWriteEntity): { readonly tags: DxfTag[]; readonl
   switch (entity.kind) {
     case 'text': {
       if (!Number.isFinite(entity.height) || entity.height <= 0 || ![0, 1, 2].includes(entity.horizontal)
-        || ![0, 1, 2, 3].includes(entity.vertical)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+        || ![0, 1, 2, 3].includes(entity.vertical)) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
       return { flattened: false, tags: [tag(0, 'TEXT'), ...baseTags(entity), ...pointTags(10, entity.position),
         numberTag(40, entity.height), tag(1, dxfString(entity.text)), numberTag(50, foldDegrees(entity.rotation)),
         tag(7, 'STANDARD'), numberTag(72, entity.horizontal), ...pointTags(11, entity.position), numberTag(73, entity.vertical)] };
@@ -401,7 +401,7 @@ function writeEntity(entity: DxfWriteEntity): { readonly tags: DxfTag[]; readonl
       return { flattened: false, tags: [tag(0, 'SOLID'), ...baseTags(entity),
         ...entity.points.flatMap((point, index) => pointTags(10 + index, point))] };
     case 'polyline':
-      if (entity.points.length < 2) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      if (entity.points.length < 2) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
       return { flattened: false, tags: writePolyline(entity, entity.points, entity.closed) };
     case 'point':
       return { tags: writePointEntity(entity), flattened: false };
@@ -526,7 +526,7 @@ function drawingTablesTags(entities: readonly DxfWriteEntity[], options: DxfWrit
   const names = new Set(types.map((lineType) => lineType.name));
   if (!names.has('CONTINUOUS') || names.size !== types.length
     || types.some((lineType) => lineType.name.length === 0 || lineType.segments.some((value) => !Number.isFinite(value)))) {
-    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const layers = [...options.layers];
   if (!layers.some((layer) => layer.name === DEFAULT_LAYER)) layers.unshift({ name: DEFAULT_LAYER,
@@ -535,11 +535,11 @@ function drawingTablesTags(entities: readonly DxfWriteEntity[], options: DxfWrit
   if (layerNames.size !== layers.length || layers.some((layer) => layer.name.length === 0
       || !names.has(layer.lineType) || !Number.isInteger(layer.color) || layer.color < 1 || layer.color > 255)
     || entities.some((entity) => !layerNames.has(entity.layer || DEFAULT_LAYER)
-      || (entity.lineType !== undefined && !names.has(entity.lineType)))) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      || (entity.lineType !== undefined && !names.has(entity.lineType)))) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
   const tags: DxfTag[] = [tag(0, 'SECTION'), tag(2, 'TABLES'), tag(0, 'TABLE'), tag(2, 'LTYPE'), numberTag(70, types.length)];
   for (const lineType of types) {
     const total = lineType.segments.reduce((sum, value) => sum + Math.abs(value), 0);
-    if (lineType.segments.length > 0 && total === 0) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    if (lineType.segments.length > 0 && total === 0) throw new DxfDataError('invalidWriteValue', DXF_WRITE_INVALID_VALUE_MESSAGE);
     tags.push(tag(0, 'LTYPE'), tag(2, dxfString(lineType.name)), tag(70, '0'), tag(3, ''), tag(72, '65'),
       numberTag(73, lineType.segments.length), numberTag(40, total), ...lineType.segments.map((value) => numberTag(49, value)));
   }

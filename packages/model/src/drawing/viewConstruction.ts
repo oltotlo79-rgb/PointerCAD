@@ -1,5 +1,6 @@
 import { dotVec3 as dot } from '../sketch/vec3.js';
-import { drawingViewBasis, validateDrawingPolygon, type BreakSpec, type ClipRegion, type DrawingDocument, type DrawingExpressionValue,
+import { drawingViewBasis, invalidBreakInterval, validateDrawingPolygon, type BreakSpec, type ClipRegion, type DrawingDocument, type DrawingExpressionValue,
+  type DrawingLayoutFailure, type DrawingLayoutFailureText,
   type DrawingPlaneDefinition, type DrawingView, type Point2, type Vector3 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
 import { analyzeParameters } from '../parameters/parameterTable.js';
@@ -17,7 +18,7 @@ export interface ConstructedDrawingView {
   readonly section?: { readonly plane: ResolvedPlane; readonly kind: SectionSpec['kind']; readonly keepSide: SectionSpec['keepSide']; readonly boundary?: readonly Point2[] };
 }
 export type DrawingConstructionResult = { readonly ok: true; readonly views: ReadonlyMap<string, ConstructedDrawingView> }
-  | { readonly ok: false; readonly viewId: string; readonly message: string };
+  | { readonly ok: false; readonly viewId: string; readonly message: string; readonly text?: DrawingLayoutFailureText };
 
 const planeDependencies = (plane: DrawingPlaneDefinition): readonly string[] => plane.kind === 'viewLine' ? [plane.sourceViewId]
   : plane.kind === 'face' ? [plane.target.viewId] : plane.kind === 'threePoints' ? plane.points.map((point) => point.viewId) : [];
@@ -30,7 +31,10 @@ export function resolveViewConstructions(document: DrawingDocument, source: Draw
   const complete = new Map<string, ConstructedDrawingView>();
   const visiting = new Set<string>();
   let failure: Extract<DrawingConstructionResult, { ok: false }> | null = null;
-  const fail = (viewId: string, message: string): null => { failure ??= { ok: false, viewId, message }; return null; };
+  const fail = (viewId: string, cause: string | DrawingLayoutFailure): null => {
+    failure ??= typeof cause === 'string' ? { ok: false, viewId, message: cause } : { ...cause, viewId };
+    return null;
+  };
   const scalar = (input: DrawingExpressionValue): number | null => {
     const result = evaluateExpression(input.source, analyzeParameters(document.parameters, [input.source]));
     return result.ok && Number.isFinite(result.value.value) ? result.value.value : null;
@@ -102,7 +106,7 @@ export function resolveViewConstructions(document: DrawingDocument, source: Draw
       } else if (definition.kind === 'broken') {
         const from = scalar(definition.from), to = scalar(definition.to), gap = scalar(definition.gap), scale = frame.view.scale ?? document.sheet.scale;
         if (from === null || to === null || gap === null || from >= to || gap < 0 || !Number.isFinite(scale) || scale <= 0
-          || gap >= (to - from) * scale) return fail(id, '破断区間と残す隙間を正しく指定してください。');
+          || gap >= (to - from) * scale) return fail(id, invalidBreakInterval());
         const origin = frame.view.position[definition.axis === 'u' ? 0 : 1];
         frame = { ...frame, breakSpec: { axis: definition.axis, from: origin + from * scale, to: origin + to * scale, keepGap: gap } };
       }

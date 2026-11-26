@@ -28,6 +28,8 @@
  * ここは純関数だけを置く。乱数・時刻・`Map` の反復順に頼らず、同じ入力からは必ず同じ診断を返す。
  */
 
+import type { FailureText } from '../../failureText.js';
+import { joinSketchText, sketchConstraintText } from '../sketchDiagnostics.js';
 import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import {
   buildResidualReport,
@@ -64,8 +66,8 @@ export interface RedundantConstraint {
   readonly reason: RedundantReason;
   /** その拘束を決めている先行の拘束の id(`noVariable` のときは空)。 */
   readonly dependsOn: readonly string[];
-  /** 画面へそのまま出せる日本語。 */
-  readonly message: string;
+  /** 画面で解決する鍵と値。 */
+  readonly text: FailureText;
 }
 
 /** 同時に成り立たないと判定した拘束 1 つ。 */
@@ -75,8 +77,8 @@ export interface ConflictingConstraint {
   readonly residual: number;
   /** 同時には成り立たない相手の拘束の id。 */
   readonly partners: readonly string[];
-  /** 画面へそのまま出せる日本語。 */
-  readonly message: string;
+  /** 画面で解決する鍵と値。 */
+  readonly text: FailureText;
 }
 
 /** 診断の 1 文の種類(画面がどこへ出すかを選ぶのに使う)。 */
@@ -101,7 +103,7 @@ export type ConstraintDiagnosisMessageKind =
 /** 診断の 1 文。 */
 export interface ConstraintDiagnosisMessage {
   readonly kind: ConstraintDiagnosisMessageKind;
-  readonly text: string;
+  readonly text: FailureText;
   /** その文が指している拘束の id(利用者の拘束だけ。円弧の暗黙の式は含めない)。 */
   readonly constraintIds: readonly string[];
 }
@@ -141,10 +143,10 @@ export interface ConstraintDiagnosis {
   readonly maxResidual: number;
   /** 残差が許容量に収まっているか。 */
   readonly satisfied: boolean;
-  /** 画面へそのまま出せる日本語の一覧(先頭は自由度、または診断未完の 1 文)。 */
+  /** 画面で解決する鍵と値の一覧(先頭は自由度、または診断未完の 1 文)。 */
   readonly messages: readonly ConstraintDiagnosisMessage[];
   /** 帯に出す 1 文(`messages` の要約)。 */
-  readonly summary: string;
+  readonly summary: FailureText;
 }
 
 export interface DiagnoseOptions {
@@ -344,13 +346,13 @@ function analyzeRows(rows: readonly ResidualRow[], columnCount: number): RowAnal
 }
 
 /* ------------------------------------------------------------------ *
- * 2. 日本語の文
+ * 2. 拘束の表示
  * ------------------------------------------------------------------ */
 
 /** 上限を「点」の数で言う(変数は 1 点につき u, v の 2 つ)。 */
 const MAX_CONSTRAINT_POINTS = MAX_CONSTRAINT_VARIABLES / 2;
 
-export const CONSTRAINT_TOO_MANY_MESSAGE = `拘束を付けられる要素が多すぎます(上限 ${MAX_CONSTRAINT_POINTS} 点)。スケッチを分けてください。`;
+export const CONSTRAINT_TOO_MANY_MESSAGE = sketchConstraintText('tooMany', { limit: String(MAX_CONSTRAINT_POINTS) });
 
 /** 「あと N か所決まっていません」/「すべて決まりました」。 */
 export function remainingMessage(degreesOfFreedom: number): string {
@@ -359,14 +361,10 @@ export function remainingMessage(degreesOfFreedom: number): string {
     : 'すべて決まりました';
 }
 
-/** 「A、B」(並べるだけ)。 */
-function joinNames(names: readonly string[]): string {
-  return names.join('、');
-}
-
-/** 「A と B」(同時には成り立たない相手を並べるとき)。 */
-function joinWithAnd(names: readonly string[]): string {
-  return names.join(' と ');
+function remainingText(degreesOfFreedom: number): FailureText {
+  return degreesOfFreedom > 0
+    ? sketchConstraintText('remaining', { count: String(degreesOfFreedom) })
+    : sketchConstraintText('solved');
 }
 
 /* ------------------------------------------------------------------ *
@@ -432,7 +430,7 @@ export function diagnoseConstraints(
     ? analyzeRows(rows, variables)
     : analyzeSparseRows(rows, variables, RANK_RELATIVE_TOLERANCE);
   const incomplete = analysis.rank === null;
-  const incompleteMessage = '拘束の階数を確定できませんでした。診断は未完了です';
+  const incompleteMessage = sketchConstraintText('incomplete');
 
   const nameById = new Map<string, string>();
   for (const constraint of constraints) {
@@ -474,16 +472,17 @@ export function diagnoseConstraints(
               constraintId: row.constraintId,
               reason: 'noVariable',
               dependsOn: [],
-              message: `${nameOf(row.constraintId)} が指している要素は動かせないので、この拘束は形に効きません。`,
+              text: sketchConstraintText('noVariable', { label: nameOf(row.constraintId) }),
             }
           : {
               constraintId: row.constraintId,
               reason: 'duplicate',
               dependsOn: partners,
-              message:
-                partners.length > 0
-                  ? `${nameOf(row.constraintId)} は、ほかの拘束(${joinNames(partners.map(nameOf))})ですでに決まっています。`
-                  : `${nameOf(row.constraintId)} は、ほかの拘束ですでに決まっています。`,
+              text: partners.length > 0
+                ? sketchConstraintText('duplicateWithPartners', {
+                    label: nameOf(row.constraintId), partners: joinSketchText(partners.map(nameOf), 'joinNames'),
+                  })
+                : sketchConstraintText('duplicate', { label: nameOf(row.constraintId) }),
             },
       );
     }
@@ -494,15 +493,14 @@ export function diagnoseConstraints(
     }
     seenConflict.add(row.constraintId);
     const names = [nameOf(row.constraintId), ...partners.map(nameOf)];
-    const message =
-      partners.length > 0
-        ? `${joinWithAnd(names)} は同時には成り立ちません。`
-        : `${nameOf(row.constraintId)} は、いまの形では成り立ちません。`;
+    const text = partners.length > 0
+      ? sketchConstraintText('conflictWithPartners', { partners: joinSketchText(names, 'joinPartners') })
+      : sketchConstraintText('conflict', { label: nameOf(row.constraintId) });
     conflictDetails.push({
       constraintId: row.constraintId,
       residual: row.value,
       partners,
-      message,
+      text,
     });
     for (const partnerId of partners) {
       if (seenConflict.has(partnerId)) {
@@ -514,7 +512,7 @@ export function diagnoseConstraints(
         constraintId: partnerId,
         residual: partnerRow?.value ?? 0,
         partners: [row.constraintId],
-        message,
+        text,
       });
     }
   }
@@ -542,7 +540,7 @@ export function diagnoseConstraints(
         constraintId: entry.row.constraintId,
         residual: entry.row.value,
         partners: [],
-        message: `${nameOf(entry.row.constraintId)} は、いまの形では成り立ちません。`,
+        text: sketchConstraintText('conflict', { label: nameOf(entry.row.constraintId) }),
       });
     }
   }
@@ -563,20 +561,21 @@ export function diagnoseConstraints(
     degreesOfFreedom === null
       ? { kind: 'incomplete', text: incompleteMessage, constraintIds: [] }
       : degreesOfFreedom > 0
-        ? { kind: 'remaining', text: remainingMessage(degreesOfFreedom), constraintIds: [] }
-        : { kind: 'solved', text: remainingMessage(0), constraintIds: [] },
+        ? { kind: 'remaining', text: remainingText(degreesOfFreedom), constraintIds: [] }
+        : { kind: 'solved', text: remainingText(0), constraintIds: [] },
   );
+  const excessText = sketchConstraintText('excess', { count: String(redundantDetails.length) });
   if (redundantDetails.length > 0) {
     messages.push({
       kind: 'excess',
-      text: `付けすぎの拘束が ${redundantDetails.length} 件あります`,
+      text: excessText,
       constraintIds: redundant,
     });
   }
   for (const entry of conflictDetails.slice(0, CONFLICT_REPORT_LIMIT)) {
     messages.push({
       kind: 'conflict',
-      text: entry.message,
+      text: entry.text,
       constraintIds: [entry.constraintId, ...entry.partners],
     });
   }
@@ -589,30 +588,30 @@ export function diagnoseConstraints(
     }
     messages.push({
       kind: 'redundant',
-      text: entry.message,
+      text: entry.text,
       constraintIds: [entry.constraintId, ...entry.dependsOn],
     });
   }
   for (const entry of report.skipped) {
     messages.push({
       kind: 'skipped',
-      text: entry.message,
+      text: entry.text,
       constraintIds: visible(entry.constraintId) ? [entry.constraintId] : [],
     });
   }
 
-  const parts: string[] = [];
+  const parts: FailureText[] = [];
   if (incomplete && conflictDetails.length > 0) parts.push(incompleteMessage);
   parts.push(
     conflictDetails.length > 0
-      ? `同時に成り立たない拘束が ${conflictDetails.length} 件あります`
-      : degreesOfFreedom === null ? incompleteMessage : remainingMessage(degreesOfFreedom),
+      ? sketchConstraintText('conflictCount', { count: String(conflictDetails.length) })
+      : degreesOfFreedom === null ? incompleteMessage : remainingText(degreesOfFreedom),
   );
   if (redundantDetails.length > 0) {
-    parts.push(`付けすぎの拘束が ${redundantDetails.length} 件あります`);
+    parts.push(excessText);
   }
   if (report.skipped.length > 0) {
-    parts.push(`材料の足りない拘束が ${report.skipped.length} 件あります`);
+    parts.push(sketchConstraintText('skippedCount', { count: String(report.skipped.length) }));
   }
 
   return {
@@ -632,6 +631,6 @@ export function diagnoseConstraints(
     maxResidual,
     satisfied,
     messages,
-    summary: `${parts.join('。')}。`,
+    summary: sketchConstraintText('sentence', { text: joinSketchText(parts, 'joinSummary') }),
   };
 }

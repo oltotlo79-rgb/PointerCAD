@@ -47,7 +47,7 @@ import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/open
 
 import { createAllocations } from './allocations.js';
 import type { FaceTriangleRange, TessellationAdmission } from './tessellate.js';
-import { TESSELLATION_ADMISSION_MESSAGE, tessellate } from './tessellate.js';
+import { checkTessellationCapacity, tessellate } from './tessellate.js';
 
 /** 偏差(mm)が正の有限な数でないときの断り(FR-504、NFR-UX-5)。 */
 export const EXPORT_DEFLECTION_MESSAGE = '書き出しの品質(偏差)は 0 より大きい数にしてください。';
@@ -154,11 +154,7 @@ export function buildExportMesh(
     throw new Error(EXPORT_ANGULAR_DEFLECTION_MESSAGE);
   }
   options.admission?.checkDeadline();
-  if (options.admission !== undefined &&
-    (!Number.isSafeInteger(options.admission.remainingTriangles) || options.admission.remainingTriangles <= 0 ||
-      !Number.isSafeInteger(options.admission.remainingJsBytes) || options.admission.remainingJsBytes <= 0)) {
-    throw new Error(TESSELLATION_ADMISSION_MESSAGE);
-  }
+  if (options.admission !== undefined) checkTessellationCapacity(options.admission);
 
   const { keep, release } = createAllocations();
   try {

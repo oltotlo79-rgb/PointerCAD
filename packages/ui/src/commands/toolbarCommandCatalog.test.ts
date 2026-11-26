@@ -153,6 +153,12 @@ it('registers nine analysis entries separately while preserving the original com
   expect(commandDefinition('toolbar.look.strength')?.helpTopic).toBe('strength');
 });
 
+it('組立の吸着の命令は入切・端点・方眼だけを公開する', () => {
+  expect(commandDefinition('toolbar.view.snap')?.documentKinds).toEqual(['part', 'assembly']);
+  expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'snap' && entry.documentKinds.includes('assembly'))
+    .map(entry => entry.sourceId)).toEqual(['endpoint', 'grid']);
+});
+
 it('視点の命令に標準の 6 方向を実名で持ち、部品・組立で使えて視点の章を開く(既定のキーは持たない)', () => {
   // 視点の群は上の数の分割から外してあるので、群の並びと 6 方向をここで実名で確かめる。
   expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'view').map(entry => entry.sourceId)).toEqual([

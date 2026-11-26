@@ -5,7 +5,7 @@
  */
 import { withinMagnitude, type Vec3, type WorkPlane } from '@pointercad/model';
 
-import type { GridSetting } from '../settings/gridSetting.js';
+import { validGridCount, validGridStep, type GridSetting } from '../settings/gridSetting.js';
 import { nearestGridPoint, type SnapKind } from '../sketch/snapMath.js';
 
 /** 配置の方眼の吸着の中身(幅・画面の半径・広がり)。 */
@@ -20,7 +20,8 @@ export interface PlacementGridSnap {
 /** 吸着の入切・種類と方眼の設定から、配置の方眼の吸着を決める。効かない時は null。 */
 export function placementGridSnapFor(input: { readonly grid: GridSetting; readonly snapEnabled: boolean;
   readonly snapKinds: readonly SnapKind[]; readonly radiusPixels: number }): PlacementGridSnap | null {
-  if (input.grid.mode !== 'fixed' || !input.snapEnabled || !input.snapKinds.includes('grid')) return null;
+  if (input.grid.mode !== 'fixed' || !input.snapEnabled || !input.snapKinds.includes('grid')
+    || !validGridStep(input.grid.stepMm) || !validGridCount(input.grid.count)) return null;
   return { spacing: input.grid.stepMm, radiusPixels: input.radiusPixels, extent: input.grid.stepMm * input.grid.count };
 }
 
@@ -33,7 +34,7 @@ function planeCoordinates(plane: WorkPlane, point: Vec3): readonly [number, numb
 
 /**
  * 一筆書きの、前の点の高さの面の上の点を、方眼の格子点へ吸い付ける。格子点が広がりの外か、画面で半径より遠い時は元の点。
- * 格子は世界の原点からの幅の倍数(画面の方眼の線と同じ位置)。
+ * 格子は世界の原点からの幅の倍数(画面の方眼の線と同じ位置)。吸い付かなければ入力の点をそのまま返す。
  */
 export function snapStrokePointToGrid(plane: WorkPlane, point: Vec3, snap: PlacementGridSnap,
   toScreen: (world: Vec3) => readonly [number, number] | null, pointer: readonly [number, number]): Vec3 {

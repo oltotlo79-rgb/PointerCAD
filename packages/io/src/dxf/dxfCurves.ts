@@ -32,7 +32,7 @@
 
 import { magnitudeAtLeast, ellipseParameterToAzimuth } from '@pointercad/model';
 
-import { DXF_UNSUPPORTED_FORMAT_MESSAGE } from './dxfTags.js';
+import { DxfDataError, DXF_UNSUPPORTED_FORMAT_MESSAGE } from './dxfTags.js';
 
 /** 作図面の上の 2 次元の点(mm)。 */
 export interface DxfPoint2d {
@@ -139,12 +139,12 @@ function makePoint(x: number, y: number): DxfPoint2d {
 export function parseDxfNumber(value: string): number {
   const text = value.trim();
   if (!DECIMAL_PATTERN.test(text)) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) {
     // 桁が大きすぎて `Infinity` になった場合(`'1e400'`)もここで断る。
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   return normalizeZero(parsed);
 }
@@ -158,11 +158,11 @@ export function parseDxfNumber(value: string): number {
 export function parseDxfInteger(value: string): number {
   const text = value.trim();
   if (!INTEGER_PATTERN.test(text)) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   return normalizeZero(parsed);
 }
@@ -225,7 +225,7 @@ export function bulgeToArc(
     !Number.isFinite(end.y) ||
     !Number.isFinite(bulge)
   ) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   if (bulge === 0) {
     return null;
@@ -243,7 +243,7 @@ export function bulgeToArc(
   if (!Number.isFinite(radius)) {
     // `|bulge|` が極端(1e−154 未満か 1e154 超)で、半径が倍精度で表せないとき。
     // どちらも円弧として持てないので断る(`Infinity` の幾何を下流へ流さない)。
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   // 弦の中点から中心までの符号つきの高さ。弦の左向きを正に取る。
   const height = (chordLength * (1 - bulge * bulge)) / (4 * bulge);
@@ -290,7 +290,7 @@ export function bulgeToArc(
  */
 export function arcToBulge(arc: DxfArcGeometry): number | null {
   if (!Number.isFinite(arc.startAngle) || !Number.isFinite(arc.endAngle)) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const sweepDegrees = arc.endAngle - arc.startAngle;
   if (magnitudeAtLeast(sweepDegrees, FULL_TURN_DEGREES)) {
@@ -341,11 +341,11 @@ export function ellipseFromDxf(
     !Number.isFinite(startParameter) ||
     !Number.isFinite(endParameter)
   ) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const majorRadius = Math.hypot(majorEnd.x, majorEnd.y);
   if (majorRadius === 0 || ratio <= 0 || ratio > 1) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
 
   const minorRadius = majorRadius * ratio;
@@ -395,20 +395,20 @@ export function ellipseFromDxf(
  */
 export function splineFromDxf(input: DxfSplineInput): DxfSplineGeometry {
   if (!Number.isInteger(input.degree) || input.degree < 1) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
 
   const fitPoints = input.fitPoints ?? [];
   const source = input.controlPoints.length > 0 ? input.controlPoints : fitPoints;
   if (source.length === 0) {
-    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+    throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const mode = input.controlPoints.length > 0 ? 'control' : 'interpolate';
 
   const points: DxfPoint2d[] = [];
   for (const point of source) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-      throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+      throw new DxfDataError('unsupported', DXF_UNSUPPORTED_FORMAT_MESSAGE);
     }
     points.push(makePoint(point.x, point.y));
   }

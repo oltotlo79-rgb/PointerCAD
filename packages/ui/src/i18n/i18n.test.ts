@@ -9,6 +9,46 @@ import { MESSAGE_KEYS, type MessageKey, t } from './t.js';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+const IMPORT_DIAGNOSTICS = [
+  ['exchangeError.import.unreadable', 'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。'],
+  ['exchangeError.import.noShape', 'このファイルには形が入っていません。'],
+  ['exchangeError.import.noSolid', 'このファイルにはソリッドが入っていません。面だけの形は読み込めません。'],
+  ['exchangeError.import.missingComponent', 'この STEP ファイルのアセンブリ構造を読み取れませんでした。'],
+  ['exchangeError.import.assemblyCycle', 'この STEP ファイルのアセンブリ参照が循環しているため、読み込めません。'],
+  ['exchangeError.import.noFace', 'この形には面がありません。'],
+  ['exchangeError.import.triangleLimit', 'この形は大きすぎて開けません(三角形が {count} 個)。'],
+] as const satisfies readonly (readonly [MessageKey, string])[];
+
+const EXPORT_DIAGNOSTICS = [
+  ['exchangeError.export.missingShape', 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。'],
+  ['exchangeError.export.noTriangle', 'STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。'],
+  ['exchangeError.export.workerBroken', 'カーネルが止まりました。値を元に戻してから、もう一度お試しください。'],
+  ['exchangeError.export.deadline', '書き出しが{seconds}秒を超えたため中止しました。形を確認してから、もう一度お試しください。'],
+  ['exchangeError.export.triangleLimit', '書き出せる三角形は合計 {limit} 枚までです。'],
+  ['exchangeError.export.memoryLimit', '書き出しに使える追加メモリは {mib} MiB までです。'],
+] as const satisfies readonly (readonly [MessageKey, string])[];
+
+const DXF_DIAGNOSTICS = [
+  ['exchangeError.dxf.unsupported', 'この DXF の形式には対応していません。'],
+  ['exchangeError.dxf.tooLarge', 'この DXF は大きすぎて開けません。'],
+  ['exchangeError.dxf.nonUniformScale', 'ブロックの縦横で倍率が違う配置には対応していません。'],
+  ['exchangeError.dxf.tooManyEntities', 'この DXF は図形が多すぎて取り込めません。'],
+  ['exchangeError.dxf.blockNesting', 'ブロックの入れ子が深すぎます。'],
+  ['exchangeError.dxf.invalidWriteValue', 'DXF に書き出せない値の図形が含まれています。'],
+  ['exchangeError.dxf.controlCharacter', 'DXFの文字列に制御文字は使えません。'],
+  ['exchangeError.dxf.invalidString', 'DXFの文字列が正しくありません。'],
+  ['exchangeError.dxf.invalidPaperOrLayer', '図面の用紙またはレイヤーが正しくありません。'],
+  ['exchangeError.dxf.notText', 'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。'],
+] as const satisfies readonly (readonly [MessageKey, string])[];
+
+const THREE_MF_DIAGNOSTICS = [
+  ['exchangeError.threeMf.number', 'ファイルへ書けない数が含まれています。'],
+  ['exchangeError.threeMf.positions', '書き出す三角形の頂点の並びが正しくありません。'],
+  ['exchangeError.threeMf.indices', '書き出す三角形の添字の並びが正しくありません。'],
+  ['exchangeError.threeMf.color', '書き出しの色の値が正しくありません。'],
+] as const satisfies readonly (readonly [MessageKey, string])[];
+
+
 /**
  * 日本語(ひらがな・カタカナ・漢字・全角記号)と判定するコードポイント範囲。
  * ESLint の no-irregular-whitespace が全角スペース(U+3000)などの
@@ -110,8 +150,7 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
   });
 
   it('入出力は既存の5つの断り・警告と、IGES固有の3つの断りを表示する', () => {
-    // ExportNoticeKey の5件と J-04 のIGES固有の3件だけを UI で組み立てる。
-    // kernel / io が返す既存の文 (DXF_UNSUPPORTED_FORMAT_MESSAGE など) の複製は置かない。
+    // ExportNoticeKey and IGES keep their own messages. Typed failures complete the namespace.
     const expected = [
       ['exchangeError.nothingToExport', '書き出せるソリッドがありません。'],
       ['exchangeError.shellNotSupported', '閉じていない面を含む形は STL・3MF に書き出せません。'],
@@ -123,8 +162,11 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
       ['exchangeError.qualityIgnored', 'この形式では品質の指定は効きません。'],
     ] as const satisfies readonly (readonly [MessageKey, string])[];
     const keys = MESSAGE_KEYS.filter((key) => key.startsWith('exchangeError.'));
-    expect(keys).toEqual(expected.map(([key]) => key));
-    for (const [key, message] of expected) {
+    const legacyKeys = expected.map(([key]) => key);
+    const diagnostics = [...IMPORT_DIAGNOSTICS, ...EXPORT_DIAGNOSTICS, ...DXF_DIAGNOSTICS, ...THREE_MF_DIAGNOSTICS];
+    expect(keys.filter(key => legacyKeys.some(legacy => legacy === key))).toEqual(legacyKeys);
+    expect([...keys].sort()).toEqual([...legacyKeys, ...diagnostics.map(([key]) => key)].sort());
+    for (const [key, message] of [...expected, ...diagnostics]) {
       expect(t(key), key).toBe(message);
     }
   });

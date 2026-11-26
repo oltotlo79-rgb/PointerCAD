@@ -1,7 +1,8 @@
 /** Evaluate a complete immutable input snapshot before any cached coordinate reaches geometry. */
 import { bindMathCompositionNames, collectMathCoefficients, collectVariableNames, evaluateExpression, evaluateExpressionExact,
-  mathScalarExpression, originalCoefficientExpression, exactCoefficientScalar,
-  type ExpressionError, type ExpressionValue, type MathCompositionCoefficient } from '@pointercad/expression';
+  inspectMathScalarExpression, originalCoefficientExpression, exactCoefficientScalar,
+  type ExpressionError, type ExpressionValue, type MathCompositionCoefficient, type MathScalarIssue } from '@pointercad/expression';
+import { MathInputProblem } from '@pointercad/expression/math/contracts';
 import type { MathWorkerClient, MathRequestIdentity, MathWorkRequest } from '@pointercad/expression/math/client';
 import { parameterEvaluationOrder } from '../parameters/parameterTable.js';
 import { expressionParameterNames } from '../parameters/expressionReferences.js';
@@ -72,8 +73,47 @@ export function hasDocumentMath(document: PartDocument): boolean {
   return found;
 }
 
+function internalDocumentMathFailure(stage: string, cause: unknown): FailureText {
+  console.error('PointerCAD document math', stage, cause);
+  return { key: 'assembly.error.internal', parameters: {} };
+}
+
+function documentMathException(stage: string, cause: unknown): FailureText {
+  return cause instanceof MathInputProblem ? cause.diagnostic ?? plainText(cause.message)
+    : internalDocumentMathFailure(stage, cause);
+}
+
+function documentMathScalarFailure(issue: MathScalarIssue): FailureText {
+  switch (issue.code) {
+    case 'invalidEvaluation': return issue.evaluation.diagnostic ?? plainText(issue.evaluation.detail);
+    case 'stopped': return issue.evaluation.diagnostic ?? { key: `math.${issue.evaluation.reason}`, parameters: {} };
+    case 'internal': return internalDocumentMathFailure(issue.reason, issue.cause);
+    default: return { key: `mathScalar.${issue.code}`, parameters: {} };
+  }
+}
+
 type ValueResult = { readonly ok: true; readonly value: ExpressionValue; readonly decimal: string }
-  | { readonly ok: false; readonly text: FailureText; readonly code?: WorkerBrokenCode };
+  | { readonly ok: false; readonly text: FailureText; readonly code?: WorkerBrokenCode; readonly unavailable?: true };
+
+async function evaluateWorkerValue(context: DocumentMathContext, request: MathWorkRequest): Promise<ValueResult> {
+  let completion: Awaited<ReturnType<MathWorkerClient['evaluate']>>;
+  try {
+    completion = await context.client.evaluate(request, 5_000, context.signal);
+  } catch (error) {
+    if (!(error instanceof MathInputProblem)) throw error;
+    return { ok: false, text: documentMathException('request', error) };
+  }
+  if (completion.status !== 'result') {
+    const unavailable = true as const;
+    if (completion.status === 'worker-error') return { ok: false, unavailable, text: internalDocumentMathFailure('worker', completion.status) };
+    if (completion.status === 'deadline' || completion.status === 'cancelled') {
+      return { ok: false, unavailable, text: { key: `math.${completion.status}`, parameters: {} } };
+    }
+    return { ok: false, unavailable, text: { key: 'math.error.calculationIncomplete', parameters: { status: completion.status } } };
+  }
+  const result = inspectMathScalarExpression(completion.result);
+  return result.ok ? result : { ok: false, text: documentMathScalarFailure(result.issue) };
+}
 
 const verifiedFields = new WeakMap<PartDocument, ReadonlyMap<ExpressionValue, ExpressionValue>>();
 /** Only a successfully evaluated field of this exact immutable document can supply displayed coordinates. */
@@ -196,7 +236,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         return rational === null ? { ok: true, value: result.value, decimal: exact.value.exact }
           : { ok: true, value: { ...result.value, value: rational.value, display: rational.display }, decimal: rational.decimal };
       } catch (error) {
-        return { ok: false, text: plainText(error instanceof Error ? error.message : '係数の原式を確認できません。') };
+        return { ok: false, text: documentMathException('coefficient expression', error) };
       }
     }
     if (definition.source !== value.source) return { ok: false, text: { key: 'math.error.definitionMismatch', parameters: {} } };
@@ -230,15 +270,12 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     if (problem !== undefined) return { ok: false, text: problem, ...(problemCode === undefined ? {} : { code: problemCode }) };
     if (pending !== undefined) return { ok: false, text: pending };
     inputRevision += 1;
-    const completion = await context.client.evaluate({ identity: { ...context.identity, editorId: 'document-math', inputRevision },
-      source: value.source, notation: definition.inputNotation, angleUnit: definition.angleUnit, definition, coefficients: inputs }, 5_000, context.signal);
-    if (completion.status !== 'result') {
-      calculationUnavailable = true;
-      return { ok: false, text: { key: 'math.error.calculationIncomplete', parameters: { status: completion.status } } };
-    }
-    const result = mathScalarExpression(completion.result);
+    const request: MathWorkRequest = { identity: { ...context.identity, editorId: 'document-math', inputRevision },
+      source: value.source, notation: definition.inputNotation, angleUnit: definition.angleUnit, definition, coefficients: inputs };
+    const result = await evaluateWorkerValue(context, request);
     if (result.ok) bindMathCompositionNames(result.value, compositionNames);
-    return result.ok ? result : { ok: false, text: plainText(result.message) };
+    else if (result.unavailable) calculationUnavailable = true;
+    return result;
   };
 
   try {
@@ -267,7 +304,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         coefficient = geometryDerived.has(name) ? { id, label: name, decimal: result.decimal } : { id, label: name,
           decimal: result.decimal, exactExpression: originalCoefficientExpression(result.value, legacyNames, [...coefficientNames.values()]) };
       } catch (error) {
-        const text = plainText(error instanceof Error ? error.message : '係数の原式を確認できません。');
+        const text = documentMathException('coefficient expression', error);
         fail(name, parameter.value, text); parameterFailures.set(name, text); continue;
       }
       variables.set(name, result.value.value);
@@ -319,7 +356,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     return { ok: true, document: evaluated, analysis };
   } catch (error) {
     if (!current()) return cancelled();
-    failures.push({ ownerId: document.id, source: '', text: plainText(error instanceof Error ? error.message : '数式の再計算を完了できませんでした。') });
+    failures.push({ ownerId: document.id, source: '', text: internalDocumentMathFailure('recomputation', error) });
     return { ok: false, cancelled: false, failures };
   }
 }

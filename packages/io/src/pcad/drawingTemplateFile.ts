@@ -2,6 +2,7 @@ import type { DrawingTemplate } from '@pointercad/model';
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { FIXED_ENTRY_MTIME, PCAD_DOCUMENT_ENTRY, type PcadZipEntries } from './pcadFile.js';
 import { readArchive } from './readArchive.js';
+import { readDiagnosticMessage } from './readDiagnostics.js';
 import { parseDrawingTemplate, serializeDrawingTemplate, type ParseDrawingTemplateResult } from './drawingTemplateJson.js';
 
 /** 参照モデルを抱き込まない、設定1エントリだけの.pcadt。 */
@@ -18,13 +19,19 @@ export function writeDrawingTemplateFile(template: DrawingTemplate, savedAt: str
 }
 
 export type ReadDrawingTemplateFileResult = ParseDrawingTemplateResult
-  | { readonly ok: false; readonly error: { readonly code: 'notZip' | 'missingDocument'; readonly message: string } };
+  | { readonly ok: false; readonly error: { readonly code: 'notZip' | 'missingDocument'; readonly message: string } }
+  | { readonly ok: false; readonly error: { readonly code: 'invalidTemplate'; readonly diagnostic: 'invalidUtf8'; readonly message: string } };
 
 export function readDrawingTemplateFile(bytes: Uint8Array): ReadDrawingTemplateFileResult {
   const archive = readArchive(bytes, { shouldExtract: (name) => name === PCAD_DOCUMENT_ENTRY });
   if (!archive.ok) return { ok: false, error: { code: 'notZip', message: archive.error.reason } };
   const content = archive.entries.get(PCAD_DOCUMENT_ENTRY);
-  if (content === undefined) return { ok: false, error: { code: 'missingDocument', message: '図面ひな形の設定が見つかりません。' } };
-  try { return parseDrawingTemplate(new TextDecoder('utf-8', { fatal: true }).decode(content)); }
-  catch { return { ok: false, error: { code: 'invalidTemplate', message: '図面ひな形の文字を読み取れませんでした。' } }; }
+  if (content === undefined) return { ok: false, error: { code: 'missingDocument', message: readDiagnosticMessage('drawingTemplateMissingDocument') } };
+  let text: string;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(content); }
+  catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    return { ok: false, error: { code: 'invalidTemplate', diagnostic: 'invalidUtf8', message: readDiagnosticMessage('drawingTemplateInvalidUtf8') } };
+  }
+  return parseDrawingTemplate(text);
 }

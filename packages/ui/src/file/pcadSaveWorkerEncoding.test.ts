@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument, createEmptyPartDocument,
   embedDrawingSource, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, emptyEmbeddedPartAttachments } from '@pointercad/model';
 import { concatZipParts, encodeSaveDocument, writePcadFile, type SaveDocumentInput } from '@pointercad/io';
+import * as io from '@pointercad/io';
 import { captureSaveSnapshot, copySaveSnapshot } from './pcadSaveSnapshot.js';
 import { encodeOwnedSaveInput, encodeOwnedSaveInputParts, releaseOwnedMeshCopies } from './pcadSaveWorkerEncoding.js';
 
@@ -25,7 +26,7 @@ function ownedMeshes(input: SaveDocumentInput): { positions: Float32Array; norma
   return [];
 }
 
-describe('保存Workerの所有する三角形の写しを圧縮の前に手放す(E24)', () => {
+describe('保存Workerの所有する三角形の写しを読了時に手放す(E24/A-10)', () => {
   it('部品・組立・図面で写しの三角形だけを切り離し、形状とサムネイルは保ち、ZIPの全バイトと原本を変えない', async () => {
     const mesh = { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
       indices: new Uint32Array([0, 1, 2]) };
@@ -137,7 +138,7 @@ describe('保存Workerの所有する三角形の写しを圧縮の前に手放�
     expect(digest(concatZipParts(result.parts))).toBe(expected);
   });
 
-  it('128MiBの三角形の写しを圧縮の前に手放し、従来の書き手と同じZIPを作る', async () => {
+  it('128MiBの三角形の写しを圧縮中に読了した成分から手放し、従来の書き手と同じZIPを作る', async () => {
     // The e2e fixture size: ceil(128 MiB / 84 B) triangles of distinct vertices; deterministic finite values.
     const triangles = Math.ceil(128 * 1024 * 1024 / 84), vertexCount = triangles * 3;
     const positions = new Float32Array(vertexCount * 3), normals = new Float32Array(vertexCount * 3), indices = new Uint32Array(vertexCount);
@@ -154,13 +155,33 @@ describe('保存Workerの所有する三角形の写しを圧縮の前に手放�
     const legacy = digest(writePcadFile(document, { savedAt, attachments }));
     const { moved } = await workerOwned({ kind: 'part', document, options: { savedAt, attachments } });
     const [owned] = ownedMeshes(moved);
-    const atCompression: number[] = [];
-    const result = await encodeOwnedSaveInput(moved, stage => {
-      if (stage === 'compressing') atCompression.push(owned.positions.byteLength + owned.normals.byteLength + owned.indices.byteLength);
+    const observations: [string, number[]][] = [];
+    const observe = (phase: string): void => {
+      observations.push([phase, [owned.positions.byteLength, owned.normals.byteLength, owned.indices.byteLength]]);
+    };
+    const encode = io.encodeOwnedSaveDocumentParts;
+    const encoder = vi.spyOn(io, 'encodeOwnedSaveDocumentParts').mockImplementation(async (input, control) => {
+      const parts = await encode(input, { ...control, onMeshComponentWritten: component => {
+        control.onMeshComponentWritten(component);
+        observe('mesh component read');
+      } });
+      observe('ZIP complete');
+      return parts;
     });
-    expect(atCompression).toEqual([0]);
-    expect(result.releasedMeshBytes).toBe(rawBytes);
-    expect(digest(result.bytes)).toBe(legacy);
+    try {
+      const result = await encodeOwnedSaveInput(moved, observe);
+      const original = [positions.byteLength, normals.byteLength, indices.byteLength];
+      expect(observations).toEqual([
+        ['preparing', original],
+        ['compressing', original],
+        ['mesh component read', [0, normals.byteLength, indices.byteLength]],
+        ['mesh component read', [0, 0, indices.byteLength]],
+        ['mesh component read', [0, 0, 0]],
+        ['ZIP complete', [0, 0, 0]],
+      ]);
+      expect(result.releasedMeshBytes).toBe(rawBytes);
+      expect(digest(result.bytes)).toBe(legacy);
+    } finally { encoder.mockRestore(); }
     expect(digest(view(positions))).toBe(before);
     expect(positions.length).toBe(vertexCount * 3);
   });

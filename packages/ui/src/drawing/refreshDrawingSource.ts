@@ -19,7 +19,7 @@ export async function refreshDrawingSource(): Promise<boolean> {
     if (picked === null || !current()) return false;
     const read = await readDocumentBundle(picked.bytes, drawing.source.sourceKind);
     if (!current()) return false;
-    if (!read.ok) { before.setDrawingMessage(messageText(openErrorMessage(read.error.code))); return false; }
+    if (!read.ok) { before.setDrawingMessage(messageText(openErrorMessage(read.error))); return false; }
     const bundle = read.bundle;
     const input: DrawingSourceInput = bundle.kind === 'part'
       ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,

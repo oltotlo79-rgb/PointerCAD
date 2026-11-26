@@ -1308,16 +1308,42 @@ describe('部品を押して欄へ入れる頼み(寸法で動かすの基準。
     } finally { f.interaction.detach(); }
   });
 
-  it('置く点(G1)の頼みの間は、押した所(頂点が無ければ高さ 0 の面の上)に部品の原点を置き、選択・合致・部品の拾いへは渡さない', () => {
+  it('鋼材の一筆書きに使う候補は軸に縛った点を示し、Esc で候補だけを消す', () => {
     const f = interactionFixture();
     try {
-      Object.assign(f.scene, { screenToPlanePoint: vi.fn((): readonly [number, number, number] => [20, -40, 0]) });
-      useAppStore.setState({ selection: ['component-2'], standardPartPickerOpen: true });
+      Object.assign(f.scene, { screenToPlanePoint: () => [42, 19, 0] });
+      const state = useAppStore.getState();
+      useAppStore.setState({ displaySettings: { ...state.displaySettings, grid: { mode: 'fixed', stepMm: 20, count: 10 } } });
+      state.beginFrameStroke({ points: [[3, 7, 0]], closed: false }, 'z');
+      f.send('pointermove', { clientX: 42, clientY: 19, shiftKey: true });
+      expect(useAppStore.getState().snapIndicator?.screen).toEqual([40, 7]);
+      f.send('pointerdown', { clientX: 42, clientY: 19, shiftKey: true });
+      expect(useAppStore.getState().frameStroke?.points).toEqual([[3, 7, 0], [40, 7, 0]]);
+      f.send('pointermove', { clientX: 42, clientY: 19, shiftKey: false });
+      expect(useAppStore.getState().snapIndicator?.screen).toEqual([40, 20]);
+      f.send('keydown', { key: 'Escape' });
+      expect(useAppStore.getState().snapIndicator).toBeNull();
+      expect(useAppStore.getState().frameStroke).toMatchObject({ active: false, points: [[3, 7, 0], [40, 7, 0]] });
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each([false, true])('置く点の原点を高さ0の面で決め、部品の拾いへ渡さない(固定方眼=%s)', (fixed) => {
+    const f = interactionFixture();
+    try {
+      const planePoint = fixed ? [22, -39, 0] as const : [20, -40, 0] as const;
+      Object.assign(f.scene, { screenToPlanePoint: vi.fn(() => planePoint) });
+      const { displaySettings } = useAppStore.getState();
+      useAppStore.setState({ selection: ['component-2'], standardPartPickerOpen: true,
+        displaySettings: fixed ? { ...displaySettings, grid: { mode: 'fixed', stepMm: 20, count: 10 } } : displaySettings });
       const { choiceKey, lengthSource, dimensionSeries, threadSeries } = DEFAULT_STANDARD_PART_PICKER;
       useAppStore.getState().toggleComponentPick('placementPoint', [], { kind: 'standardPart', category: 'hexBolt', choiceKey, lengthSource,
         dimensionSeries, threadSeries, accessory: undefined,
         recent: standardPlacedTarget('hexBolt', choiceKey, dimensionSeries, { material: 'SS400', shape: null }, lengthSource) });
-      f.send('pointerdown', { clientX: 300, clientY: 300 });
+      const pointer = fixed ? { clientX: 22, clientY: -39 } : { clientX: 300, clientY: 300 };
+      f.send('pointermove', pointer);
+      expect(useAppStore.getState().snapIndicator).toEqual(fixed ? { screen: [20, -40], kind: 'grid', elementId: null } : null);
+      f.send('pointerdown', pointer);
+      expect(useAppStore.getState().snapIndicator).toBeNull();
       const components = useAppStore.getState().assembly?.components ?? [];
       expect(components).toHaveLength(3);
       expect(components[2]?.placement.position.map((value) => value.value)).toEqual([20, -40, 0]);

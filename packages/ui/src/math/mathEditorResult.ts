@@ -5,6 +5,7 @@ import { mathEquationResult } from './mathEquationResult.js';
 import { mathFourierSeriesResult } from './mathFourierSeriesResult.js';
 import { mathTransformResult, readableMathResult } from './mathTransformResult.js';
 import { mathTaylorResult } from './mathTaylorResult.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import type { MathEditorSnapshot } from './MathEditorController.js';
 import { MATH_INPUT_LIMITS, type MathEvaluation, type MathNode, type StoredMathExpression } from '@pointercad/expression/math/contracts';
@@ -123,10 +124,16 @@ export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorRe
   const state = snapshot.state;
   if (state.status === 'editing') return result(t('math.editing'));
   if (state.status === 'calculating') return result(t('math.calculating'), '', false, true);
-  if (state.status === 'rejected') return result(t(state.reason === 'source' ? 'math.invalidSource' : 'math.workerFailed'), '', true);
+  if (state.status === 'rejected') {
+    return result(state.diagnostic === undefined ? t(state.reason === 'source' ? 'math.invalidSource' : 'math.workerFailed')
+      : failureMessage(state.diagnostic), '', true);
+  }
   const evaluation = state.output.evaluation;
-  if (evaluation.status === 'invalid') return result(evaluation.detail, '', true);
-  if (evaluation.status === 'stopped') return result(t(`math.${evaluation.reason}`));
+  if (evaluation.status === 'invalid' || evaluation.status === 'stopped') {
+    if (evaluation.diagnostic !== undefined) return result(failureMessage(evaluation.diagnostic), '', true);
+    if (evaluation.status === 'invalid') return result(evaluation.detail, '', true);
+    return result(t(`math.${evaluation.reason}`));
+  }
   if (evaluation.status === 'unresolved') return result(t('math.unresolved'), evaluation.names.join('、'));
   if (evaluation.status === 'multiple') {
     const sources = candidateSources(state.output.definition);

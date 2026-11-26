@@ -1,3 +1,4 @@
+import { decodeMathInputDiagnostic } from './mathInputDiagnostics.js';
 import { isInfiniteBound } from './setBounds.js';
 import { decodeNumericalRootIntervals } from './numericalRootResult.js';
 import { decodeEquationSystem } from './equationSystems.js';
@@ -62,6 +63,8 @@ export function decodeMathEvaluation(value: unknown, context: NodeContext,
   remaining={nodes:MATH_INPUT_LIMITS.nodes*8}): MathEvaluation {
   if(!value||typeof value!=='object'||!('status' in value))throw new MathInputProblem('syntax','数式の計算状態がありません。');
   const decodeNode=(raw:unknown):MathNode=>{budgetNodes(raw,remaining);return decodeStoredMathNode(raw,context);};
+  const readDiagnostic = (raw: Record<string, unknown>) => Object.hasOwn(raw, 'diagnostic')
+    ? { diagnostic: decodeMathInputDiagnostic(raw.diagnostic, value => text(value, MATH_INPUT_LIMITS.sourceCodeUnits)) } : {};
   switch(value.status) {
     case 'value': {
       if('kind' in value&&value.kind==='real') {
@@ -138,8 +141,10 @@ export function decodeMathEvaluation(value: unknown, context: NodeContext,
         names:raw.names.map(name=>text(name,128))};
     }
     case 'invalid': {
-      const raw=object(value,['status','reason','detail']);
-      return {status:'invalid',reason:oneOf(raw.reason,['syntax','domain','non-finite','dimension','unit','unsupported','divergent','no-limit','empty-set','no-extremum'] as const),detail:text(raw.detail,4096)};
+      const raw=object(value,['status','reason','detail',...(Object.hasOwn(value, 'diagnostic') ? ['diagnostic'] : [])]);
+      const diagnostic = readDiagnostic(raw);
+      return {status:'invalid',reason:oneOf(raw.reason,['syntax','domain','non-finite','dimension','unit','unsupported','divergent','no-limit','empty-set','no-extremum'] as const),
+        detail:text(raw.detail,diagnostic.diagnostic === undefined ? 4096 : MATH_INPUT_LIMITS.sourceCodeUnits + 128), ...diagnostic};
     }
     case 'multiple': {
       const raw=object(value,['status','candidates','exhaustive']);
@@ -149,8 +154,10 @@ export function decodeMathEvaluation(value: unknown, context: NodeContext,
       return {status:'multiple',candidates:raw.candidates.map(decodeNode),exhaustive:raw.exhaustive};
     }
     case 'stopped': {
-      const raw=object(value,['status','reason']);
-      return {status:'stopped',reason:oneOf(raw.reason,['cancelled','deadline','budget'] as const)};
+      const raw=object(value,['status','reason',...(Object.hasOwn(value, 'diagnostic') ? ['diagnostic'] : [])]);
+      const reason=oneOf(raw.reason,['cancelled','deadline','budget'] as const);
+      if (reason !== 'budget' && Object.hasOwn(raw, 'diagnostic')) throw new TypeError('Unexpected math stop diagnostic');
+      return {status:'stopped',reason,...readDiagnostic(raw)};
     }
     default: throw new MathInputProblem('syntax','数式の計算状態が不正です。');
   }

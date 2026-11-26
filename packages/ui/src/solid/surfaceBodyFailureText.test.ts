@@ -2,9 +2,11 @@
  * 面だけのボディの機能の失敗の文は画面の側の一覧が持つ(2026-11-20 の利用者の回答)。計算部は理由の符号だけを返す。
  * 期待の文は製品の一覧を読まずに書く(計算部の表にあった文と同じ)。
  */
-import { plainText } from '@pointercad/model';
+import { expressionValueFromNumber as ev } from '@pointercad/expression';
+import { absoluteCoordinate, appendSolid, createEmptyPartDocument, plainText, resolvePart } from '@pointercad/model';
 import { failureMessage } from '../i18n/failureMessage.js';
-import type { PartRecomputeError, SolidFailureReason } from '@pointercad/model';
+import type { PartRecomputeError, SolidFailureReason, SurfaceOperation } from '@pointercad/model';
+import type { MessageKey } from '../i18n/t.js';
 import { describe, expect, it } from 'vitest';
 import { localizedPartErrors, partErrorMessage } from './surfaceBodyFailureText.js';
 
@@ -88,6 +90,30 @@ describe('面だけのボディの失敗の文(画面の側の一覧)', () => {
     expect(partErrorMessage(failed('thicken-failed'))).toBe(THICKEN);
     expect(partErrorMessage({ featureId: 'cut', code: 'kernelFailed', text: plainText('面で切れませんでした。') })).toBe('面で切れませんでした。');
     expect(partErrorMessage({ featureId: 'sketch-1', code: 'invalidValue', text: plainText('値が正しくありません。') })).toBe('値が正しくありません。');
+  });
+
+  it('曲面の実計画で返る鍵と値を、従来の日本語で表示する', () => {
+    const base = appendSolid(createEmptyPartDocument(), {
+      id: 'box', name: 'Box', kind: 'primitive', suppressed: false,
+      origin: { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) },
+      axis: { kind: 'world', axis: 'z' }, shape: { kind: 'box', sizeX: ev(40), sizeY: ev(30), sizeZ: ev(10) },
+    });
+    const cases = [
+      [{ kind: 'offset', targetFeatureId: 'box', distance: ev(0), face: { bodyFeatureId: 'box', index: 0,
+        fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200, position: [20, 15, 10], axis: [0, 0, 1], radius: null } } },
+        'partError.surface.offsetZero', {}, '離す距離は 0 以外の数にしてください。'],
+      [{ kind: 'face', targetFeatureId: 'box', face: { bodyFeatureId: 'box', index: 3,
+        fingerprint: { kind: 'edge', curveKind: 'line', length: 10, position: [0, 0, 5], axis: [0, 0, 1], radius: null } } },
+        'partError.surface.notFace', { bodyFeatureId: 'box', index: '3' }, '取り出せるのはソリッドの面だけです。面を選び直してください。'],
+    ] as const satisfies readonly (readonly [SurfaceOperation, MessageKey, PartRecomputeError['text']['parameters'], string])[];
+    for (const [operation, key, parameters, message] of cases) {
+      const document = appendSolid(base, { id: 'surface', name: 'Surface', suppressed: false, kind: 'surface', operation });
+      const result = resolvePart(document);
+      expect(result.steps).toHaveLength(1);
+      const expected = { featureId: 'surface', code: 'invalidValue', text: { key, parameters } } satisfies PartRecomputeError;
+      expect(result.errors).toEqual([expected]);
+      expect(result.errors.map(partErrorMessage)).toEqual([message]);
+    }
   });
 
   it('鍵へ移した穴・ねじ穴・ざぐり・皿もみ・円筒の側面の穴・丸め・面取りの誤りの文は、移す前の model の文と 1 文字も違わない(0b3c-holes)', () => {

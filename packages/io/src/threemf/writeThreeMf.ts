@@ -35,7 +35,7 @@ import {
   type ThreeMfColor,
   type ThreeMfFaceRange,
 } from './baseMaterials.js';
-import { escapeXmlAttribute, formatXmlNumber } from './xmlText.js';
+import { escapeXmlAttribute, formatXmlNumber, ThreeMfDataError } from './xmlText.js';
 import { admitThreeMf, checkThreeMfDeadline, threeMfDeadline,
   THREE_MF_EXPORT_BYTE_LIMIT, ThreeMfExportLimitError } from './threeMfAdmission.js';
 
@@ -158,7 +158,7 @@ function formatDisplayColor(color: ThreeMfColor): string {
   let text = '#';
   for (const value of color) {
     if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(THREE_MF_INVALID_COLOR_MESSAGE);
+      throw new ThreeMfDataError('color', THREE_MF_INVALID_COLOR_MESSAGE);
     }
     text += Math.round(value * 255)
       .toString(16)
@@ -175,7 +175,7 @@ function resolveName(name: string | null, index: number): string {
 /** 頂点の行を書き出す。長さの検査もここで行う。 */
 function pushVertices(lines: string[], positions: ArrayLike<number>, deadlineAt: number): number {
   if (positions.length % 3 !== 0) {
-    throw new Error(THREE_MF_INVALID_POSITIONS_MESSAGE);
+    throw new ThreeMfDataError('positions', THREE_MF_INVALID_POSITIONS_MESSAGE);
   }
   const vertexCount = positions.length / 3;
   for (let index = 0; index < vertexCount; index += 1) {
@@ -192,7 +192,7 @@ function pushVertices(lines: string[], positions: ArrayLike<number>, deadlineAt:
 /** 添字が頂点を指していることを確かめて返す。 */
 function checkIndex(value: number, vertexCount: number): number {
   if (!Number.isInteger(value) || value < 0 || value >= vertexCount) {
-    throw new Error(THREE_MF_INVALID_INDICES_MESSAGE);
+    throw new ThreeMfDataError('indices', THREE_MF_INVALID_INDICES_MESSAGE);
   }
   return value;
 }
@@ -214,7 +214,7 @@ function pushTriangles(
   deadlineAt: number,
 ): void {
   if (indices.length % 3 !== 0) {
-    throw new Error(THREE_MF_INVALID_INDICES_MESSAGE);
+    throw new ThreeMfDataError('indices', THREE_MF_INVALID_INDICES_MESSAGE);
   }
   const triangleCount = indices.length / 3;
   for (let index = 0; index < triangleCount; index += 1) {

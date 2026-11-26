@@ -1,5 +1,5 @@
 import { isObject as record } from '../valueGuards.js';
-import type { ReadDocumentBundleResult, ReadPcadFileErrorCode, ReadPcadFileResult, ReadPcaddFileResult } from '@pointercad/io';
+import type { ReadDocumentBundleResult, ReadPcadFileError, ReadPcadFileErrorCode, ReadPcadFileResult, ReadPcaddFileResult } from '@pointercad/io';
 
 /** UI内の読込操作だけの識別子。保存形式のkindは増やさない。 */
 export interface PcadReadResults {
@@ -51,6 +51,11 @@ const ERROR_CODES = {
   subAssemblyCycle: true, subAssemblyDepth: true,
 } satisfies Readonly<Record<ReadPcadFileErrorCode, true>>;
 
+const DIAGNOSTICS: Readonly<Record<NonNullable<ReadPcadFileError['diagnostic']>, true>> = {
+  embeddedDocument: true, partAttachmentInvalid: true, partAttachmentMissing: true,
+  partAttachmentDigestMissing: true, partAttachmentDigestMismatch: true,
+};
+
 function attachments(value: unknown): boolean {
   return record(value) && value.shapes instanceof Map && value.meshes instanceof Map && value.canvases instanceof Map;
 }
@@ -64,7 +69,9 @@ export function isPcadReadReplyFor<K extends PcadReadKind>(
     || !/^[a-f0-9]{64}$/u.test(value.savedSha256))) return false;
   const result = value.result;
   if (result.ok === false) return record(result.error) && typeof result.error.code === 'string'
-    && Object.hasOwn(ERROR_CODES, result.error.code) && typeof result.error.message === 'string';
+    && Object.hasOwn(ERROR_CODES, result.error.code) && typeof result.error.message === 'string'
+    && (result.error.diagnostic === undefined || (typeof result.error.diagnostic === 'string'
+      && Object.hasOwn(DIAGNOSTICS, result.error.diagnostic)));
   if (result.ok !== true || typeof result.savedAt !== 'string'
     || (result.thumbnailPng !== undefined && !(result.thumbnailPng instanceof Uint8Array))) return false;
   if (kind === 'assembly') return record(result.bundle) && result.bundle.kind === 'assembly'

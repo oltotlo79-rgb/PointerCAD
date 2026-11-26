@@ -17,8 +17,12 @@ export function nextFloat(value: number, direction: -1 | 1): number {
   if (Number.isNaN(value) || value === (direction === 1 ? Infinity : -Infinity)) return value;
   if (value === 0) return direction * Number.MIN_VALUE;
   bits.setFloat64(0, value, false);
-  const encoded = bits.getBigUint64(0, false);
-  bits.setBigUint64(0, encoded + ((value > 0) === (direction > 0) ? 1n : -1n), false);
+  const step = (value > 0) === (direction > 0) ? 1 : -1;
+  // The low word plus one step is exactly representable as a Number. setUint32 applies
+  // modulo 2^32, while carry or borrow adjusts the high word only at the boundary.
+  const low = bits.getUint32(4, false) + step;
+  if (low < 0 || low > 0xffff_ffff) bits.setUint32(0, bits.getUint32(0, false) + step, false);
+  bits.setUint32(4, low, false);
   return bits.getFloat64(0, false);
 }
 
@@ -45,9 +49,10 @@ export function intervalSubtract(a: MathInterval, b: MathInterval): IntervalValu
   return outward(a.lower - b.upper, a.upper - b.lower);
 }
 export function intervalMultiply(a: MathInterval, b: MathInterval): IntervalValue {
-  const values = [a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper];
-  if (values.some(Number.isNaN)) return { status: 'split', reason: 'unknown' };
-  return outward(Math.min(...values), Math.max(...values));
+  const ll = a.lower * b.lower, lu = a.lower * b.upper;
+  const ul = a.upper * b.lower, uu = a.upper * b.upper;
+  // Math.min/max carry NaN through outward() to the same unknown enclosure.
+  return outward(Math.min(ll, lu, ul, uu), Math.max(ll, lu, ul, uu));
 }
 export function intervalDivide(a: MathInterval, b: MathInterval): IntervalValue {
   if (b.lower <= 0 && b.upper >= 0) {

@@ -20,6 +20,8 @@ import {
   type StepAssemblyOccurrenceName,
 } from './stepAssemblyMetadata.js';
 
+import { ShapeExportError } from './shapeExportDiagnostic.js';
+
 export const ASSEMBLY_NO_SHAPE_MESSAGE = '書き出せる部品がありません。';
 export const ASSEMBLY_DUPLICATE_DEFINITION_MESSAGE = '部品定義の id が重複しています。';
 export const ASSEMBLY_DUPLICATE_NODE_MESSAGE = '配置の id が重複しています。';
@@ -52,7 +54,7 @@ interface ValidatedAssembly {
 /** 形へ触れる前に、参照と id の不整合をすべて断る。 */
 function validateAssembly(spec: XcafAssemblySpec): ValidatedAssembly {
   if (spec.children.length === 0) {
-    throw new Error(ASSEMBLY_NO_SHAPE_MESSAGE);
+    throw new ShapeExportError({ code: 'noShape' }, ASSEMBLY_NO_SHAPE_MESSAGE);
   }
   const definitions = new Map<string, XcafAssemblyDefinition>();
   for (const definition of spec.definitions) {

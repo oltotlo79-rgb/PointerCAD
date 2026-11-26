@@ -10,6 +10,19 @@ export type Point2 = readonly [number, number];
 /** 図面が参照するモデルの Z-up 座標または方向。 */
 export type Vector3 = readonly [number, number, number];
 
+/** 図面の配置条件を直すための、表示言語に依存しない失敗。 */
+export type DrawingLayoutFailureText =
+  | { readonly key: 'drawing.error.detailOutside' | 'drawing.error.breakIntervalInvalid';
+      readonly parameters: Readonly<Record<string, never>> }
+  | { readonly key: 'drawing.error.breakIntervalCount'; readonly parameters: { readonly count: string } };
+
+export interface DrawingLayoutFailure {
+  readonly ok: false;
+  /** 既存の文字列欄。表示側で text の鍵と値を使って訳す。 */
+  readonly message: string;
+  readonly text: DrawingLayoutFailureText;
+}
+
 /** 図面で使える線種(FR-707、FR-730)。 */
 export type DrawingLineType = 'solid' | 'dashed' | 'chain' | 'chain2' | 'zigzag';
 

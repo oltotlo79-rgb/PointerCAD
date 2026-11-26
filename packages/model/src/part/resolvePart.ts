@@ -1,5 +1,11 @@
+import { fail, failWith, partError, partErrorWith, type PartError, type PartErrorCode, type PlanOutcome } from './partPlanningResult.js';
+import { curveProfileNormal, findResolvedCurves, isPositiveFinite, MAX_REVOLVE_DEGREES,
+  type ResolvedPartSketch } from './resolvedPlanGeometry.js';
+import { MIN_THRU_SECTIONS, planSurface, THRU_SECTIONS_TOO_FEW_TEXT } from './surfacePlanning.js';
+export type { PartError, PartErrorCode } from './partPlanningResult.js';
+export type { ResolvedPartSketch } from './resolvedPlanGeometry.js';
 import type { ResolvedPointWithIdentity } from './resolveReferences.js';
-import type { FaceOrigin, HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
+import type { HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
 /**
  * ソリッド履歴の解決と消費の判定。
  *
@@ -42,13 +48,11 @@ import type {
   ResolvedSubShape,
 } from '../geometry/planeSpec.js';
 import { resolvePlaneSpec, subShapeFromFingerprint } from '../geometry/planeSpec.js';
-import { projectionCacheKey } from '../sketch/projectionMath.js';
 import { planSheetFeature } from '../sheetMetal/planSheetFeature.js';
 import { convertedReferenceLost, planSheetConvert, sheetConvertFailureText, type SheetConvertLookup,
   type SheetConvertAnswer, type SheetConvertReason } from '../sheetMetal/planSheetConvert.js';
 import type { SheetRecognitionRequestItem } from '../kernelBridge/sheetRecognition.js';
 import { sheetShapeKey } from '../sheetMetal/shapeKey.js';
-import { firstSketchUseIndexes } from './solidSketchReferences.js';
 export { sketchIdOfPointReference, referencedSketchIds } from './solidSketchReferences.js';
 import type { ResolvedSheetBody } from '../sheetMetal/resolveSheetGeometry.js';
 import {
@@ -59,16 +63,8 @@ import {
   type WorkPlane,
   type WorkPlaneId,
 } from '../sketch/planeMath.js';
-import type { ConstraintDiagnosis } from '../sketch/constraints/diagnose.js';
 import {
-  resolveConstrainedSketch,
-  type ConstrainedSketch,
-} from '../sketch/constraints/solveSketch.js';
-import {
-  NO_PART_POINT,
-  type PartPointLookup,
   resolveCoordinate,
-  type ResolvedSphere,
   type ResolveContext,
 } from '../sketch/resolveCoordinate.js';
 import {
@@ -76,16 +72,11 @@ import {
   curveStart,
   fitPlaneNormal,
 } from '../sketch/resolveSketch.js';
-import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
-  PendingProjection,
   PointReference,
-  ProjectionSource,
   ResolvedCurve,
   ResolvedFace,
-  ResolvedSketch,
   SketchDocument,
-  SketchError,
 } from '../sketch/types.js';
 import {
   addVec3,
@@ -103,6 +94,8 @@ import { withinMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import { cacheKeyFor } from './cacheKey.js';
 import { originAwareCacheKey } from './cacheKey.js';
 import { keyMaterialFor } from './solidPlanKeyMaterial.js';
+import { collectProjections, type ResolvedProjection } from './projectionPlan.js';
+export type { ResolvedProjection } from './projectionPlan.js';
 import { independentProfileOrigin } from './profileOrigins.js';
 import {
   consumedTargetsOf,
@@ -123,12 +116,8 @@ import {
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
 } from './createPartDocument.js';
-import {
-  createReferenceResolver,
-  type ReferenceError,
-  type ReferenceErrorCode,
-  type ResolvedReferences,
-} from './resolveReferences.js';
+import type { ResolvedReferences } from './resolveReferences.js';
+import { REFERENCE_ERROR_CODES, resolvePartSketches, toPartError, type PartSketchOptions } from './partSketchResolution.js';
 import { dedupeSubShapeRefs, isSameSubShape, subShapeKindOf } from './subShapeRef.js';
 import { historyDependencies, recomputeHistoryDependencies } from './timelineOrder.js';
 import { directEditPlan } from './directEditOperations.js';
@@ -169,13 +158,10 @@ import type {
   SewFeature,
   ShellFeature,
   ThickenFeature,
-  SketchCurveRef,
   SketchFaceRef,
   SketchPointRef,
   SolidFeature,
   SolidOrigin,
-  SurfaceFeature,
-  SurfaceOperation,
   SpringDerived,
   SpringFeature,
   SubShapeRef,
@@ -184,8 +170,7 @@ import type {
   ThreadShaftFeature,
   TransformFeature,
 } from './types.js';
-import type { SolidFailureReason } from './surfaceBodyPlan.js';
-import { plainText, type FailureText } from '../failureText.js';
+import type { FailureText } from '../failureText.js';
 import type { FunctionSurfacePlan as TypeFunctionSurfacePlan } from '../functionGeometry/functionSurfaceFeature.js';
 import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
 
@@ -199,7 +184,6 @@ import type {
   SolidStepPlan,
   SubShapeQueryPlan,
   SurfaceCutBladePlan,
-  SurfaceShapePlan,
   ThinExtrudePlan,
   ThruSectionPlan,
 } from './solidStepPlan.js';
@@ -217,85 +201,6 @@ export type {
   SolidStepPlan,
   ResolvedSolidStep,
 } from './solidStepPlan.js';
-
-/** 解決できなかった理由の区別(FR-504)。利用者へは message をそのまま見せる。 */
-export type PartErrorCode =
-  /** 断面の面・回転軸の線分が見つからない(消された、またはスケッチ側で解決できなかった)。 */
-  | 'missingProfile'
-  /** ブーリアンの対象・相手のボディが無い(未作成・抑制中・上流が失敗)。 */
-  | 'missingBody'
-  /** 距離・角度・許容量が数でない、または範囲の外。対象と相手が同じ場合も含む。 */
-  | 'invalidValue'
-  /** 面の枚数が足りないなど、形として成り立たない。 */
-  | 'degenerate'
-  /** 断面から平面の向きが定まらない。 */
-  | 'notPlanar'
-  /** そのボディはすでに別のブーリアンが消費している。 */
-  | 'consumedTwice'
-  /**
-   * 加工するもとの面・辺・頂点が見つからない(FR-504)。
-   * 指紋の照合はカーネルの中で行うので、**この code を出すのは
-   * 「面・辺を1つも指していない」場合(面取り)と、カーネルの失敗を詰め替える
-   * kernelBridge / recomputePart**である。文言は
-   * 「加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。」
-   */
-  | 'missingSubShape'
-  /**
-   * 基準ジオメトリ(FR-328、FR-329)の指定が循環している。
-   * 作業平面 A がスケッチ S の点を使い、S が作業平面 A の上に描かれている、のような場合。
-   */
-  | 'circularReference'
-  /** カーネルが形を作れなかった(このファイルでは使わない)。 */
-  | 'kernelFailed'
-  /** Worker が壊れて応答しなかった(橋の符号 'workerBroken' を recomputePart が写す。このファイルでは使わない)。 */
-  | 'workerBroken';
-
-/** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
-export interface PartError {
-  readonly featureId: string;
-  readonly reason?: SolidFailureReason;
-  readonly code: PartErrorCode;
-  /** 画面に出す文の鍵と値(0b-3)。文は画面の側(ui の partErrorMessage)が文言の表で作る。計算部の文は plainText で運ぶ。 */
-  readonly text: FailureText;
-}
-
-/** スケッチ1本ぶんの解決結果。再計算がこれへメッシュを足す。 */
-export interface ResolvedPartSketch {
-  readonly sketchId: string;
-  readonly resolved: ResolvedSketch;
-  /**
-   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313)。
-   * **拘束が 1 つも無いスケッチと 3D スケッチでは null**(診断そのものを行わない)。
-   */
-  readonly diagnosis: ConstraintDiagnosis | null;
-  /**
-   * 拘束の失敗(FR-504)。`resolved.errors` とは別に持つ。分けているのは、
-   * 拘束の失敗が「フィーチャーが作れなかった」ではなく「拘束が効かなかった」で、
-   * 画面での出し方(どの拘束を指すか)が違うため。
-   */
-  readonly constraintErrors: readonly SketchError[];
-}
-
-/**
- * まだ形の無い投影・交差を、カーネルへ頼める形まで組み立てたもの(FR-325)。
- *
- * スケッチ側の `PendingProjection` は「どの立体の何を、どの作図面へ」までしか知らない。
- * ここでその立体の**段の鍵**(`ResolvedSolidStep.key`)を足すことで、
- * ①覚え書きの鍵が作れる(上流が変われば必ず変わる)、②カーネルが形状キャッシュから
- * もとの立体を引ける、の 2 つがそろう。頼むのは `recomputePart` の役目。
- */
-export interface ResolvedProjection {
-  /** この投影・交差を持つスケッチの id。 */
-  readonly sketchId: string;
-  /** 投影・交差フィーチャーの id。結果の対応づけに使う。 */
-  readonly featureId: string;
-  /** 覚え書き(`ProjectionCache`)の鍵。 */
-  readonly key: string;
-  /** もとの立体の段の鍵。 */
-  readonly bodyKey: string;
-  readonly source: ProjectionSource;
-  readonly plane: WorkPlane;
-}
 
 /**
  * 読み込んだ三角形の形のボディ 1 つ(FR-802)。
@@ -390,9 +295,6 @@ export interface RevolveAxisFrame {
 }
 
 
-/** 角度の上限(度)。全周を超える回転は受け付けない。 */
-const MAX_REVOLVE_DEGREES = 360;
-
 /**
  * 傾き角の上限(度、含まない)。90 度では掘る向きが面と平行になり材料へ入らない。
  * カーネル(`makeHole`)も許容を [0, π/2) にしてあるので、同じ境界で先に断る
@@ -482,10 +384,6 @@ function findResolvedFace(
   return sketch?.resolved.faces.find((face) => face.featureId === reference.faceFeatureId);
 }
 
-type PlanOutcome =
-  | { readonly ok: true; readonly plan: SolidStepPlan }
-  | { readonly ok: false; readonly error: PartError };
-
 /**
  * 段を組み立てるのに要る「部品文書の外から解ける道具」。
  *
@@ -518,28 +416,6 @@ interface SolidPlanContext {
    * (リブ FR-420・曲面の押し出し FR-428。線分 1 本の輪郭は座標だけからは平面が決まらない)。
    */
   readonly sketchDocuments: readonly SketchDocument[];
-}
-
-function partError(featureId: string, code: PartErrorCode, message: string): PartError {
-  return { featureId, code, text: plainText(message) };
-}
-
-function fail(featureId: string, code: PartErrorCode, message: string): PlanOutcome {
-  return { ok: false, error: partError(featureId, code, message) };
-}
-
-/** 画面の文を鍵と値で持つ誤り(0b-3b から。文は ui の文言の表が鍵ごとに持つ)。 */
-function partErrorWith(featureId: string, code: PartErrorCode, text: FailureText): PartError {
-  return { featureId, code, text };
-}
-
-function failWith(featureId: string, code: PartErrorCode, text: FailureText): PlanOutcome {
-  return { ok: false, error: partErrorWith(featureId, code, text) };
-}
-
-/** 0 より大きい有限の数か。式が評価できなかった欄は value が NaN で来る(FR-504)。 */
-function isPositiveFinite(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
 }
 
 /* ------------------------------------------------------------------ *
@@ -2459,13 +2335,10 @@ function planPrimitive(
  * ------------------------------------------------------------------ */
 
 /** つなぐには断面が 2 つ要る。ロフトも下限は同じ。 */
-const MIN_THRU_SECTIONS = 2;
-
 /**
  * 断りの文言(FR-504、NFR-UX-5)。カーネル(`makeThruSections.ts`)にも同じ状況の断りが
  * あるものは**文言をそろえてある**(基本形状の断りと同じ扱い。片方だけ直すと理由が食い違う)。
  */
-const THRU_SECTIONS_TOO_FEW_TEXT: FailureText = { key: 'partError.thruSections.tooFew', parameters: {} };
 const THRU_SECTIONS_MISSING_FACE_TEXT: FailureText = { key: 'partError.thruSections.missingFace', parameters: {} };
 const THRU_SECTIONS_MISSING_SPHERE_TEXT: FailureText = { key: 'partError.thruSections.missingSphere', parameters: {} };
 /** 球は縁を持たないので、球どうしを結ぶ直線が決まらない。 */
@@ -3040,82 +2913,6 @@ function planScale(
  * (FR-409、FR-420、FR-421、FR-423、FR-428、FR-418)。
  * ------------------------------------------------------------------ */
 
-/**
- * スケッチの曲線フィーチャーの並び(`SketchCurveRef`)を解決済みの曲線へ直す。
- *
- * `ResolvedSketch.curvesByFeature` は「フィーチャー id → その形になった曲線」の表で、
- * 矩形・正多角形のように 1 つのフィーチャーが複数の曲線になるものも 1 つの束で引ける
- * (公開された表。同じ引き方を 2 通りに書かない)。
- *
- * **並びは書かれた順のまま**にする(経路は順につながっている前提。`SketchCurveRef` の注釈)。
- * 1 本でも引けなければ null を返し、呼び出し側が種類ごとの文言で断る(FR-504)。
- * 曲線 id が空の並びも null になる——「道筋を 1 本も選んでいない」は形が決まらないためである。
- */
-function findResolvedCurves(
-  sketches: readonly ResolvedPartSketch[],
-  reference: SketchCurveRef,
-): readonly ResolvedCurve[] | null {
-  const sketch = sketches.find((entry) => entry.sketchId === reference.sketchId);
-  if (sketch === undefined) {
-    return null;
-  }
-  const resolved = sketch.resolved;
-  // **`curvesByFeature` に入るのは「1 フィーチャーが複数の曲線を生む」ものだけ**
-  // (矩形・正多角形・長穴・オフセット・複製。`ResolvedSketch` の注釈)。線分・円弧・
-  // 楕円・スプラインは種類ごとの配列にしか入らないので、そちらからも拾う。
-  const singles: readonly ResolvedCurve[] = [
-    ...resolved.segments,
-    ...resolved.arcs,
-    ...resolved.ellipses,
-    ...resolved.splines,
-  ];
-  const curves: ResolvedCurve[] = [];
-  for (const featureId of reference.curveIds) {
-    const group = resolved.curvesByFeature.get(featureId);
-    if (group !== undefined && group.length > 0) {
-      curves.push(...group);
-      continue;
-    }
-    const found = singles.filter((curve) => curve.featureId === featureId);
-    if (found.length === 0) {
-      return null;
-    }
-    curves.push(...found);
-  }
-  return curves.length === 0 ? null : curves;
-}
-
-/**
- * 開いた輪郭が乗っている平面の単位法線(リブ FR-420・曲面の押し出し FR-428)。
- *
- * まず座標から当てはめる(`fitPlaneNormal`)。**線分 1 本の輪郭は座標だけからは平面が
- * 決まらない**(直線を含む平面は無数にある)ので、そのときは輪郭をかいた**作図面**の
- * 法線を使う。作図面は保存形の `planeId` にあり、解決済みの曲線には残らないので
- * `SolidPlanContext.sketchDocuments` から引く。3D スケッチ(`free`)の線分 1 本のように
- * どちらでも決まらないときは null を返し、呼び出し側が理由をつけて断る(FR-504)。
- */
-function curveProfileNormal(
-  reference: SketchCurveRef,
-  curves: readonly ResolvedCurve[],
-  context: SolidPlanContext,
-): Vec3 | null {
-  const fitted = fitPlaneNormal(curves.flatMap((curve) => curveSamplePoints(curve)));
-  if (fitted !== null) {
-    return fitted;
-  }
-  const sketch = context.sketchDocuments.find((entry) => entry.id === reference.sketchId);
-  if (sketch === undefined) {
-    return null;
-  }
-  const first = reference.curveIds[0];
-  const feature = sketch.features.find((candidate) => candidate.id === first);
-  if (feature === undefined) {
-    return null;
-  }
-  const plane = context.workPlane(feature.planeId);
-  return plane === null ? null : plane.normal;
-}
-
 /** スイープのねじれ・先細り・中空(M-07)の断り。範囲の文は計算部(`occt/sweepLaw.ts`・`occt/sweepHollow.ts`)と同じ。 */
 const SWEEP_TWIST_MESSAGE = 'ねじれは±3600度(10回転)までにしてください。';
 const SWEEP_END_SCALE_MESSAGE = '終わりの大きさは、0より大きく10以下の倍率にしてください。';
@@ -3432,280 +3229,6 @@ function planThreadShaft(
 }
 
 /** 曲面の断りの文言(FR-428、FR-504)。 */
-const SURFACE_MISSING_PROFILE_MESSAGE =
-  '曲面のもとになる線が見つかりません。スケッチで線をかいてから選び直してください。';
-const SURFACE_NOT_PLANAR_MESSAGE =
-  '曲面のもとの線が 1 つの平面に乗っていません。輪郭をかき直してください。';
-const SURFACE_MISSING_AXIS_MESSAGE =
-  '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
-const SURFACE_NOT_FACE_MESSAGE = '取り出せるのはソリッドの面だけです。面を選び直してください。';
-const SURFACE_MISSING_BODY_MESSAGE =
-  '面を借りるもとのソリッドが見つかりません。ソリッドを選び直してください。';
-/** 距離 0 のオフセットは元の面と同じ形になる(同じ形に 2 通りの書き方を残さない)。 */
-const SURFACE_OFFSET_ZERO_MESSAGE = '離す距離は 0 以外の数にしてください。';
-
-/** 曲面の作り方を解決した結果。`targetKey` は `face` / `offset` のときだけ入る。 */
-interface SurfaceShapeOutcomeValue {
-  readonly shape: SurfaceShapePlan;
-  readonly targetKey: string | null;
-}
-
-type SurfaceShapeOutcome =
-  | { readonly ok: true; readonly value: SurfaceShapeOutcomeValue }
-  | { readonly ok: false; readonly error: PartError };
-
-/**
- * 曲面の作り方 6 種(FR-428)を段の欄へ直す。
- *
- * **種類ごとに材料が違う**——押し出し・回転・平面・ロフトはスケッチの曲線、
- * 面・オフセットは立体の面の指紋である。前者は座標まで解けるが、後者は指紋のまま渡し、
- * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い)。
- * **どの作り方でも対象を消費しない**ので `consumed` を見ない。
- */
-/** A single saved open arc is named independently of straight-line and closed-region producers. */
-function surfaceArcOrigin(sketch: SketchDocument | undefined, ids: readonly string[],
-  curves: readonly ResolvedCurve[]): Extract<SurfaceShapePlan, { kind: 'extrude' }>['curveProfileOrigin'] {
-  if (sketch === undefined || ids.length !== 1 || curves.length !== 1) return undefined;
-  const saved = sketch.features.filter(feature => feature.id === ids[0]), curve = curves[0];
-  if (saved.length !== 1 || saved[0].kind !== 'arc' || saved[0].construction
-    || curve.kind !== 'arc' || curve.featureId !== ids[0]
-    || !Number.isFinite(curve.startAngle) || !Number.isFinite(curve.endAngle)
-    || curve.startAngle < 0 || curve.endAngle < 0
-    || curve.startAngle >= 2 * Math.PI || curve.endAngle >= 2 * Math.PI
-    || curve.startAngle === curve.endAngle) return undefined;
-  return { sketchId: sketch.id, curveFeatureId: ids[0], role: 'whole-curve' };
-}
-
-/** Open profiles have saved line owners, never a fabricated closed-face owner. */
-function surfaceLineOrigins(sketch: SketchDocument | undefined, ids: readonly string[],
-  curves: readonly ResolvedCurve[]): Extract<SurfaceShapePlan, { kind: 'extrude' }>['profileOrigins'] {
-  if (sketch === undefined || ids.length < 1 || ids.length > 32 || curves.length !== ids.length
-    || new Set(ids).size !== ids.length) return undefined;
-  const anchors: Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][] = [];
-  for (let index = 0; index < ids.length; index++) {
-    const id = ids[index], curve = curves[index];
-    const saved = sketch.features.filter(feature => feature.id === id);
-    if (saved.length !== 1 || saved[0].kind !== 'line' || saved[0].construction
-      || curve.kind !== 'segment' || curve.featureId !== id) return undefined;
-    anchors.push({ sketchId: sketch.id, lineFeatureId: id, role: 'whole-line' });
-  }
-  return anchors;
-}
-
-function resolveSurfaceShape(
-  featureId: string,
-  operation: Exclude<SurfaceOperation, { kind: 'offsetBody' | 'blend' }>,
-  sketches: readonly ResolvedPartSketch[],
-  bodyKeys: ReadonlyMap<string, string>,
-  context: SolidPlanContext,
-): SurfaceShapeOutcome {
-  switch (operation.kind) {
-    case 'extrude': {
-      const profile = findResolvedCurves(sketches, operation.profile);
-      if (profile === null) {
-        return {
-          ok: false,
-          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
-        };
-      }
-      // 掃く向きは輪郭の平面の法線(リブと同じ引き方。線分 1 本なら作図面から取る)。
-      const normal = curveProfileNormal(operation.profile, profile, context);
-      if (normal === null) {
-        return {
-          ok: false,
-          error: partError(featureId, 'notPlanar', SURFACE_NOT_PLANAR_MESSAGE),
-        };
-      }
-      const distance = operation.distance.value;
-      if (!isPositiveFinite(distance)) {
-        return {
-          ok: false,
-          error: partError(featureId, 'invalidValue', positiveFieldMessage('掃く長さ')),
-        };
-      }
-      const curveProfileOrigin = surfaceArcOrigin(
-        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
-        operation.profile.curveIds, profile);
-      const profileOrigins = surfaceLineOrigins(
-        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
-        operation.profile.curveIds, profile);
-      return {
-        ok: true,
-        value: {
-          shape: {
-            kind: 'extrude',
-            profile,
-            ...(profileOrigins === undefined ? {} : { profileOrigins }),
-            ...(curveProfileOrigin === undefined ? {} : { curveProfileOrigin }),
-            direction: operation.reversed ? negateVec3(normal) : cleanZeroVec3(normal),
-            distance,
-          },
-          targetKey: null,
-        },
-      };
-    }
-    case 'revolve': {
-      const profile = findResolvedCurves(sketches, operation.profile);
-      if (profile === null) {
-        return {
-          ok: false,
-          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
-        };
-      }
-      const degrees = operation.angle.value;
-      if (!Number.isFinite(degrees) || degrees <= 0 || degrees > MAX_REVOLVE_DEGREES) {
-        return {
-          ok: false,
-          error: partError(
-            featureId,
-            'invalidValue',
-            '回転の角度は 0 より大きく 360 以下にしてください。',
-          ),
-        };
-      }
-      const frame = resolveRevolveAxis(operation.axis, sketches, context.axisFrames);
-      if (frame === null) {
-        return {
-          ok: false,
-          error: partError(featureId, 'missingProfile', SURFACE_MISSING_AXIS_MESSAGE),
-        };
-      }
-      return {
-        ok: true,
-        value: {
-          shape: {
-            kind: 'revolve',
-            profile,
-            axisOrigin: frame.origin,
-            axisDirection: operation.reversed
-              ? negateVec3(frame.direction)
-              : cleanZeroVec3(frame.direction),
-            angle: degreesToRadians(degrees),
-          },
-          targetKey: null,
-        },
-      };
-    }
-    case 'planar': {
-      const profile = findResolvedCurves(sketches, operation.profile);
-      if (profile === null) {
-        return {
-          ok: false,
-          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
-        };
-      }
-      // Same saved-line owner rule as the open-profile extrusion (non-construction line features only);
-      // circles, arcs and splines get no anchors and stay untracked in the kernel.
-      const profileOrigins = surfaceLineOrigins(
-        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
-        operation.profile.curveIds, profile);
-      return { ok: true, value: { shape: { kind: 'planar', profile,
-        ...(profileOrigins === undefined ? {} : { profileOrigins }) }, targetKey: null } };
-    }
-    case 'loft': {
-      if (operation.sections.length < MIN_THRU_SECTIONS) {
-        return {
-          ok: false,
-          error: partErrorWith(featureId, 'missingProfile', THRU_SECTIONS_TOO_FEW_TEXT),
-        };
-      }
-      const sections: (readonly ResolvedCurve[])[] = [];
-      for (const reference of operation.sections) {
-        const curves = findResolvedCurves(sketches, reference);
-        if (curves === null) {
-          return {
-            ok: false,
-            error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
-          };
-        }
-        sections.push(curves);
-      }
-      return {
-        ok: true,
-        value: { shape: { kind: 'loft', sections, ruled: operation.ruled }, targetKey: null },
-      };
-    }
-    case 'face':
-    case 'offset': {
-      if (subShapeKindOf(operation.face) !== 'face') {
-        return {
-          ok: false,
-          error: partError(featureId, 'invalidValue', SURFACE_NOT_FACE_MESSAGE),
-        };
-      }
-      const targetKey = bodyKeys.get(operation.targetFeatureId);
-      if (targetKey === undefined) {
-        return {
-          ok: false,
-          error: partError(featureId, 'missingBody', SURFACE_MISSING_BODY_MESSAGE),
-        };
-      }
-      if (operation.kind === 'face') {
-        // **消費しない**ので `consumed` は見ない。鍵は連鎖のために持つ。
-        return {
-          ok: true,
-          value: { shape: { kind: 'face', face: operation.face }, targetKey },
-        };
-      }
-      const distance = operation.distance.value;
-      if (!Number.isFinite(distance) || distance === 0) {
-        return {
-          ok: false,
-          error: partError(featureId, 'invalidValue', SURFACE_OFFSET_ZERO_MESSAGE),
-        };
-      }
-      return {
-        ok: true,
-        value: { shape: { kind: 'offset', face: operation.face, distance }, targetKey },
-      };
-    }
-  }
-}
-
-function planBlend(featureId: string, operation: Extract<SurfaceOperation, { kind: 'blend' }>,
-  bodyKeys: ReadonlyMap<string, string>): PlanOutcome {
-  const { a, b, flipB } = operation;
-  if (subShapeKindOf(a) !== 'edge' || subShapeKindOf(b) !== 'edge' || isSameSubShape(a, b)) {
-    return fail(featureId, 'invalidValue', 'つなぎには異なる 2 本の境界辺を選んでください。');
-  }
-  const sourceA = bodyKeys.get(a.bodyFeatureId), sourceB = bodyKeys.get(b.bodyFeatureId);
-  if (sourceA === undefined || sourceB === undefined) return fail(featureId, 'missingBody', SURFACE_MISSING_BODY_MESSAGE);
-  const weightA = operation.weightA.value, weightB = operation.weightB.value;
-  if (![weightA, weightB].every(weight => Number.isFinite(weight) && weight > 0)) {
-    return fail(featureId, 'invalidValue', 'つなぎの重みは正の有限な長さで指定してください。');
-  }
-  return { ok: true, plan: { kind: 'blend', a: { sourceKey: sourceA, query: a }, b: { sourceKey: sourceB, query: b },
-    weightA, weightB, flipB } };
-}
-
-/**
- * 曲面(FR-428)。**閉じた立体ではなく面だけのボディ**を作る。
- * **どの作り方でも対象を消費しない**(面を貸した立体はそのまま画面に残る)。
- */
-function planSurface(
-  feature: SurfaceFeature,
-  sketches: readonly ResolvedPartSketch[],
-  bodyKeys: ReadonlyMap<string, string>,
-  context: SolidPlanContext,
-): PlanOutcome {
-  if (feature.operation.kind === 'blend') return planBlend(feature.id, feature.operation, bodyKeys);
-  if (feature.operation.kind === 'offsetBody') {
-    const targetKey = bodyKeys.get(feature.operation.targetFeatureId);
-    if (targetKey === undefined) return fail(feature.id, 'missingBody', SURFACE_MISSING_BODY_MESSAGE);
-    const distance = feature.operation.distance.value;
-    if (!Number.isFinite(distance) || distance === 0) return fail(feature.id, 'invalidValue', SURFACE_OFFSET_ZERO_MESSAGE);
-    return { ok: true, plan: { kind: 'offsetBody', targetKey, distance } };
-  }
-  const outcome = resolveSurfaceShape(feature.id, feature.operation, sketches, bodyKeys, context);
-  if (!outcome.ok) {
-    return outcome;
-  }
-  return {
-    ok: true,
-    plan: { kind: 'surface', shape: outcome.value.shape, targetKey: outcome.value.targetKey },
-  };
-}
-
 function planThicken(feature: ThickenFeature, bodyKeys: ReadonlyMap<string, string>, consumed: ReadonlySet<string>): PlanOutcome {
   const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
   if (!target.ok) return target;
@@ -4111,7 +3634,12 @@ function planSolid(
     case 'threadShaft':
       return planThreadShaft(feature, bodyKeys, consumed);
     case 'surface':
-      return planSurface(feature, sketches, bodyKeys, context);
+      return planSurface(feature, sketches, bodyKeys, {
+        sketchDocuments: context.sketchDocuments,
+        workPlane: context.workPlane,
+        axis: (axis) => resolveRevolveAxis(axis, sketches, context.axisFrames),
+        direction: (direction, reversed) => reversed ? negateVec3(direction) : cleanZeroVec3(direction),
+      });
     case 'functionSurface': {
       const plan = context.functionSurfaces(feature.id);
       return plan === null ? fail(feature.id, 'invalidValue', '関数曲面の原式を再計算してください。') : { ok: true, plan };
@@ -4151,211 +3679,12 @@ interface StepDraft {
 /** visible を決める前の三角形の形のボディ(段と同じ流儀。FR-802)。 */
 type MeshBodyDraft = Omit<ResolvedMeshBody, 'visible'>;
 
-/**
- * 基準ジオメトリの断り(`ReferenceErrorCode`)を、ツリーが読む `PartErrorCode` へ写す。
- * 失敗の一覧を 1 か所(`ResolvedPart.errors`)にまとめるための詰め替え。
- */
-const REFERENCE_ERROR_CODES: Readonly<Record<ReferenceErrorCode, PartErrorCode>> = {
-  missingPoint: 'missingProfile',
-  missingSubShape: 'missingSubShape',
-  missingAxis: 'missingProfile',
-  missingPlane: 'missingProfile',
-  collinear: 'notPlanar',
-  notStraightEdge: 'degenerate',
-  notFlatFace: 'degenerate',
-  invalidValue: 'invalidValue',
-  degenerate: 'degenerate',
-  circularReference: 'circularReference',
-};
-
-function toPartError(error: ReferenceError): PartError {
-  return { featureId: error.featureId, code: REFERENCE_ERROR_CODES[error.code], text: error.text };
-}
-
-/**
- * 拘束まで解いたスケッチ(`ConstrainedSketch`)を、外へ返す形(`ResolvedPartSketch`)へ詰め替える。
- * `resolveSketchesAndReferences` の中で2か所(球の基準点の解決、最終の一覧)から
- * 同じ詰め替えが要るので、ここへ1つだけ置く(同じ規則を2か所に書かない)。
- */
-function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch): ResolvedPartSketch {
-  return {
-    sketchId,
-    resolved: constrained.resolved,
-    diagnosis: constrained.diagnosis,
-    constraintErrors: constrained.errors,
-  };
-}
-
-/**
- * スケッチと基準ジオメトリを、互いを頼りながら解く。
- *
- * スケッチは作図面として任意の作業平面(FR-328)を指せて、その作業平面はスケッチの点を
- * 基準にできる。どちらを先に解くかは決められないので、**頼まれたときに解いて覚える**形にする。
- * 解いている最中のスケッチをもう一度頼まれたら null を返し、基準ジオメトリ側が
- * 「循環しています」と断る(FR-504。無限に呼び合わない)。
- */
-function resolveSketchesAndReferences(
-  document: PartDocument,
-  options: Required<Pick<ResolvePartOptions, 'offsetCurves' | 'projectedCurves'>> &
-    Pick<ResolvePartOptions, 'subShape' | 'invalidInputs' | 'workerBrokenInputs' | 'functionCurves'> &
-    { readonly functionPoint: ResolvePartOptions['functionPoint'] },
-): {
-  readonly sketches: readonly ResolvedPartSketch[];
-  readonly references: ResolvedReferences;
-  readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
-  /** 点の参照の解決(拡大縮小の中心 FR-424 が使う)。 */
-  readonly point: (reference: PointReference) => Vec3 | null;
-  readonly pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null;
-  readonly axisFrames: ReadonlyMap<string, AxisFrame>;
-} {
-  const { offsetCurves, projectedCurves, subShape } = options;
-  // 拘束まで解いた結果を覚える(FR-313)。**スケッチを解く場所は
-  // この関数の中の 2 か所だけ**で、どちらも `resolveConstrainedSketch` を通す
-  // (片方だけ差し替えると拘束が効かない経路が残る)。
-  const resolvedSketches = new Map<string, ConstrainedSketch>();
-  const resolvingSketches = new Set<string>();
-
-  /**
-   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431)。
-   *
-   * 球を引くのは部品文書の側の役目(`resolveCoordinate.ts` の `ResolveContext.sphere` の
-   * 注釈)。中心は `resolveSolidOrigin`(基本形状の基準点の正本)、半径は `shape.radius.value`
-   * をそのまま使う(同じ規則を2か所に書かない)。
-   *
-   * **その時点までに解決できたスケッチだけ**を渡す。スケッチの解決はこの関数の中で
-   * 「頼まれたときに解いて覚える」形になっており、球の基準点にまだ解けていないスケッチの
-   * 点(`SolidOrigin.sketchPoint`)を指していれば `resolveSolidOrigin` が missingProfile を
-   * 返し、ここでは null(呼び出し側の「球が見つかりません」)になる。基準点に立体の頂点
-   * (`SolidOrigin.vertex`)を指す球も同じ理由で解けない(`bodyKeys` はソリッドの段を作る前
-   * なのでまだ空)。どちらも検証の範囲(座標で指定した球)には現れない。
-   */
-  function sphereAt(sphereFeatureId: string): ResolvedSphere | null {
-    if (options.invalidInputs?.has(sphereFeatureId)) return null;
-    const feature = document.solids.find((candidate) => candidate.id === sphereFeatureId);
-    if (feature === undefined || feature.kind !== 'primitive' || feature.shape.kind !== 'sphere') {
-      return null;
-    }
-    if (feature.suppressed) {
-      // 抑制した球は画面に無いので、その球面上の点も置けない。
-      return null;
-    }
-    const radius = feature.shape.radius.value;
-    if (!Number.isFinite(radius) || radius <= 0) {
-      return null;
-    }
-    const knownSketches: readonly ResolvedPartSketch[] = Array.from(
-      resolvedSketches.entries(),
-    ).map(([sketchId, constrained]) => toResolvedPartSketch(sketchId, constrained));
-    const origin = resolveSolidOrigin(
-      feature.id,
-      feature.origin,
-      knownSketches,
-      new Map<string, string>(),
-      options.functionPoint,
-      options.subShape,
-    );
-    return origin.ok ? { center: origin.value.origin, radius } : null;
-  }
-
-  /**
-   * スケッチの点の基準 'point' から部品の基準点を引く(組立の文脈の参照)。解くのは既存の
-   * `resolver.point` だけ。座標の値(絶対)で決めた基準点だけを通す。頂点・辺・面・相対の基準点は
-   * このスケッチから作る立体やスケッチに戻って循環し得るので断る。消えた基準点は none(従来の「見つからない」)。
-   */
-  function partPointAt(pointId: string): PartPointLookup {
-    const feature = document.references.find((reference) => reference.id === pointId);
-    if (feature === undefined) return NO_PART_POINT;
-    if (feature.kind !== 'referencePoint') {
-      return { kind: 'refused', message: `基準の点 ${pointId} は基準点ではありません。` };
-    }
-    if (feature.definition.kind !== 'coordinate' || feature.definition.at.mode !== 'absolute') {
-      return { kind: 'refused', message:
-        `基準点 ${feature.name} は座標の値で決めた点ではないため、スケッチの基準にできません(循環を避けるため)。` };
-    }
-    const position = resolver.point({ kind: 'point', pointId });
-    return position === null ? { kind: 'refused', message: `基準点 ${feature.name} を解けません。` } : { kind: 'point', position };
-  }
-
-  const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
-    resolveConstrainedSketch(sketch, {
-      invalidInputs: options.invalidInputs,
-      workerBrokenInputs: options.workerBrokenInputs,
-      workPlane: (planeId) => resolver.workPlane(planeId),
-      offsetCurves,
-      projectedCurves,
-      functionCurves: options.functionCurves,
-      functionPoint: options.functionPoint,
-      subShape,
-      sphere: sphereAt,
-      partPoint: partPointAt,
-    });
-
-  const resolver = createReferenceResolver(document, {
-    functionPoint: options.functionPoint,
-    invalidInputs: options.invalidInputs,
-    sketch: (sketchId) => {
-      const remembered = resolvedSketches.get(sketchId);
-      if (remembered !== undefined) {
-        return remembered.resolved;
-      }
-      if (resolvingSketches.has(sketchId)) {
-        return null;
-      }
-      const found = document.sketches.find((sketch) => sketch.id === sketchId);
-      if (found === undefined) {
-        return null;
-      }
-      resolvingSketches.add(sketchId);
-      const constrained = solveOne(found);
-      resolvingSketches.delete(sketchId);
-      resolvedSketches.set(sketchId, constrained);
-      return constrained.resolved;
-    },
-    // 基準ジオメトリ(FR-328、FR-329)も同じ口で「いまの形」を見る。
-    subShape,
+function resolveSketchesAndReferences(document: PartDocument, options: PartSketchOptions) {
+  return resolvePartSketches(document, options, (feature, knownSketches) => {
+    const origin = resolveSolidOrigin(feature.id, feature.origin, knownSketches, new Map<string, string>(),
+      options.functionPoint, options.subShape);
+    return origin.ok ? origin.value.origin : null;
   });
-
-  // 基準ジオメトリを先に解く(スケッチが作図面として使うため)。中で必要になった
-  // スケッチはその場で解かれ、覚えられる。
-  const references = resolver.resolveAll();
-  const axisFrames = new Map<string, AxisFrame>(
-    references.axes.map((axis) => [axis.featureId, { origin: axis.origin, direction: axis.direction }]),
-  );
-
-  const sketches: ResolvedPartSketch[] = document.sketches.map((sketch) => {
-    const remembered = resolvedSketches.get(sketch.id);
-    const constrained = remembered ?? solveOne(sketch);
-    if (remembered === undefined) {
-      resolvedSketches.set(sketch.id, constrained);
-    }
-    return toResolvedPartSketch(sketch.id, constrained);
-  });
-
-  return {
-    sketches,
-    references,
-    workPlane: resolver.workPlane,
-    point: resolver.point,
-    pointWithIdentity: resolver.pointWithIdentity,
-    axisFrames,
-  };
-}
-
-/* ------------------------------------------------------------------ *
- * 投影・交差の解決順序(FR-325)
- * ------------------------------------------------------------------ */
-
-/** 参照先の立体が見つからない(未作成・抑制中・上流が失敗・削除された)。 */
-function missingProjectionBodyMessage(source: ProjectionSource): string {
-  return source.kind === 'subShape'
-    ? '投影のもとになるソリッドが見つかりません。ソリッドを選び直してください。'
-    : '断面をとるソリッドが見つかりません。ソリッドを選び直してください。';
-}
-
-/** 順序違反(自分より後に作られる立体を指した)。順序の制約。 */
-function laterProjectionBodyMessage(source: ProjectionSource): string {
-  const what = source.kind === 'subShape' ? '投影' : '断面';
-  return `${what}のもとにできるのは、このスケッチを使うソリッドより前に作られたソリッドだけです。履歴の順序を見直してください。`;
 }
 
 /**
@@ -4538,7 +3867,11 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
         (reference) => sketches.find((entry) => entry.sketchId === reference.sketchId)?.resolved.faces.find((face) => face.featureId === reference.faceFeatureId),
         bodyKeys, consumed, sheetMetalBodies,
         (reference) => sketches.find((entry) => entry.sketchId === reference.sketchId)?.resolved.segments.find((segment) => segment.featureId === reference.lineFeatureId));
-      if (!sheet.ok) { errors.push(partError(feature.id, 'invalidValue', sheet.message)); continue; }
+      if (!sheet.ok) {
+        errors.push(sheet.text === undefined ? partError(feature.id, 'invalidValue', sheet.message)
+          : partErrorWith(feature.id, 'invalidValue', sheet.text));
+        continue;
+      }
       sheetMetalBodies.set(feature.id, sheet.value.body);
       outcome = { ok: true, plan: sheet.value.plan };
     } else {
@@ -4602,7 +3935,9 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   // 段のループの中ではなくループの後で行うのは、①鍵はループが作るもの、
   // ②順序の制約は「そのスケッチを使う立体より前か」で決まり、履歴全体を見ないと
   // 判定できない、の 2 つによる。
-  const projections = collectProjections(document, sketches, bodyKeys, errors);
+  const projections = collectProjections(document, sketches, bodyKeys, (featureId, message) => {
+    errors.push(partError(featureId, 'missingBody', message));
+  });
 
   /*
     生きたボディの id を**文書の履歴の順**で並べる(FR-502)。段と三角形の形が混ざるので、
@@ -4627,102 +3962,5 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     liveBodyIds: document.solids
       .filter((feature) => liveIds.has(feature.id))
       .map((feature) => feature.id),
-  };
-}
-
-/**
- * まだ形の無い投影・交差を、カーネルへ頼める形(`ResolvedProjection`)へ組み立てる。
- * 参照先が見つからない・順序違反のものは頼まず、理由を `errors` へ積む(FR-504)。
- */
-function collectProjections(
-  document: PartDocument,
-  sketches: readonly ResolvedPartSketch[],
-  bodyKeys: ReadonlyMap<string, string>,
-  errors: PartError[],
-): readonly ResolvedProjection[] {
-  const anyPending = sketches.some((entry) => entry.resolved.pendingProjections.length > 0);
-  if (!anyPending) {
-    // 投影・交差を持たない部品(ほとんどの部品)では、表も作らず素通りする(NFR-PF-3)。
-    return [];
-  }
-  const bodyOrder = new Map<string, number>();
-  document.solids.forEach((feature, index) => {
-    if (!bodyOrder.has(feature.id)) {
-      bodyOrder.set(feature.id, index);
-    }
-  });
-  // 点の参照からスケッチを引けるように、スケッチの一覧も渡す(FR-425・FR-424)。
-  const firstUse = firstSketchUseIndexes(document.solids, document.sketches);
-
-  const requests: ResolvedProjection[] = [];
-  for (const entry of sketches) {
-    for (const pending of entry.resolved.pendingProjections) {
-      const request = planProjection(
-        entry.sketchId,
-        pending,
-        bodyKeys,
-        bodyOrder,
-        firstUse.get(entry.sketchId),
-      );
-      if (!request.ok) {
-        errors.push(request.error);
-        continue;
-      }
-      requests.push(request.projection);
-    }
-  }
-  return requests;
-}
-
-type ProjectionOutcome =
-  | { readonly ok: true; readonly projection: ResolvedProjection }
-  | { readonly ok: false; readonly error: PartError };
-
-/** 1 件の投影・交差について、参照先と順序を確かめてから鍵を作る。 */
-function planProjection(
-  sketchId: string,
-  pending: PendingProjection,
-  bodyKeys: ReadonlyMap<string, string>,
-  bodyOrder: ReadonlyMap<string, number>,
-  firstUseIndex: number | undefined,
-): ProjectionOutcome {
-  const bodyFeatureId = projectionBodyFeatureId(pending.source);
-  const bodyKey = bodyKeys.get(bodyFeatureId);
-  if (bodyKey === undefined) {
-    return {
-      ok: false,
-      error: partError(
-        pending.featureId,
-        'missingBody',
-        missingProjectionBodyMessage(pending.source),
-      ),
-    };
-  }
-  // 順序の制約。そのスケッチをどの立体も使っていなければ制約は無い。
-  const bodyIndex = bodyOrder.get(bodyFeatureId);
-  if (
-    firstUseIndex !== undefined &&
-    bodyIndex !== undefined &&
-    bodyIndex >= firstUseIndex
-  ) {
-    return {
-      ok: false,
-      error: partError(
-        pending.featureId,
-        'missingBody',
-        laterProjectionBodyMessage(pending.source),
-      ),
-    };
-  }
-  return {
-    ok: true,
-    projection: {
-      sketchId,
-      featureId: pending.featureId,
-      key: projectionCacheKey({ bodyKey, source: pending.source, plane: pending.plane }),
-      bodyKey,
-      source: pending.source,
-      plane: pending.plane,
-    },
   };
 }

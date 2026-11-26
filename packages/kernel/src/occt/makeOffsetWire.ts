@@ -11,6 +11,7 @@ import type {
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { sketchInputError } from './kernelStepError.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 
@@ -201,7 +202,7 @@ function readCurveOfEdge(
     };
   }
 
-  throw new Error(UNSUPPORTED_CURVE_MESSAGE);
+  throw sketchInputError({ code: 'offsetCurve' }, UNSUPPORTED_CURVE_MESSAGE);
 }
 
 /**
@@ -286,10 +287,10 @@ export function makeOffsetWire(
   spec: OffsetWireSpec,
 ): readonly OffsetContour[] {
   if (spec.curves.length === 0) {
-    throw new Error(NO_CURVE_MESSAGE);
+    throw sketchInputError({ code: 'offsetNoCurves' }, NO_CURVE_MESSAGE);
   }
   if (!Number.isFinite(spec.distance)) {
-    throw new Error(INVALID_DISTANCE_MESSAGE);
+    throw sketchInputError({ code: 'offsetDistance' }, INVALID_DISTANCE_MESSAGE);
   }
 
   const join = joinTypeValue(oc, spec.joinType ?? 'arc');
@@ -302,7 +303,7 @@ export function makeOffsetWire(
       wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
     }
     if (!wireMaker.IsDone()) {
-      throw new Error(NOT_CONNECTED_MESSAGE);
+      throw sketchInputError({ code: 'notConnected' }, NOT_CONNECTED_MESSAGE);
     }
 
     const spine = keep(wireMaker.Wire());
@@ -314,11 +315,14 @@ export function makeOffsetWire(
     } catch (error) {
       // embind 越しの C++ 例外は数値(実体へのポインタ)で飛ぶので、理由へ直す
       // (makeFillet.ts と同じ扱い)。自分で投げた Error はそのまま通す。
-      throw error instanceof Error ? error : new Error(OFFSET_FAILED_MESSAGE);
+      if (typeof error === 'number') throw sketchInputError({ code: 'offsetBuild' }, OFFSET_FAILED_MESSAGE);
+      throw error instanceof Error ? error : new Error(OFFSET_FAILED_MESSAGE, { cause: error });
     }
 
     if (!maker.IsDone()) {
-      throw new Error(spec.distance < 0 ? TOO_FAR_INSIDE_MESSAGE : OFFSET_FAILED_MESSAGE);
+      throw spec.distance < 0
+        ? sketchInputError({ code: 'offsetInside' }, TOO_FAR_INSIDE_MESSAGE)
+        : sketchInputError({ code: 'offsetBuild' }, OFFSET_FAILED_MESSAGE);
     }
 
     const shape = keep(maker.Shape());
@@ -327,7 +331,7 @@ export function makeOffsetWire(
     );
     const filled = contours.filter((contour) => contour.curves.length > 0);
     if (filled.length === 0) {
-      throw new Error(EMPTY_RESULT_MESSAGE);
+      throw sketchInputError({ code: 'offsetEmpty' }, EMPTY_RESULT_MESSAGE);
     }
     return filled;
   } finally {

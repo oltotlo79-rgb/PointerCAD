@@ -12,7 +12,7 @@ export interface DrawingRefreshOptions extends DrawingResolutionOptions {
   readonly regenerateAutoDimensions?: (document: DrawingDocument, source: DrawingSourceResolution) => DrawingDocument | null;
 }
 export type DrawingRefreshResult =
-  | { readonly ok: false; readonly message: string }
+  | Extract<ResolvedDrawing, { ok: false }>
   | { readonly ok: true; readonly document: DrawingDocument; readonly projection: Extract<ResolvedDrawing, { ok: true }>;
       readonly dimensions: readonly ResolvedDrawingDimension[]; readonly unresolvedCount: number;
       readonly sourceChangedExternally: boolean };

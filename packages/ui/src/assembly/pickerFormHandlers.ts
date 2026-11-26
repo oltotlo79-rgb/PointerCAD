@@ -7,6 +7,13 @@ import type { FormHTMLAttributes, MutableRefObject } from 'react';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { useAppStore } from '../store/useAppStore.js';
 
+/** 選ぶ窓の入力が変わったら、変更前の指定で置く頼みを閉じる。 */
+export function cancelPickerPlacementPoint(): void {
+  const state = useAppStore.getState();
+  const pick = state.assemblyComponentPick;
+  if (pick?.purpose === 'placementPoint' && pick.placement?.kind !== 'partFile') state.cancelComponentPick();
+}
+
 export interface PickerComposition {
   /** IME の変換中。 */
   readonly composing: MutableRefObject<boolean>;
@@ -15,13 +22,14 @@ export interface PickerComposition {
 }
 
 type PickerFormProps = Required<Pick<FormHTMLAttributes<HTMLFormElement>,
-  'onCompositionStart' | 'onCompositionEnd' | 'onPointerDownCapture' | 'onSubmit' | 'onKeyDown'>>;
+  'onCompositionStart' | 'onCompositionEnd' | 'onPointerDownCapture' | 'onChangeCapture' | 'onSubmit' | 'onKeyDown'>>;
 
 export function pickerFormProps(refs: PickerComposition, submit: () => void): PickerFormProps {
   return {
     onCompositionStart: () => { refs.composing.current = true; },
     onCompositionEnd: () => { refs.composing.current = false; },
     onPointerDownCapture: () => { refs.compositionKey.current = false; },
+    onChangeCapture: cancelPickerPlacementPoint,
     onSubmit: (event) => {
       event.preventDefault();
       // The confirming Enter may submit after compositionend; only a new key/pointer clears it.

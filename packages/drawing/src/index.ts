@@ -10,6 +10,8 @@ export type {
   DrawingElementStyle,
   DrawingExpressionValue,
   DrawingLayer,
+  DrawingLayoutFailure,
+  DrawingLayoutFailureText,
   DrawingLineType,
   DrawingParameter,
   DrawingSheet,
@@ -117,9 +119,11 @@ export {
 } from './layout/clipRegion.js';
 export {
   createDetailView,
+  detailOutside,
 } from './layout/detailView.js';
 export {
   applyBreak,
+  invalidBreakInterval,
   movePointAcrossBreak,
   breakDrawingCurve,
   type BreakSpec,

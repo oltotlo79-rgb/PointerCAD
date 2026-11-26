@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test as base, type ElectronApplication, type Locator, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { ex18ReadAssembly } from './ex18RoutesOracle.js';
 import { choice, openFramePicker, startAssembly } from './aluminumFrameCatalogFlow.js';
 import { componentRows } from './boltedJointTestSupport.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
@@ -31,6 +33,29 @@ async function fourMemberOpening(page: Page): Promise<Locator> {
   await componentRows(page).nth(0).click();
   for (const index of [1, 2, 3]) await componentRows(page).nth(index).click({ modifiers: ['Shift'] });
   return dialog;
+}
+
+async function partitionPreview(page: Page, dialog: Locator): Promise<Locator> {
+  const door = detailsOf(page, dialog, 'catalog.frameDoor.title');
+  await door.locator('summary').click();
+  await choice(door, 'catalog', 'catalog.frameDoor.installation').selectOption('partition');
+  await expect(choice(door, 'catalog', 'catalog.frameDoor.hinge')).toHaveCount(0);
+  await choice(door, 'catalog', 'catalog.frameDoor.partitionBoard').selectOption({ index: 1 });
+  await choice(door, 'catalog', 'catalog.frameDoor.partitionFrame').selectOption({ index: 1 });
+  await choice(door, 'catalog', 'catalog.frameDoor.holder').selectOption({ index: 1 });
+  await choice(door, 'catalog', 'catalog.frameDoor.connector').selectOption({ index: 1 });
+  const preview = uiMessage('catalog', 'catalog.frameDoor.partitionPreview').replace('{width}', '576').replace('{height}', '376')
+    .replace('{boardWidth}', '488').replace('{boardHeight}', '288');
+  const fittings = uiMessage('catalog', 'catalog.frameDoor.previewParts').replace('{holders}', '8').replace('{connectors}', '4');
+  await expect(door.getByText(preview + fittings, { exact: true })).toBeVisible();
+  return door;
+}
+
+async function readPartitionAssembly(bytes: Uint8Array) {
+  const bundle = await ex18ReadAssembly(bytes).catch((cause: unknown) => {
+    throw new Error('保存したパーティションの組立を読み戻せません。', { cause });
+  });
+  return bundle.document;
 }
 
 export function registerFrameDoorTests(test: typeof base,
@@ -71,18 +96,7 @@ export function registerFrameDoorTests(test: typeof base,
       const app = appForPage(page);
       await startAssembly(page, app);
       const dialog = await fourMemberOpening(page);
-      const door = detailsOf(page, dialog, 'catalog.frameDoor.title');
-      await door.locator('summary').click();
-      await choice(door, 'catalog', 'catalog.frameDoor.installation').selectOption('partition');
-      await expect(choice(door, 'catalog', 'catalog.frameDoor.hinge')).toHaveCount(0);
-      await choice(door, 'catalog', 'catalog.frameDoor.partitionBoard').selectOption({ index: 1 });
-      await choice(door, 'catalog', 'catalog.frameDoor.partitionFrame').selectOption({ index: 1 });
-      await choice(door, 'catalog', 'catalog.frameDoor.holder').selectOption({ index: 1 });
-      await choice(door, 'catalog', 'catalog.frameDoor.connector').selectOption({ index: 1 });
-      const preview = uiMessage('catalog', 'catalog.frameDoor.partitionPreview').replace('{width}', '576').replace('{height}', '376')
-        .replace('{boardWidth}', '488').replace('{boardHeight}', '288');
-      const fittings = uiMessage('catalog', 'catalog.frameDoor.previewParts').replace('{holders}', '8').replace('{connectors}', '4');
-      await expect(door.getByText(preview + fittings, { exact: true })).toBeVisible();
+      const door = await partitionPreview(page, dialog);
       const token = await beginRecompute(page);
       await door.getByRole('button', { name: uiMessage('catalog', 'catalog.frameDoor.partitionPlace'), exact: true }).click();
       await waitForRecompute(page, token);
@@ -94,6 +108,47 @@ export function registerFrameDoorTests(test: typeof base,
       await saveFlowFile(page, saved, app);
       await openSaveFlowFile(page, saved, app);
       await expect(componentRows(page)).toHaveText(names);
+    });
+    test('K-33 枠付きパーティションの予告を閉じてから同じ開口へ配置できる', async ({ page }, info) => {
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const dialog = await fourMemberOpening(page);
+      const source = info.outputPath('partition-cancel-source.pcada');
+      const sourceBytes = await saveFlowFile(page, source, app);
+      const before = await readPartitionAssembly(sourceBytes);
+      expect(before.components).toHaveLength(4);
+
+      const undo = page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.undo'), exact: true });
+      const redo = page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.redo'), exact: true });
+      await expect(undo).toBeEnabled();
+      await expect(redo).toBeDisabled();
+      const close = dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true });
+      await partitionPreview(page, dialog);
+      await close.click();
+      await expect(dialog).toBeHidden();
+      await expect(componentRows(page)).toHaveCount(4);
+      await expect(undo).toBeEnabled();
+      await expect(redo).toBeDisabled();
+      const after = await saveFlowFile(page, info.outputPath('partition-cancel-after.pcada'), app);
+      expect(await readPartitionAssembly(after)).toEqual(before);
+      expect(await readFile(source)).toEqual(sourceBytes);
+
+      const reopened = await openFramePicker(page);
+      const partition = await partitionPreview(page, reopened);
+      let token = await beginRecompute(page);
+      await partition.getByRole('button', { name: uiMessage('catalog', 'catalog.frameDoor.partitionPlace'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(componentRows(page)).toHaveCount(21);
+      await reopened.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true }).click();
+      token = await beginRecompute(page);
+      await undo.click();
+      await waitForRecompute(page, token);
+      await expect(componentRows(page)).toHaveCount(4);
+      token = await beginRecompute(page);
+      await undo.click();
+      await waitForRecompute(page, token);
+      await expect(componentRows(page)).toHaveCount(0);
+      await expect(undo).toBeDisabled();
     });
   });
 }

@@ -1,19 +1,46 @@
+import type { MaterialComparisonOutcome } from '@pointercad/kernel';
 import { withinMagnitude } from '../numericTolerance.js';
 import { isRecord as record } from '../valueGuards.js';
 import type { MaterialComparisonResult, MaterialDifferenceRegion } from './materialComparisonContracts.js';
 
+type Diagnostic = NonNullable<Extract<MaterialComparisonOutcome, { kind: 'failed' }>['diagnostic']>;
+const keys: Readonly<Record<Diagnostic, string>> = {
+  invalidRequest: 'materialDiff.invalidRequest',
+  solidLimit: 'materialDiff.solidLimit',
+  triangleLimit: 'materialDiff.triangleLimit',
+  expired: 'materialDiff.expired',
+  requiresSolid: 'materialDiff.requiresSolid',
+  internal: 'assembly.error.internal',
+};
+const diagnosticKeys = new Map<string, string>(Object.entries(keys));
+export const internalMaterialComparisonFailure = (): Extract<MaterialComparisonResult, { kind: 'failed' }> => ({
+  kind: 'failed', message: '形の比較結果を確認できませんでした。再度お試しください。',
+  text: { key: keys.internal, parameters: {} },
+});
+
 const nonnegative = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const invalid = (): MaterialComparisonResult => ({ kind: 'failed', message: '形の比較結果を確認できませんでした。再度お試しください。' });
+function invalid(reason: string): MaterialComparisonResult {
+  console.error('PointerCAD material comparison reply', reason);
+  return internalMaterialComparisonFailure();
+}
 
 /** 通信で壊れた三角形や不完全な差分を、描画や「変更なし」の結果へ渡さない。 */
 export function readMaterialComparison(value: unknown): MaterialComparisonResult {
-  if (!record(value)) return invalid();
+  if (!record(value)) return invalid('reply is not a record');
   if (value.kind === 'cancelled') return { kind: 'cancelled' };
-  if (value.kind === 'failed') return typeof value.message === 'string' && value.message.length > 0 && value.message.length <= 4096
-    ? { kind: 'failed', message: value.message } : invalid();
-  if (value.kind !== 'compared' || !record(value.result)) return invalid();
+  if (value.kind === 'failed') {
+    if (typeof value.message !== 'string' || value.message.length === 0 || value.message.length > 4096) {
+      return invalid('invalid failed reply message');
+    }
+    if (!Object.hasOwn(value, 'diagnostic')) return { kind: 'failed', message: value.message };
+    const key = typeof value.diagnostic === 'string' ? diagnosticKeys.get(value.diagnostic) : undefined;
+    if (key === undefined) return invalid('unknown failed reply diagnostic');
+    if (value.diagnostic === 'internal') return internalMaterialComparisonFailure();
+    return { kind: 'failed', message: value.message, text: { key, parameters: {} } };
+  }
+  if (value.kind !== 'compared' || !record(value.result)) return invalid('invalid result envelope');
   const result = value.result;
-  if (!nonnegative(result.beforeVolume) || !nonnegative(result.afterVolume)) return invalid();
+  if (!nonnegative(result.beforeVolume) || !nonnegative(result.afterVolume)) return invalid('invalid input volumes');
   let totalTriangleCount = 0;
   function region(item: unknown): MaterialDifferenceRegion | null {
     if (!record(item)) return null;
@@ -31,9 +58,11 @@ export function readMaterialComparison(value: unknown): MaterialComparisonResult
     return { kind: 'material', volume: item.volume, mesh: { positions, normals, indices, triangleCount } };
   }
   const added = region(result.added), removed = region(result.removed), common = region(result.common);
-  if (added === null || removed === null || common === null) return invalid();
+  if (added === null || removed === null || common === null) return invalid('invalid material region');
   const conserved = (whole: number, first: number, second: number): boolean =>
     withinMagnitude(whole - first - second, Math.max(1e-9, whole * 1e-6));
-  if (!conserved(result.beforeVolume, removed.volume, common.volume) || !conserved(result.afterVolume, added.volume, common.volume)) return invalid();
+  if (!conserved(result.beforeVolume, removed.volume, common.volume) || !conserved(result.afterVolume, added.volume, common.volume)) {
+    return invalid('volumes do not conserve material');
+  }
   return { kind: 'compared', result: { added, removed, common, beforeVolume: result.beforeVolume, afterVolume: result.afterVolume } };
 }

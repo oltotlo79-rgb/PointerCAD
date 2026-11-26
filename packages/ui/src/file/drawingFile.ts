@@ -36,7 +36,7 @@ export async function applyPickedDrawing(
   const { result, saveTargetToken } = read;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
-      useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
+      useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error), failed: true });
     }
     return;
   }

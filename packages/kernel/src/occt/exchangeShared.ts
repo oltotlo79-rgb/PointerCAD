@@ -1,3 +1,5 @@
+import type { ShapeImportDiagnostic } from '../types.js';
+
 /**
  * 書き出し・読み込みで 2 つ以上のファイルが共用するものの単一の置き場
  * (断りの表)。
@@ -85,6 +87,27 @@ export const MESH_NO_SHAPE_MESSAGE = 'このファイルには形が入ってい
  * これを超えると WASM の記憶と `.pcad` の大きさのどちらも実用の範囲を出る。
  */
 export const MESH_MAX_TRIANGLE_COUNT = 5_000_000;
+
+/** 直呼出しでは従来の断り文を保ち、Worker は診断を応答に載せる。 */
+export class ShapeImportError extends Error {
+  override readonly name = 'ShapeImportError';
+
+  constructor(readonly diagnostic: ShapeImportDiagnostic, message: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
+/** 読込境界で発生した予期しない例外に、元の原因を添える。 */
+export function withShapeImportDiagnostic<Result>(read: () => Result): Result {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof ShapeImportError || (error instanceof Error && error.name === 'AbortError')) throw error;
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    const message = error instanceof Error ? error.message : detail;
+    throw new ShapeImportError({ code: 'internal', detail }, message, { cause: error });
+  }
+}
 
 /** 三角形が多すぎて開けないときの断り(個数を文言に入れる)。 */
 export function meshTooLargeMessage(triangleCount: number): string {

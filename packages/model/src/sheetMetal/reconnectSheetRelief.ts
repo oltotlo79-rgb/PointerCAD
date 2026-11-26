@@ -53,7 +53,7 @@ export function reconnectSheetRelief(source: ResolvedSheetBody, cuts: SheetRelie
       continue;
     }
     const input = { thickness: rule.rule.thickness, radius: bend.radius, kFactor: bend.kFactor, angle: bend.angle };
-    const metrics = sheetBendMetrics(input); if (!metrics.ok) return { ok: false, message: '切欠きの曲げ条件を確認してください。' };
+    const metrics = sheetBendMetrics(input); if (!metrics.ok) return { ok: false, message: '切欠きの曲げ条件を確認してください。', text: { key: 'sheetMetal.reliefBendConditions', parameters: {} } };
     const end = flangeEndFrame(bend.frame, input.thickness, input.radius, input.angle); if (!end.ok) return end;
     const movingSource = { ...bend.frame, origin: addVec3(bend.frame.origin, scaleVec3(bend.frame.yAxis, bend.allowance)) };
     const points = [[0, 0, 0], [bend.width, 0, 0], [bend.width, bend.allowance, 0], [0, bend.allowance, 0]] as const;
@@ -66,6 +66,6 @@ export function reconnectSheetRelief(source: ResolvedSheetBody, cuts: SheetRelie
     if (!connection.ok) return connection;
     append(aliases, connection.value.map((item) => ({ ...item, parallelGroupId: bend.parallelGroupId ?? bend.id })));
   }
-  return panels.length === 0 ? { ok: false, message: '切欠きによって平面パネルの材料がすべて無くなります。幅か深さを小さくしてください。' }
+  return panels.length === 0 ? { ok: false, message: '切欠きによって平面パネルの材料がすべて無くなります。幅か深さを小さくしてください。', text: { key: 'sheetMetal.reliefRemovedAllPanels', parameters: {} } }
     : { ok: true, value: { ...source, panels, bends, connectionAliases: composeSheetConnectionAliases(source, changes) } };
 }

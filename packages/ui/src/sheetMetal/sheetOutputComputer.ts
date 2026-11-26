@@ -1,3 +1,4 @@
+import { failureMessage } from '../i18n/failureMessage.js';
 /** 書き出し中だけ実形状を専用所有先で保持する。プレビューのLRU残存には依存しない。 */
 import { writeDxfDocument } from '@pointercad/io';
 import { createSheetFlatSteps, recomputeSheetFlat, resolveSheetFlatOutline, sheetFlatBendLines, sheetFlatDxfEntities,
@@ -34,18 +35,18 @@ export function createSheetOutputComputer(bridge: AssemblyKernelBridge, detached
       } else {
         const flat = await recomputeSheetFlat(request.sheet, definition, bridge, { partId, generation: 1, shouldCancel: cancelled });
         ensureCurrent();
-        if (!flat.ok) throw new Error(flat.message);
+        if (!flat.ok) throw new Error(flat.text === undefined ? flat.message : failureMessage(flat.text));
         if (format === 'flatDxf') {
           const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, flat.geometry.thickness, cancelled);
           ensureCurrent();
-          if (!outline.ok) throw new Error(outline.message);
+          if (!outline.ok) throw new Error(outline.text === undefined ? outline.message : failureMessage(outline.text));
           const bends = sheetFlatBendLines(flat.geometry); if (!bends.ok) throw new Error(bends.message);
           const entities = sheetFlatDxfEntities(outline.value, bends.value); if (!entities.ok) throw new Error(entities.message);
           const written = writeDxfDocument(entities.value);
           return { fileName: `${baseName}.dxf`, kind: 'dxf', bytes: new TextEncoder().encode(written.text) };
         }
         const flatSteps = createSheetFlatSteps(definition.sourceFeatureId, flat.geometry);
-        if (!flatSteps.ok) throw new Error(flatSteps.message);
+        if (!flatSteps.ok) throw new Error(flatSteps.text === undefined ? flatSteps.message : failureMessage(flatSteps.text));
         steps = flatSteps.value;
       }
       ensureCurrent();

@@ -16,7 +16,7 @@
  * 次の段の係数へ渡す(段階再計算。`recomputePart` の注釈)。
  */
 
-import { computeVolume, OCCT_LOAD_ERROR_NAME } from '@pointercad/kernel';
+import { computeVolume, OCCT_LOAD_ERROR_NAME, type EdgeTreatmentFailureCode, type SolidSweepFailureCode } from '@pointercad/kernel';
 import type { EmbeddedPartMesh } from '../assembly/partLibrary.js';
 import { appearanceOf } from '../appearance/documentAppearance.js';
 import { evaluateMathGeometry } from '../measure/mathGeometry.js';
@@ -37,7 +37,6 @@ import type {
   KernelBridge,
   PartCancelToken,
   PartProgressCallback,
-  SketchFaceFailure,
   SketchProjectionFailure,
   SketchProjectionRequestItem,
   SolidBody,
@@ -50,6 +49,7 @@ import { createOffsetCache, type OffsetCache } from '../sketch/offsetMath.js';
 import { createProjectionCache, type ProjectionCache } from '../sketch/projectionMath.js';
 import { mapSketchCoordinates } from '../sketch/mapCoordinates.js';
 import { fillOffsets } from '../sketch/recomputeSketch.js';
+import { internalSketchFailures, sketchKernelFailure } from '../sketch/sketchDiagnostics.js';
 import type { ResolvedCurve, ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import {
@@ -213,9 +213,38 @@ export interface PartRecomputeOptions {
   readonly importedMeshes?: ReadonlyMap<string, EmbeddedPartMesh>;
 }
 
-/** 面を作れなかったとき(recomputeSketch と同じ文言に揃える)。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
-function sketchKernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', text: plainText(`面を作れませんでした: ${message}`) };
+const STRUCTURED_SOLID_FAILURE_KEYS: Readonly<Record<EdgeTreatmentFailureCode | SolidSweepFailureCode, string>> = {
+  'fillet-radius': 'partError.fillet.radius',
+  'variable-fillet-no-target': 'solidFailure.fillet.noTarget',
+  'fillet-faulty-contours': 'solidFailure.fillet.faultyContours',
+  'fillet-build': 'solidFailure.fillet.build',
+  'fillet-result': 'solidFailure.fillet.result',
+  'chamfer-distance': 'partError.chamfer.distance',
+  'chamfer-angle': 'partError.chamfer.angle',
+  'chamfer-reference-face': 'solidFailure.chamfer.referenceFace',
+  'chamfer-build': 'solidFailure.chamfer.build',
+  'chamfer-result': 'solidFailure.chamfer.result',
+  'edge-treatment-kernel-unavailable': 'solidFailure.edgeTreatment.kernelUnavailable',
+  'edge-treatment-internal': 'assembly.error.internal',
+  'extrude-distance': 'partError.extrude.distance',
+  'extrude-direction': 'solidFailure.extrude.direction',
+  'extrude-taper-range': 'solidFailure.extrude.taperRange',
+  'extrude-taper-build': 'solidFailure.extrude.taperBuild',
+  'extrude-no-material': 'partError.extrude.toNextMissing',
+  'extrude-end-build': 'solidFailure.extrude.endBuild',
+  'extrude-next-target': 'solidFailure.extrude.nextTarget',
+  'extrude-through-target': 'partError.extrude.throughTargetMissing',
+  'extrude-build': 'solidFailure.extrude.build',
+  'extrude-no-volume': 'solidFailure.extrude.noVolume',
+  'revolve-angle': 'partError.revolve.angle',
+  'revolve-axis': 'solidFailure.revolve.axis',
+  'revolve-axis-overlap': 'solidFailure.revolve.axisOverlap',
+  'revolve-no-volume': 'solidFailure.revolve.noVolume',
+  'sweep-internal': 'assembly.error.internal',
+};
+
+function isStructuredSolidFailureCode(code: SolidBodyFailure['code']): code is EdgeTreatmentFailureCode | SolidSweepFailureCode {
+  return code !== undefined && Object.hasOwn(STRUCTURED_SOLID_FAILURE_KEYS, code);
 }
 
 /**
@@ -226,10 +255,17 @@ function sketchKernelFailed(featureId: string, message: string, code?: SketchFac
  * 面による切断・面だけのボディの機能の詳細な理由の符号は reason に保持する。立体が残らない 'nothingLeft' は
  * カーネルの中の言い回しの選び分けに使う符号で、画面の側には渡さない(文はカーネルが選んだ物をそのまま見せる)。
  */
-function solidKernelFailed(featureId: string, message: string, code?: SolidBodyFailure['code']): PartError {
+function solidKernelFailed(featureId: string, message: string, code?: SolidBodyFailure['code'],
+  parameters?: SolidBodyFailure['parameters']): PartError {
+  if (isStructuredSolidFailureCode(code)) {
+    return { featureId, code: 'kernelFailed',
+      text: { key: STRUCTURED_SOLID_FAILURE_KEYS[code], parameters: parameters ?? {} } };
+  }
   const partCode: PartErrorCode = code === 'missingSubShape' || code === 'workerBroken' ? code : 'kernelFailed';
   const reason = code === undefined || code === 'missingSubShape' || code === 'nothingLeft' || code === 'workerBroken' ? undefined : code;
-  return { featureId, code: partCode, text: plainText(message), ...(reason === undefined ? {} : { reason }) };
+  const fallback = plainText(message);
+  const text = parameters === undefined ? fallback : { ...fallback, parameters: { ...parameters, ...fallback.parameters } };
+  return { featureId, code: partCode, text, ...(reason === undefined ? {} : { reason }) };
 }
 
 /**
@@ -288,17 +324,11 @@ async function tessellateSketch(
     const outcome = await bridge.tessellateSketchFaces(resolved.faces);
     return {
       mesh: outcome.mesh,
-      errors: outcome.failures.map((failure) =>
-        sketchKernelFailed(failure.featureId, failure.message, failure.code),
-      ),
+      errors: outcome.failures.map((failure) => sketchKernelFailure('face', failure)),
     };
   } catch (error) {
     // Worker との通信ごと失敗した場合。頼んだ面はすべて作れていない。
-    const message = toMessage(error);
-    return {
-      mesh: null,
-      errors: resolved.faces.map((face) => sketchKernelFailed(face.featureId, message)),
-    };
+    return { mesh: null, errors: internalSketchFailures('face', resolved.faces, error) };
   }
 }
 
@@ -472,8 +502,18 @@ async function fillProjections(
     if (items.length === 0) {
       return;
     }
+    let outcome: Awaited<ReturnType<typeof call>>;
     try {
-      const outcome = await call(items);
+      outcome = await call(items);
+    } catch (error) {
+      // 通信が失敗した場合は既存の投影エラーとして理由を伝える。
+      const message = toMessage(error);
+      for (const item of items) {
+        errors.set(item.featureId, projectionFailed(item.featureId, message));
+      }
+      return;
+    }
+    try {
       for (const failure of outcome.failures) {
         errors.set(failure.featureId, projectionFailed(failure.featureId, failure.message, failure.code));
       }
@@ -487,10 +527,14 @@ async function fillProjections(
         remember(request, entry.curves);
       }
     } catch (error) {
-      // Worker との通信ごと失敗した場合。頼んだぶんはすべて作れていない。
-      const message = toMessage(error);
+      // 受け取った結果を処理できない実装上の誤りは原文を開発記録へ残す。
+      console.error('PointerCAD projection result', items.map((item) => item.featureId), error);
       for (const item of items) {
-        errors.set(item.featureId, projectionFailed(item.featureId, message));
+        errors.set(item.featureId, {
+          featureId: item.featureId,
+          code: 'kernelFailed',
+          text: { key: 'assembly.error.internal', parameters: {} },
+        });
       }
     }
   };
@@ -1279,7 +1323,7 @@ async function finishRecompute(
   }
 
   for (const failure of solid.outcome.failures) {
-    errors.push(solidKernelFailed(failure.featureId, failure.message, failure.code));
+    errors.push(solidKernelFailed(failure.featureId, failure.message, failure.code, failure.parameters));
   }
   const geometryRequests = document.mathGeometry === undefined ? options.mathGeometry
     : [...document.mathGeometry, ...(options.mathGeometry ?? [])];

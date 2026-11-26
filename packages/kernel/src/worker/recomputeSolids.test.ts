@@ -2731,7 +2731,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       );
 
       expect(result.failures).toEqual([
-        { id: '罫線面1', message: 'つなぐ面が見つかりません。形が変わったため、選び直してください。' },
+        { id: '罫線面1', code: 'geometry-loft-missing-face', message: 'つなぐ面が見つかりません。形が変わったため、選び直してください。' },
       ]);
       expect(result.bodies.map((body) => body.id)).toEqual(['板1']);
     });
@@ -2749,6 +2749,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       expect(result.failures).toEqual([
         {
           id: '罫線面1',
+          code: 'geometry-loft-unusable-face',
           message: 'つなぐ面は平らな面か、縁が 1 本につながる面にしてください。',
         },
       ]);
@@ -2882,6 +2883,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
         expect(result.failures).toEqual([
           {
             id: 'ロフト1',
+            code: 'geometry-loft-build',
             message: '面と面をつなげませんでした。輪郭の形を見直してください。',
           },
         ]);

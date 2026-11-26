@@ -48,6 +48,8 @@ export interface PanelPartRecord extends Pick<CatalogItemRow, 'listed' | 'listed
   readonly width: number;
   readonly depth: number;
   readonly height: number;
+  /** 図面に記載された取付けねじの呼び径と軸位置。箱の生成には使わない。 */
+  readonly mountingThread?: { readonly diameter: number; readonly centerSpacing: number; readonly fromEnd: number };
   /** 資料の 1 個の質量(g)。記入の無い行は null(質量を出さない)。 */
   readonly massG: number | null;
   /**
@@ -77,7 +79,7 @@ function evidence(page: number, locator: string, title = EVIDENCE_TITLE): Catalo
 }
 
 function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
-  const { listed, listedAs, formerSizes } = record;
+  const { listed, listedAs, formerSizes, mountingThread } = record;
   // 資料の質量が無い行と部位ごとに材料の違う行は、密度を持たない(部品表は材質の文字だけで、箱の体積 × 密度の質量を出さない)。
   const density = record.material === 'mixed' || record.massG === null ? {} : { densityMaterialId: record.material };
   const label = record.materialText ?? (record.material === 'mixed' ? '' : MATERIAL_LABELS[record.material]);
@@ -85,7 +87,9 @@ function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
   const mass = record.massG === null ? omitted : '質量は資料の 1 個の値';
   return {
     key: record.key, size: record.size, standardLabel: '製造元の寸法に合わせた物', materialLabel: label, ...density,
-    dims: { width: record.width, depth: record.depth, height: record.height, ...(record.massG === null ? {} : { massG: record.massG }) },
+    dims: { width: record.width, depth: record.depth, height: record.height,
+      ...(mountingThread === undefined ? {} : { mountingThreadDiameter: mountingThread.diameter, holePitch: mountingThread.centerSpacing,
+        mountingThreadFromEnd: mountingThread.fromEnd }), ...(record.massG === null ? {} : { massG: record.massG }) },
     evidence: evidence(record.page, '部品の図(全体の寸法)と質量の記入', title), verification: 'manufacturer-catalog', verified: true,
     note: `形は簡略(${record.simplified.join('・')})。${mass}`, simplified: record.simplified,
     ...(listed === false ? { listed } : {}), ...(listedAs === undefined ? {} : { listedAs }), ...(formerSizes === undefined ? {} : { formerSizes }),

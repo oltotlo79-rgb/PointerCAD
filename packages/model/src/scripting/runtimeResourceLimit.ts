@@ -1,6 +1,5 @@
 import type { NativeScriptVm } from './nativeScriptVm.js';
-import { scriptFailure } from './runtimeErrors.js';
-import type { ScriptTextFailure } from './scriptTypes.js';
+import { scriptFailure, scriptInternalFailure, type ScriptReasonFailure } from './scriptTypes.js';
 import { locateScriptError } from './scriptLocation.js';
 
 interface NativeLimitExport {
@@ -17,9 +16,10 @@ function hasNativeLimitExport(value: unknown): value is NativeLimitExport {
     && 'pointercad_resource_file_byte' in value && typeof value.pointercad_resource_file_byte === 'function';
 }
 /** One isolated VM per transaction. Fail closed if the unpatched npm binary is supplied. */
-export function nativeResourceLimit(vm: NativeScriptVm, sources: ReadonlyMap<string, string>): () => ScriptTextFailure | null {
+export function nativeResourceLimit(vm: NativeScriptVm, sources: ReadonlyMap<string, string>): () => ScriptReasonFailure | null {
   const native: unknown = vm._getExports();
   if (!hasNativeLimitExport(native)) throw new Error('必要な資源制限付き実行器がありません。');
+  let unknownLimit: ScriptReasonFailure | null = null;
   return () => {
     const code = native.pointercad_resource_failure();
     if (code === 0) return null;
@@ -30,9 +30,9 @@ export function nativeResourceLimit(vm: NativeScriptVm, sources: ReadonlyMap<str
       file += String.fromCharCode(byte);
     }
     const location = locateScriptError(`at (${file}:${native.pointercad_resource_line()}:${native.pointercad_resource_column()})`, sources);
-    if (code === 1) return { ...scriptFailure('memory', '処理に使えるメモリ64MiBの上限を超えました。'), location };
-    if (code === 2) return { ...scriptFailure('stack', '関数を呼び出す深さの上限を超えました。再帰を浅くしてください。'), location };
-    if (code === 3) return { ...scriptFailure('timeout', '処理時間の上限5秒を超えました。'), location };
-    return scriptFailure('worker', '実行器の資源制限を確認できません。');
+    if (code === 1) return scriptFailure('heapLimit', location);
+    if (code === 2) return scriptFailure('stackLimit', location);
+    if (code === 3) return scriptFailure('runtimeTimeout', location);
+    return unknownLimit ??= scriptInternalFailure(new Error(`Unknown script resource limit: ${code}`), location);
   };
 }

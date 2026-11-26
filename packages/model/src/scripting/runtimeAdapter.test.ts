@@ -17,7 +17,7 @@ describe('隔離VMの実バイナリによる実行境界', () => {
       const bounds={X:['-2','2'],Y:['-2','2'],Z:['-2','2']};
       cad.function.curve(sketch,{bounds,tolerance:'0.01',formula:{kind:'coordinate-curve',independent:'X',outputs:{Y:'sin(X)',Z:'0'}}});
       cad.function.surface({bounds,tolerance:'0.01',angleUnit:'radian',formula:{kind:'coordinate-surface',output:'Z',expression:'sin(X)+cos(Y)'}});`);
-    expect(result.ok).toBe(true); if (!result.ok) throw new Error(result.error.message);
+    expect(result.ok).toBe(true); if (!result.ok) throw new Error(JSON.stringify(result.error));
     expect(result.commands).toHaveLength(3);
     expect(result.commands[1]).toMatchObject({kind:'function.curve',fields:{sketch:result.commands[0].resultId,definition:{angleUnit:'degree'}}});
     expect(result.commands[2]).toMatchObject({kind:'function.surface',fields:{definition:{angleUnit:'radian',formula:{expression:'sin(X)+cos(Y)'}}}});
@@ -98,12 +98,10 @@ describe('隔離VMの実バイナリによる実行境界', () => {
     expect(result).toMatchObject({ ok: false, error: { message: '元のエラー' } });
   });
   it.each([
-    ['ログ容量', 'try{console.log("x".repeat(1024*1024+1))}catch{}', 'console', '上限1MiB'],
-    ['命令容量', 'const x="1"+" ".repeat(4095);try{for(let i=0;i<1000;i++)cad.solid.box({x,y:x,z:x})}catch{}', 'command', '上限8MiB'],
-  ])('%s超過を正しい種類と具体的な上限で表示する', async (_name, source, kind, message) => {
-    const result = await run(source);
-    expect(result.ok).toBe(false); if (result.ok) return;
-    expect(result.error.kind).toBe(kind); expect(result.error.message).toContain(message);
+    ['ログ容量', 'try{console.log("x".repeat(1024*1024+1))}catch{}', 'console', 'tooManyLogBytes'],
+    ['命令容量', 'const x="1"+" ".repeat(4095);try{for(let i=0;i<1000;i++)cad.solid.box({x,y:x,z:x})}catch{}', 'command', 'tooManyCommandBytes'],
+  ])('%s超過を正しい種類と容量の理由で返す', async (_name, source, kind, reason) => {
+    expect(await run(source)).toMatchObject({ ok: false, error: { kind, reason } });
   });
   it.each([
     ['ASCII', '"a".repeat(1048576)'],
@@ -119,7 +117,7 @@ describe('隔離VMの実バイナリによる実行境界', () => {
     expect(new TextEncoder().encode(exact.console[0].text).length).toBe(1024*1024);
     const overflow = await run(`${altered}try{console.log((${expression})+"a")}catch{}`);
     expect(overflow.ok).toBe(false); if (overflow.ok) return;
-    expect(overflow.error.kind).toBe('console'); expect(overflow.error.message).toContain('上限1MiB');
+    expect(overflow.error).toMatchObject({ kind: 'console', reason: 'tooManyLogBytes' });
     expect((await run('console.log("再実行");')).ok).toBe(true);
   });
   it.each([
@@ -129,7 +127,8 @@ describe('隔離VMの実バイナリによる実行境界', () => {
   ])('敵対的なエラーの説明でも戻り、巨大値をコピーしない %#', async (source) => {
     const started = performance.now(), result = await run(source);
     expect(result.ok).toBe(false); if (result.ok) return;
-    expect(result.error.message.length).toBeLessThanOrEqual(4096);
+    if ('message' in result.error) expect(result.error.message.length).toBeLessThanOrEqual(4096);
+    else expect(['unreadableGuestError', 'heapLimit']).toContain(result.error.reason);
     expect(performance.now() - started).toBeLessThan(5000);
     expect((await run('export const ok=true;')).ok).toBe(true);
   });

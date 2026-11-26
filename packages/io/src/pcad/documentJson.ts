@@ -1,3 +1,4 @@
+import { PcadWriteError, pcadVersionError } from './writeDiagnostic.js';
 import { parseFailure as fail } from './codedFailure.js';
 import { readOptionalBeamAnalysisInputs, serializeBeamAnalysisInputs } from './codecs/beamAnalysis.js';
 import { readComponentSource } from './codecs/componentSource.js';
@@ -147,69 +148,92 @@ function version24FieldMessage(document: unknown): string | null {
 function assertVersion24Fields(document: PartDocument): void {
   if (document.schemaVersion >= 24) return;
   if (document.solids.some(feature => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar?.kind === 'edge-distance')) {
-    throw new RangeError('辺からの距離の穴を保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('edgeDistanceHole', document,
+      '辺からの距離の穴を保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'sweep'
     && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined))) {
-    throw new RangeError('スイープのねじれ・終わりの大きさ・肉厚を保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('sweepShape', document,
+      'スイープのねじれ・終わりの大きさ・肉厚を保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'surface' && feature.operation.kind === 'blend')) {
-    throw new RangeError('滑らかなつなぎを保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('surfaceBlend', document,
+      '滑らかなつなぎを保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'thicken')) {
-    throw new RangeError('厚み付けを保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('thicken', document,
+      '厚み付けを保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'sheetConvert')) {
-    throw new RangeError('板金への変換を保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('sheetConvert', document,
+      '板金への変換を保存するには保存形式の版24が必要です。');
   }
   if (document.solids.some(feature => feature.kind === 'surface' && feature.operation.kind === 'offsetBody')) {
-    throw new RangeError('面全体のオフセットを保存するには保存形式の版24が必要です。');
+    throw pcadVersionError('surfaceOffset', document,
+      '面全体のオフセットを保存するには保存形式の版24が必要です。');
   }
+}
+
+function assertPlanarHoleVersion(document: PartDocument): void {
+  const hole = document.solids.find(feature =>
+    (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined);
+  if (hole?.kind !== 'hole' && hole?.kind !== 'threadHole') return;
+  // Preserve the old exception text for API callers. The actual placement decides the required version.
+  throw pcadVersionError(hole.planar?.kind === 'edge-distance' ? 'edgeDistanceHole' : 'planarHole', document,
+    '面内X・Yの穴を保存するには保存形式の版22が必要です。');
 }
 
 function serializePartDocument(document: PartDocument): PartDocument {
   // Optional source metadata uses the current additive contract; never label new inputs as a legacy file.
   if (document.schemaVersion < 22 && document.solids.some(feature => feature.kind === 'sweep' && feature.steelBend !== undefined)) {
-    throw new RangeError('Authored steel bend inputs require document schema 22');
+    throw pcadVersionError('steelBend', document,
+      'Authored steel bend inputs require document schema 22');
   }
   if (document.schemaVersion < 22 && document.sketches.some(sketch =>
     sketchConstraints(sketch).some(constraint => constraint.kind === 'horizontalDistance'
       || constraint.kind === 'verticalDistance' || constraint.kind === 'midpoint' || constraint.kind === 'pointOnCurve'))) {
-    throw new RangeError('Extended sketch constraints require document schema22');
+    throw pcadVersionError('extendedConstraints', document,
+      'Extended sketch constraints require document schema22');
   }
   if (document.steelStockSource !== undefined && document.schemaVersion < 19) {
-    throw new RangeError('Purchased steel provenance requires document schema 19');
+    throw pcadVersionError('steelStock', document,
+      'Purchased steel provenance requires document schema 19');
   }
   const steelStockSource = document.steelStockSource === undefined ? undefined
     : readSteelStockSource(document.steelStockSource, 'document');
-  if (steelStockSource !== undefined && !steelStockSource.ok) throw new RangeError('Invalid steel stock provenance');
+  if (steelStockSource !== undefined && !steelStockSource.ok) {
+    throw new PcadWriteError({ code: 'internal', field: 'steelStockSource', location: steelStockSource.problem.path },
+      'Invalid steel stock provenance');
+  }
   if (document.schemaVersion < 18 && (document.patternSlotHighWater !== undefined
     || document.solids.some((feature) => feature.kind === 'pattern' && feature.placement.kind === 'points'))) {
-    throw new RangeError('Point-slot issuance requires document schema 18');
+    throw pcadVersionError('patternSlots', document,
+      'Point-slot issuance requires document schema 18');
   }
   if (document.mathGeometry !== undefined && document.schemaVersion < 17) {
-    throw new RangeError('図形を測る定義を保存するには保存形式の版17が必要です。');
+    throw pcadVersionError('mathGeometry', document,
+      '図形を測る定義を保存するには保存形式の版17が必要です。');
   }
   if (document.unresolvedMathProblems !== undefined && document.schemaVersion < 16) {
-    throw new RangeError('未解決の式を保存するには保存形式の版16が必要です。');
+    throw pcadVersionError('unresolvedMath', document,
+      '未解決の式を保存するには保存形式の版16が必要です。');
   }
   if (document.mathParameterSerial !== undefined && (!Number.isSafeInteger(document.mathParameterSerial) || document.mathParameterSerial < 0)) {
-    throw new RangeError('係数の参照番号が不正です。');
+    throw new PcadWriteError({ code: 'internal', field: 'mathParameterSerial' }, '係数の参照番号が不正です。');
   }
   if (document.beamAnalysisInputs !== undefined && document.schemaVersion < 20) {
-    throw new RangeError('Persisted beam inputs require document schema 20');
+    throw pcadVersionError('beamInputs', document,
+      'Persisted beam inputs require document schema 20');
   }
   // 円筒の側面の穴は版20で入った欄。版19以前(v1.0.2 は版17)と名乗るファイルに書くと、古い読み手が
   // 欄を捨てて高さ・角度を失うので書かない。読むときは断らない(移行した古い入力の既知の欄は保つ)。
   if (document.schemaVersion < 20
     && document.solids.some((feature) => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.cylindrical !== undefined)) {
-    throw new RangeError('円筒の側面の穴を保存するには保存形式の版20が必要です。');
+    throw pcadVersionError('cylindricalHole', document,
+      '円筒の側面の穴を保存するには保存形式の版20が必要です。');
   }
   // 新しい任意配置を、対応前の文書版を名乗って書き出さない。
-  if (document.schemaVersion < 22 && document.solids.some(feature =>
-    (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined)) {
-    throw new RangeError('面内X・Yの穴を保存するには保存形式の版22が必要です。');
-  }
+  if (document.schemaVersion < 22) assertPlanarHoleVersion(document);
   assertVersion24Fields(document);
   const normalizedIssuance = retainPatternSlotHighWater(document).patternSlotHighWater;
   const serialized: PartDocument = {
@@ -241,7 +265,11 @@ function serializePartDocument(document: PartDocument): PartDocument {
     configurations: serializeConfigurations(document.configurations),
     activeConfigurationId: document.activeConfigurationId,
   };
-  if (missingHistoryTarget(serialized, 'document') !== null) throw new RangeError('設計メモまたはフォルダの対象が見つからないため保存できません。');
+  const missingTarget = missingHistoryTarget(serialized, 'document');
+  if (missingTarget !== null) {
+    throw new PcadWriteError({ code: 'internal', field: 'historyTarget', location: missingTarget },
+      '設計メモまたはフォルダの対象が見つからないため保存できません。');
+  }
   return retainPatternSlotHighWater(serialized);
 }
 

@@ -367,8 +367,11 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
   });
 
   it('族の行は、行の表の行と同じ数・同じ鍵(溝幅ごと・種類ごとに分けただけ。外周の指定を持つ行の表を含む)', () => {
-    const tSlotKeys = [T_SLOT_CATALOG_FAMILIES.s6, T_SLOT_CATALOG_FAMILIES.s8, T_SLOT_CATALOG_FAMILIES.s10].flatMap((family) => family.rows.map((row) => row.key));
-    expect(tSlotKeys.sort()).toEqual([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS].map((record) => record.key).sort());
+    for (const [slot, family] of [[6, T_SLOT_CATALOG_FAMILIES.s6], [8, T_SLOT_CATALOG_FAMILIES.s8], [10, T_SLOT_CATALOG_FAMILIES.s10]] as const) {
+      const legacy = [...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS].filter((record) => record.slot === slot).map((record) => record.key);
+      const drawingKeys = slot === 6 ? ['s6-20x20-tb', 's6-20x40-tl', 's6-25x25'] : [];
+      expect(family.rows.map((row) => row.key)).toEqual([...legacy, ...drawingKeys]);
+    }
     const sectionKeys = Object.values(ALUMINUM_SECTION_FAMILIES).flatMap((family) => family.rows.map((row) => row.key));
     expect(sectionKeys.sort()).toEqual(ALUMINUM_SECTION_RECORDS.map((record) => record.key).sort());
   });

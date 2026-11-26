@@ -1,3 +1,4 @@
+import { pcadVersionError } from './writeDiagnostic.js';
 /** Refuse new saved identity fields under an older document schema. */
 import { isRecord, isUnknownArray } from './guards.js';
 
@@ -15,6 +16,8 @@ function savedCanvas(value: Record<string, unknown>): boolean {
 /** All part, assembly and drawing reference families share this structural saved-ref boundary. */
 export function assertReferenceOriginVersion(document: unknown, schemaVersion: number): void {
   if (schemaVersion >= 18) return;
+  const name = isRecord(document) && typeof document['name'] === 'string' ? document['name'] : null;
+  const header = { schemaVersion, name };
   const pending: unknown[] = [document];
   const seen = new WeakSet<object>();
   while (pending.length > 0) {
@@ -27,10 +30,12 @@ export function assertReferenceOriginVersion(document: unknown, schemaVersion: n
     }
     if (!isRecord(current)) continue;
     if (savedSubShapeRef(current) && Object.hasOwn(current, 'origin')) {
-      throw new RangeError('意味起点を保存するには保存形式の版18が必要です。');
+      throw pcadVersionError('referenceOrigin', header,
+      '意味起点を保存するには保存形式の版18が必要です。');
     }
     if (savedCanvas(current) && Object.hasOwn(current, 'rectification')) {
-      throw new RangeError('下絵の四隅補正を保存するには保存形式の版18が必要です。');
+      throw pcadVersionError('canvasRectification', header,
+      '下絵の四隅補正を保存するには保存形式の版18が必要です。');
     }
     for (const value of Object.values(current)) pending.push(value);
   }

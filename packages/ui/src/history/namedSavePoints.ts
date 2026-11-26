@@ -4,7 +4,7 @@ import {
 } from '@pointercad/io';
 import {
   SAVE_POINT_CHUNK_BYTES, SavePointError, archiveOf, cancelled, checkedUsage, refuse,
-  sha256, verifySavePointState,
+  loadSavePointCatalog, sha256, verifySavePointContents, verifySavePointState, withSavePointFailureDetail,
 } from './namedSavePointIntegrity.js';
 export {
   MAX_NAMED_SAVE_POINT_BYTES, SAVE_POINT_CHUNK_BYTES, SavePointError,
@@ -126,21 +126,39 @@ function findPoint(state: Awaited<ReturnType<typeof verifySavePointState>>, id: 
 
 export function createNamedSavePoints(storage: SavePointStorage) {
   async function createAndList(name: string, bytes: Uint8Array, kind: SavePointKind, signal?: AbortSignal): Promise<CreatedSavePointListing> {
-    const state = await verifySavePointState(storage, signal);
-    checkedUsage(state.points.length + 1, state.usedBytes, 0);
-    const captured = await capturePcadSavePoint(bytes, kind, signal);
+    let stage = 'create-catalog';
+    try {
+      const catalog = await loadSavePointCatalog(storage, signal);
+      const pointCount = catalog.points.length + 1;
+      checkedUsage(pointCount, catalog.usedBytes, 0);
+      stage = 'create-capture';
+      const captured = await capturePcadSavePoint(bytes, kind, signal);
+      stage = 'create-capacity';
+      return await commitCapturedPoint(name, captured, catalog, pointCount, signal, next => { stage = next; });
+    } catch (cause) {
+      if (cause instanceof SavePointError && cause.reason !== 'unavailable') throw cause;
+      throw withSavePointFailureDetail(stage, cause);
+    }
+  }
+
+  async function commitCapturedPoint(name: string, captured: CapturedSavePoint,
+    catalog: Awaited<ReturnType<typeof loadSavePointCatalog>>, pointCount: number,
+    signal: AbortSignal | undefined, markStage: (stage: string) => void): Promise<CreatedSavePointListing> {
     const id = createDocumentElementId('point:');
     const point: NamedSavePoint = { version: 1, id, originId: id, name: named(name),
-      createdAt: new Date().toISOString(), kind, sourceSha256: captured.sourceSha256,
+      createdAt: new Date().toISOString(), kind: captured.kind, sourceSha256: captured.sourceSha256,
       sourceByteLength: captured.sourceByteLength, entries: captured.entries.map(entry => ({ ...entry })) };
-    let extra = 0;
+    let total = catalog.usedBytes;
     const additions = new Map<string, Uint8Array>();
     for (const [hash, payload] of captured.blobs) {
-      const stored = state.blobs.get(hash);
+      const stored = catalog.blobs.get(hash);
       if (stored && stored.byteLength !== payload.byteLength) refuse('corrupt', '既存blobの長さが一致しません。');
-      if (!stored) { extra = checkedUsage(state.points.length + 1, extra, payload.byteLength); additions.set(hash, payload); }
+      if (!stored) { total = checkedUsage(pointCount, total, payload.byteLength); additions.set(hash, payload); }
     }
-    checkedUsage(state.points.length + 1, state.usedBytes, extra);
+    // A capacity refusal has no writes. Only an admissible creation needs the full existing-byte scan.
+    markStage('create-existing-bytes');
+    const state = await verifySavePointContents(storage, catalog, signal);
+    markStage('create-commit');
     cancelled(signal);
     await storage.commit(state.revision, { pointPut: point, blobPut: additions }, signal);
     // The revision-checked transaction commits exactly this fully verified snapshot.

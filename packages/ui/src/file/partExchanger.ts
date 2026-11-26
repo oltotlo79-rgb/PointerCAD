@@ -184,7 +184,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
     ...(deps.supportsIges === undefined ? {} : { supportsIges: deps.supportsIges }),
     ...(deps.inspectImportedBrep === undefined ? {} : { inspectImportedBrep: deps.inspectImportedBrep }),
     async exportShapes(request: ExchangeExportRequest): Promise<ExchangeExportOutcome> {
-      const reportDiagnostics = request.format === 'step' || request.format === 'stl';
+      const reportDiagnostics = request.format === 'step' || request.format === 'iges' || request.format === 'stl';
       let outcome: ShapeExportOutcome;
       try {
         const snapshot = deps.snapshot();

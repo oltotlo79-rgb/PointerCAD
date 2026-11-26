@@ -57,7 +57,11 @@ export function prepareJointDrive(
 export function jointDriveUpdate(
   values: ReadonlyMap<string, number>, prepared: PreparedJointDrive, driven: SolveDrivenJointOutcome,
 ): Partial<AssemblySlice> {
-  if (!driven.ok) return { assemblyMotionPlaying: false, assemblyMotionNotice: { kind: 'failed' } };
+  if (!driven.ok) {
+    const text = driven.outcome?.internalFailure;
+    return { assemblyMotionPlaying: false, assemblyMotionNotice: text === undefined ? { kind: 'failed' }
+      : { kind: 'internal', text } };
+  }
   const displayed = driven.atLimit ? driven.target : driven.actual;
   return { assemblyMotionTime: 0, assemblyMotionPlaying: false,
     assemblyMotionPlacements: driven.placements, assemblyMotionSourceDocument: prepared.document,

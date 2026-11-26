@@ -1,3 +1,4 @@
+import type { FailureText } from '../../failureText.js';
 import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression } from '@pointercad/expression';
@@ -9,7 +10,7 @@ import {
   type RigidWorkBudget, type RigidWorkPoint,
 } from '../constraints/solveRigid.js';
 import type { MateVariableSet } from '../constraints/mateVariables.js';
-import { driveJointRows, jointValue, type PreparedJointDrive } from './driveJoint.js';
+import { driveJointRows, jointValue, type JointDriveFailure, type PreparedJointDrive } from './driveJoint.js';
 import type { JointFramePair } from './jointFrames.js';
 import { camFollowerRows, type PreparedCamFollower } from './camFollower.js';
 import { prepareJointResiduals, type JointResidualInput, type JointResidualSkipReason,
@@ -219,6 +220,13 @@ export function advanceMechanismReferences(input: Omit<JointResidualInput, 'join
   return { ok: true, references };
 }
 
+/** Retract follows a successful trial at the same base and increments. A refusal here is an invariant failure. */
+class MechanismAcceptedStepError extends Error {
+  constructor(diagnostic: MechanismCouplingFailure | (JointDriveFailure & { readonly jointId: string })) {
+    super('Could not advance the references of an accepted mechanism step', { cause: diagnostic });
+  }
+}
+
 export interface MechanismGroupSolve {
   readonly result: RigidSolveOutcome<ReadonlyMap<string, RigidPlacement>>;
   readonly references: ReadonlyMap<string, number>;
@@ -228,6 +236,18 @@ export interface MechanismGroupSolve {
 /** Existing rigid solver with permanent coupled rows and optional existing driver, run in cooperative rigid steps.
  * All branch references belong to accepted state, never evaluation closures. */
 export function* solveMechanismGroupSteps(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
+  variableSet: MateVariableSet, prepared: PreparedMechanismCouplings, drive: PreparedJointDrive | undefined,
+  budget: RigidWorkBudget): Generator<RigidWorkPoint, MechanismGroupSolve | { readonly internalFailure: FailureText }, void> {
+  try {
+    return yield* solveAcceptedMechanismSteps(input, variableSet, prepared, drive, budget);
+  } catch (error) {
+    if (!(error instanceof MechanismAcceptedStepError)) throw error;
+    console.error('PointerCAD mechanism reference advance', error);
+    return { internalFailure: { key: 'assembly.error.internal', parameters: {} } };
+  }
+}
+
+function* solveAcceptedMechanismSteps(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
   variableSet: MateVariableSet, prepared: PreparedMechanismCouplings, drive: PreparedJointDrive | undefined,
   budget: RigidWorkBudget): Generator<RigidWorkPoint, MechanismGroupSolve, void> {
   const initialReferences = new Map(prepared.references);
@@ -249,12 +269,12 @@ export function* solveMechanismGroupSteps(input: RigidSolveInput<ReadonlyMap<str
     retract: (state, increments) => {
       const common = { placements: state.placements, increments, variableSet, prepared, references: state.references };
       const next = advanceMechanismReferences(common);
-      if (!next.ok) throw new Error(next.reason);
+      if (!next.ok) throw new MechanismAcceptedStepError(next);
       const references = new Map(next.references);
       if (drive?.coordinate === 'angle') {
         const current = jointValue({ ...common, joint: drive.joint, coordinate: drive.coordinate,
           referenceAngle: state.references.get(drive.joint.jointId) });
-        if (!current.ok) throw new Error(current.reason);
+        if (!current.ok) throw new MechanismAcceptedStepError({ ...current, jointId: drive.joint.jointId });
         references.set(drive.joint.jointId, current.value);
       }
       return { placements: input.retract(state.placements, increments), references };

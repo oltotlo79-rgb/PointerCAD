@@ -1,5 +1,6 @@
 import type { OpenCascadeInstance, TDF_Label, TopoDS_Shape, TopTools_IndexedMapOfShape } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations } from './allocations.js';
+import { ShapeImportError } from './exchangeShared.js';
 import { hasIgesBindings, IGES_UNAVAILABLE } from './igesBindings.js';
 import { readStepLabelName, STEP_NO_SHAPE_MESSAGE, STEP_READ_FAILED_MESSAGE, type StepFileLengthUnit } from './readStep.js';
 import { shapeBodyKind } from './shapeBodyKind.js';
@@ -78,7 +79,7 @@ function readBody(
 
 function fileUnit(flag: number, value: number, scale: number): StepFileLengthUnit {
   if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(scale) || scale <= 0) {
-    throw new Error(STEP_READ_FAILED_MESSAGE);
+    throw new ShapeImportError({ code: 'unreadable' }, STEP_READ_FAILED_MESSAGE);
   }
   // OCCT transfers the geometry in millimeters. These fields describe the source only.
   if (flag === 1) return 'inch';
@@ -87,8 +88,8 @@ function fileUnit(flag: number, value: number, scale: number): StepFileLengthUni
 }
 
 export function readIges(oc: OpenCascadeInstance, bytes: Uint8Array, withColors = true): IgesReadResult {
-  if (!hasIgesBindings(oc)) throw new Error(IGES_UNAVAILABLE);
-  if (bytes.byteLength === 0) throw new Error(STEP_NO_SHAPE_MESSAGE);
+  if (!hasIgesBindings(oc)) throw new ShapeImportError({ code: 'igesUnavailable' }, IGES_UNAVAILABLE);
+  if (bytes.byteLength === 0) throw new ShapeImportError({ code: 'noShape' }, STEP_NO_SHAPE_MESSAGE);
   const { keep, release } = createAllocations();
   try {
     return withVirtualFileInput(oc, 'import.iges', bytes, path => {
@@ -99,7 +100,9 @@ export function readIges(oc: OpenCascadeInstance, bytes: Uint8Array, withColors 
       reader.SetNameMode(true);
       reader.SetColorMode(withColors);
       reader.SetLayerMode(false);
-      if (!reader.Perform_1(name, tools.handle, progress)) throw new Error(STEP_READ_FAILED_MESSAGE);
+      if (!reader.Perform_1(name, tools.handle, progress)) {
+        throw new ShapeImportError({ code: 'unreadable' }, STEP_READ_FAILED_MESSAGE);
+      }
 
       const unit = fileUnit(reader.FileUnitFlag(), reader.FileUnitValue(), reader.FileScale());
       const labels = keep(new oc.TDF_LabelSequence_1());
@@ -111,11 +114,13 @@ export function readIges(oc: OpenCascadeInstance, bytes: Uint8Array, withColors 
         const body = readBody(oc, tools, label, shape, withColors);
         if (body !== null) bodies.push(body);
       }
-      if (bodies.length === 0) throw new Error(STEP_NO_SHAPE_MESSAGE);
+      if (bodies.length === 0) throw new ShapeImportError({ code: 'noShape' }, STEP_NO_SHAPE_MESSAGE);
       return { bodies, unit, unitNames: unit === 'other' ? [] : [unit], delete: release };
     });
   } catch (error) {
-    release();
+    try { release(); } catch (cleanup) {
+      throw new AggregateError([error, cleanup], 'IGES read and native cleanup failed', { cause: cleanup });
+    }
     throw error;
   }
 }

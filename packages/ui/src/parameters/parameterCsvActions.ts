@@ -1,5 +1,6 @@
 import { checkVariableName, decodeMathExpressionStorage,
   type VariableNameIssue } from '@pointercad/expression';
+import { MathInputProblem } from '@pointercad/expression/math/contracts';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import {
   applyParameters,
@@ -22,6 +23,7 @@ import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
 import { mathGeometryInputsFor } from '../math/mathGeometryResults.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { parameterOperationFailure } from './parameterFailureMessage.js';
 import { parameterUsageSites } from './parameterSearch.js';
 
 type ParameterCsvInputRecord = ParameterCsvRecord;
@@ -90,7 +92,10 @@ export async function prepareParameterCsv(
     }
     if (record.mathDefinition !== undefined) {
       try { decodeMathExpressionStorage(record.mathDefinition, record.expression); }
-      catch { issues.push(issue(record.recordNumber, 'mathDefinition', t('parameter.csv.invalidMathDefinition'))); }
+      catch (cause) {
+        if (!(cause instanceof MathInputProblem)) throw cause;
+        issues.push(issue(record.recordNumber, 'mathDefinition', t('parameter.csv.invalidMathDefinition')));
+      }
     }
     if (record.mathId !== undefined) {
       if (!isParameterMathId(record.mathId) || record.mathId.startsWith(MATH_GEOMETRY_COEFFICIENT_PREFIX)) {
@@ -104,6 +109,9 @@ export async function prepareParameterCsv(
         issues.push(issue(record.recordNumber, 'mathId', t('parameter.csv.mathIdMismatch')));
       }
       const numbered = /^coefficient:([1-9][0-9]*)$/u.exec(record.mathId);
+      if (numbered !== null && !Number.isSafeInteger(Number(numbered[1]))) {
+        issues.push(issue(record.recordNumber, 'mathId', t('parameter.identity.serialRange')));
+      }
       if (previous === undefined && !currentIds.has(record.mathId) && numbered !== null
         && document.mathParameterSerial !== undefined
         && Number(numbered[1]) <= document.mathParameterSerial) {
@@ -151,7 +159,7 @@ export async function prepareParameterCsv(
     }
     candidate = synchronizeConfigurations(candidate);
   }
-  catch (caught) { return { ok: false, issues: [issue(0, 'mathId', caught instanceof Error ? caught.message : t('parameter.csv.invalidMathId'))] }; }
+  catch (caught) { return { ok: false, issues: [issue(0, 'mathId', parameterOperationFailure(caught))] }; }
 
   const order = parameterEvaluationOrder(candidate.parameters);
   for (const name of order.circular) {
@@ -228,8 +236,9 @@ export async function prepareParameterCsvForStore(records: readonly ParameterCsv
       identity: { documentId: document.id, documentVersion: state.documentVersion }, isCurrent,
     });
     return isCurrent() ? preview : { ok: false, issues: [issue(0, '*', t('parameter.csv.stale'))] };
-  } catch {
-    return { ok: false, issues: [issue(0, '*', t('parameter.csv.mathCheckFailed'))] };
+  } catch (cause) {
+    return { ok: false, issues: [issue(0, '*', isCurrent()
+      ? parameterOperationFailure(cause) : t('parameter.csv.stale'))] };
   } finally {
     unsubscribe();
     options.signal?.removeEventListener('abort', abort);

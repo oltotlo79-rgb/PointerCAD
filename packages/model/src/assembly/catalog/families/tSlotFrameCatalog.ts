@@ -16,6 +16,7 @@ import {
 import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow, CatalogSimplifiedKind } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { T_SLOT_DIMENSIONED_RECORDS } from './frameDimensionedRows.js';
 import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 
 /** 行の表の 1 行(道具が生成する。数は資料の印字のまま。Ix・Iy は cm⁴、Zx・Zy は cm³)。 */
@@ -41,6 +42,8 @@ export interface TSlotCatalogRecord {
   readonly slotInnerWidth: number;
   readonly slotDepth: number;
   readonly centerHole: number;
+  /** 呼び径の輪郭が内空につながる2穴。間隔は slotPitch。輪郭の寸法がそろうまでは押し出しに含めない。 */
+  readonly connectedAxialHoles?: true;
   readonly cornerRadius: number;
   readonly cornerHoleDiameter: number;
   readonly cornerHoleInset: number;
@@ -113,9 +116,21 @@ function outlineDimensions(outline: NonNullable<TSlotCatalogRecord['outline']>):
   });
 }
 
+/** 図示の穴と、簡略断面で円として切り抜ける穴を区別する。 */
+function gridHoleDimensions(record: TSlotCatalogRecord): Readonly<Record<string, number>> {
+  const { centerHole, cornerRadius, cornerHoleDiameter, cornerHoleInset } = record;
+  const corners = { cornerRadius, cornerHoleDiameter, cornerHoleInset };
+  if (record.connectedAxialHoles !== true) return { centerHole, ...corners };
+  if (record.outline !== undefined || record.slotsAcross !== 1 || record.height - record.width !== record.slotPitch
+    || !(record.slotPitch > 0 && centerHole > 0)) throw new Error(`軸穴の並びが断面に合わない: ${record.key}`);
+  return { ...corners, connectedAxialHoles: 1, holeCount: 2, holeDiameter: centerHole, holePitch: record.slotPitch };
+}
+
 function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
   const faces = Object.fromEntries(FACE_KEYS.map(([letter, key]): readonly [string, number] => [key, record.faces.includes(letter) ? 1 : 0]));
   const withheld = record.ixCm4 === null;
+  const withheldNote = record.connectedAxialHoles === true ? '断面性能値と図面の軸の対応が確定していない'
+    : '断面の値は資料の表と頁の箱で向きが食い違うので持たない';
   return {
     key: record.key,
     size: record.size,
@@ -127,8 +142,7 @@ function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
       slotsAcross: record.slotsAcross, ...faces,
       slotOpening: record.slotOpening, shoulder: record.shoulder, slotInnerWidth: record.slotInnerWidth, slotDepth: record.slotDepth,
       ...(record.outline === undefined
-        ? { centerHole: record.centerHole, cornerRadius: record.cornerRadius, cornerHoleDiameter: record.cornerHoleDiameter,
-          cornerHoleInset: record.cornerHoleInset }
+        ? gridHoleDimensions(record)
         : outlineDimensions(record.outline)),
       unitMassKgPerM: record.unitMassKgPerM,
       // outlineSection: 外周の指定を持つ(外周が長方形でない)行の印。端のキャップの候補に、同じ外形の四角のキャップを出さないのに使う。
@@ -139,7 +153,7 @@ function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
     verified: true,
     ...(record.simplified === undefined ? {} : { simplified: record.simplified }),
     ...(record.simplifiedKinds === undefined ? {} : { simplifiedKinds: record.simplifiedKinds }),
-    note: withheld ? '内側の形は簡略。質量は単位質量の値。断面の値は資料の表と頁の箱で向きが食い違うので持たない'
+    note: withheld ? `内側の形は簡略。質量は単位質量の値。${withheldNote}`
       : record.massSource === 'box' && record.tablePage !== null
         ? '内側の形は簡略。質量は単位質量の値(頁の箱の値。断面性能の表の単位質量は断面積と合わないので使わない)' : '内側の形は簡略。質量は単位質量の値',
   };
@@ -151,7 +165,8 @@ function dimensionsOf(row: CatalogItemRow): TSlotDimensions {
   return { width: dims.width ?? NaN, height: dims.height ?? NaN, slotPitch: dims.slotPitch ?? NaN, slotsAcross: dims.slotsAcross ?? NaN,
     openFaces: { top: open('slotTop'), bottom: open('slotBottom'), left: open('slotLeft'), right: open('slotRight') },
     slotOpening: dims.slotOpening ?? NaN, shoulder: dims.shoulder ?? NaN, slotInnerWidth: dims.slotInnerWidth ?? NaN,
-    slotDepth: dims.slotDepth ?? NaN, centerHole: dims.centerHole ?? NaN, cornerRadius: dims.cornerRadius ?? NaN,
+    slotDepth: dims.slotDepth ?? NaN, centerHole: dims.connectedAxialHoles === 1 ? 0 : dims.centerHole ?? NaN,
+    cornerRadius: dims.cornerRadius ?? NaN,
     cornerHoleDiameter: dims.cornerHoleDiameter ?? NaN, cornerHoleInset: dims.cornerHoleInset ?? NaN };
 }
 
@@ -235,4 +250,4 @@ function tSlotCatalogFamilies(records: readonly TSlotCatalogRecord[]): Readonly<
   return { s6, s8, s10 };
 }
 
-export const T_SLOT_CATALOG_FAMILIES = tSlotCatalogFamilies([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS]);
+export const T_SLOT_CATALOG_FAMILIES = tSlotCatalogFamilies([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS, ...T_SLOT_DIMENSIONED_RECORDS]);

@@ -1,6 +1,7 @@
 import { validPlacement } from '../fastening/frames.js';
 import { jointOccurrencePath, type JointOccurrenceFailureCode, type JointOccurrenceInputs, type JointOccurrencePath,
   type JointOccurrenceView } from '../jointOccurrence.js';
+import type { FailureText } from '../../failureText.js';
 import { resolveMateTarget, type ResolveMateTargetOptions } from '../constraints/mateTargets.js';
 import type { MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { solveDrivenJointSteps, type SolveDrivenJointOutcome } from '../constraints/solveMates.js';
@@ -44,7 +45,8 @@ export type SubAssemblyJointDriveOutcome = {
   /** World placements of the child's components for this occurrence only. */
   readonly placements: ReadonlyMap<string, RigidPlacement>;
   readonly driven: Extract<SolveDrivenJointOutcome, { readonly ok: true }>;
-} | { readonly ok: false; readonly code: SubAssemblyJointDriveFailureCode; readonly index: number };
+} | { readonly ok: false; readonly code: SubAssemblyJointDriveFailureCode; readonly index: number;
+  readonly internalFailure?: FailureText };
 
 interface SubAssemblyOccurrence {
   readonly path: JointOccurrencePath;
@@ -178,6 +180,10 @@ export function* solveSubAssemblyJointDriveSteps(input: SubAssemblyJointDriveInp
   const driven = yield* work.forward(solveDrivenJointSteps(document, constraints.targets, initial, input.request,
     { jointFrames: constraints.jointFrames }, budget));
   yield* work.boundary();
-  if (!driven.ok) return failure('solve-failed', last);
+  if (!driven.ok) {
+    const internalFailure = driven.outcome?.internalFailure;
+    return { ok: false, code: 'solve-failed', index: last,
+      ...(internalFailure === undefined ? {} : { internalFailure }) };
+  }
   return { ok: true, path, occurrenceKey: JSON.stringify(path), childDocument: document, placements: driven.placements, driven };
 }

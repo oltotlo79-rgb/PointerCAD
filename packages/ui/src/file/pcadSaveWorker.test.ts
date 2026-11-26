@@ -1,3 +1,4 @@
+import { encodeOwnedSaveInput, encodeOwnedSaveInputParts } from './pcadSaveWorkerEncoding.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyPartDocument, emptyEmbeddedPartAttachments } from '@pointercad/model';
 import { concatZipParts, encodeSaveDocument, encodeSaveDocumentParts, readPcadFile, writeThreeMf,
@@ -5,7 +6,7 @@ import { concatZipParts, encodeSaveDocument, encodeSaveDocumentParts, readPcadFi
 import { createPcadSaveEncoder, createPcadSavePointClient, createThreeMfExportEncoder, encodeSaveParts,
   type PcadSaveWorkerPort } from './pcadSaveWorker.js';
 import type { NamedSavePoint } from '../history/namedSavePoints.js';
-import type { PcadSaveRequest, PcadThreeMfRequest, PcadWorkerRequest } from './pcadSaveProtocol.js';
+import { pcadSaveFailureReply, type PcadSaveRequest, type PcadThreeMfRequest, type PcadWorkerRequest } from './pcadSaveProtocol.js';
 
 function fixture() {
   let request: PcadSaveRequest | null = null;
@@ -160,6 +161,24 @@ describe('3MF 短命Workerと原meshの所有', () => {
 });
 
 describe('保存Workerの寿命と応答の採用', () => {
+  it.each([false, true])('実IOの版の拒否を構造化複製で返す（部分の返信 %s）', async replyAsParts => {
+    const worker = fixture();
+    const oldInput = { ...input, document: { ...input.document, schemaVersion: 17, patternSlotHighWater: {} } };
+    const pending = replyAsParts ? encodeSaveParts(worker.encode, oldInput) : worker.encode(oldInput);
+    const rejected = expect(pending).rejects.toMatchObject({
+      name: 'PcadSaveWorkerError', reason: 'rejected', internal: false, message: 'Point-slot issuance requires document schema 18',
+      cause: { diagnostic: { code: 'requiresVersion', field: 'patternSlots', requiredVersion: 18,
+        actualVersion: 17, documentName: '実IO' } },
+    });
+    await worker.ready;
+    const request = worker.captured();
+    const encode = replyAsParts ? encodeOwnedSaveInputParts : encodeOwnedSaveInput;
+    await encode(request.input, () => {}).catch((error: unknown) => {
+      worker.reply(structuredClone(pcadSaveFailureReply(request.id, error)));
+    });
+    await rejected;
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
   it('実IOを明示注入した相手へ専用コピーを転送し、誤札・重複・終了後の返信を採用しない', async () => {
     const original = Uint8Array.of(3, 4, 5), stages: string[] = [], worker = fixture();
     const pending = worker.encode({ ...input, options: { ...input.options,

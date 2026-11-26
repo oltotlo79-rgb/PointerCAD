@@ -37,6 +37,7 @@ import { hexBoltMainEvidence, hexBoltMainThreadLength } from './hexBoltEvidence.
 import {
   activeSketch, appendBoolean, appendCylinder, appendExternalThread, appendExtrude, appendRing, buildHexNutBody, centerPoint,
   origin, planeFace, regularPolygonProfile, withName,
+  StandardPartGeometryError,
 } from './partPrimitives.js';
 import { findChannel, findEqualAngle, findHBeam } from './sections.js';
 import {
@@ -139,7 +140,7 @@ function appendThroughHole(
   diameter: number,
   topZ: number,
 ): { readonly document: PartDocument; readonly feature: HoleFeature } {
-  if (target.shape.kind !== 'cylinder') throw new Error('穴の対象が円柱ではありません。');
+  if (target.shape.kind !== 'cylinder') throw new StandardPartGeometryError('穴の対象が円柱ではありません。');
   const feature: HoleFeature = {
     id: nextSolidId(document, 'hole'),
     name: nextSolidName(document, 'hole'),
@@ -419,7 +420,7 @@ function buildSteelStock(row: SteelProduct, options: Readonly<Record<string, str
   let document: PartDocument | null = null;
   if (revision === STEEL_GENERATOR_REVISION && row.geometry === 'profileSection') {
     const section = steelCatalogProfile(row.catalog, row.size);
-    if (section === undefined) return null;
+    if (section === undefined) throw new StandardPartGeometryError(`Missing steel profile: ${row.key}`);
     return withName(buildProfileSection(section, length), `${row.materialGrade} ${row.size} 長さ${length.source}`);
   }
   const d = row.dimensions;
@@ -428,18 +429,24 @@ function buildSteelStock(row: SteelProduct, options: Readonly<Record<string, str
     case 'channel': document = buildChannel(row.size, options); break;
     case 'hBeam': document = buildHBeam(row.size, options); break;
     case 'flatBar': {
-      if (d?.width === undefined || d.thickness === undefined) return null;
+      if (d?.width === undefined || d.thickness === undefined) {
+        throw new StandardPartGeometryError(`Missing steel dimensions: ${row.key}`);
+      }
       document = buildSection(row.size, [[0, 0], [d.width, 0],
         [d.width, d.thickness], [0, d.thickness]], length);
       break;
     }
     case 'roundBar': {
-      if (d?.diameter === undefined) return null;
+      if (d?.diameter === undefined) {
+        throw new StandardPartGeometryError(`Missing steel dimensions: ${row.key}`);
+      }
       document = appendCylinder(createEmptyPartDocument(), d.diameter / 2, length).document;
       break;
     }
     case 'steelPipe': {
-      if (d?.outsideDiameter === undefined || d.wallThickness === undefined) return null;
+      if (d?.outsideDiameter === undefined || d.wallThickness === undefined) {
+        throw new StandardPartGeometryError(`Missing steel dimensions: ${row.key}`);
+      }
       const outside = appendCylinder(createEmptyPartDocument(), d.outsideDiameter / 2, length);
       const inside = appendCylinder(outside.document,
         d.outsideDiameter / 2 - d.wallThickness, length);
@@ -522,7 +529,19 @@ export function buildStandardPart(
 }
 
 /** 保存された版を必ず確かめてから組む。未知の旧版を現在表で代用しない。 */
-export function buildStandardPartFromSource(source: StandardPartSource): PartDocument | null {
+export function buildStandardPartFromSource(source: StandardPartSource,
+  reportInternalFailure?: (text: FailureText) => void): PartDocument | null {
+  try {
+    return generateStandardPartFromSource(source);
+  } catch (error) {
+    if (!(error instanceof StandardPartGeometryError) || reportInternalFailure === undefined) throw error;
+    console.error('PointerCAD standard part geometry', source.catalog, source.size, error);
+    reportInternalFailure({ key: 'assembly.error.internal', parameters: {} });
+    return null;
+  }
+}
+
+function generateStandardPartFromSource(source: StandardPartSource): PartDocument | null {
   // 溶接のビードは保存した自分の版を確かめる(知らない版からは何も組まない)。
   if (source.catalog === 'filletWeld') return source.generatorRevision === CIRCULAR_FILLET_WELD_GENERATOR_REVISION
     ? buildCircularFilletWeldPartFromSource(source) : buildFilletWeldPart(source);
@@ -550,7 +569,7 @@ type SteelPartRejectionCode = SteelGradeRejectionCode | 'size-not-in-catalog'
   | 'unsupported-catalog-revision' | 'unsupported-generator-revision' | 'invalid-steel-length'
   | 'generation-unavailable';
 /** 鋼材の理由と族の部品の理由(`catalog/rejection.ts`)。どちらの理由かは `text.key` の頭で分かる。 */
-export type StandardPartRejectionCode = SteelPartRejectionCode | CatalogItemRejectionCode;
+export type StandardPartRejectionCode = SteelPartRejectionCode | CatalogItemRejectionCode | 'internal';
 
 /** Diagnostic data is derived, never added to the six saved steel options or the part key. */
 interface StandardPartRejection {
@@ -662,10 +681,12 @@ export function standardPartRejection(source: StandardPartSource): StandardPartR
 export function buildStandardPartFromSourceWithReason(source: StandardPartSource): StandardPartBuildResult {
   const rejection = standardPartRejection(source);
   if (rejection !== null) return { document: null, rejection };
-  const document = buildStandardPartFromSource(source);
-  return document === null ? { document: null,
-    rejection: steelRejection('generation-unavailable') }
-    : { document, rejection: null };
+  let internalFailure: FailureText | undefined;
+  const document = buildStandardPartFromSource(source, (text) => { internalFailure = text; });
+  if (document !== null) return { document, rejection: null };
+  return { document: null, rejection: internalFailure === undefined
+    ? steelRejection('generation-unavailable')
+    : { code: 'internal', text: internalFailure, fields: [], basis: [] } };
 }
 
 /** 新規配置で版の書き忘れを起こさない唯一の生成口。 */

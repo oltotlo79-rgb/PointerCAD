@@ -9,6 +9,7 @@ import { PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
 import { useEffect, useId, useState } from 'react';
 
 import { t } from '../i18n/t.js';
+import { CatalogLoadStatus } from './CatalogLoadStatus.js';
 import { loadRegisteredCatalogFamilies, type CatalogLoadState } from './catalogFamilyLoading.js';
 import { pickerSearchEntries, searchPickerEntries, type PickerJumpTarget, type RecentPart } from './catalogSearch.js';
 import { useRecentParts } from './recentStandardParts.js';
@@ -21,9 +22,7 @@ interface PickerSearchProps {
 
 /** 読み込みの状態の 1 行(読み込み中と失敗だけ。済みは結果そのものが示す)。 */
 function loadMessage(state: CatalogLoadState): React.JSX.Element | null {
-  if (state !== 'loading' && state !== 'failed') return null;
-  return <p className="pcad-popover__hint" role={state === 'failed' ? 'alert' : 'status'}>
-    {t(state === 'failed' ? 'catalog.loading.failed' : 'catalog.loading.inProgress')}</p>;
+  return state === 'ready' ? null : <CatalogLoadStatus state={state} />;
 }
 
 /** 最近使った物の釦(検索の欄が空の時だけ。押すとその物へ選び直し、長さなどの指定も前の値に戻す。K-07b)。 */

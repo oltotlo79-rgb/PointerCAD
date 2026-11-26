@@ -23,7 +23,7 @@ export function applyScriptSolidCommand(context: ScriptCommandContext, command: 
   const { document } = context;
   if (command.kind === 'solid.extrude') {
     const face = scriptReference(context, command.fields.face, 'face');
-    if (face.sketchId === null) throw new ScriptCommandError('押し出すスケッチの面がありません。');
+    if (face.sketchId === null) throw new ScriptCommandError('missingExtrusionFace');
     return change(context, { id: nextSolidId(document, 'extrude'), name: nextSolidName(document, 'extrude'), kind: 'extrude',
       suppressed: false, profile: { sketchId: face.sketchId, faceFeatureId: face.featureId },
       distance: readScriptLength(context, command.fields.distance), reversed: false, symmetric: false });

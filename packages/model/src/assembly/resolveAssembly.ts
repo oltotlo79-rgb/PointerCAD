@@ -51,6 +51,7 @@ export type StandardPartSource = Extract<ComponentSource, { readonly kind: 'stan
 export type AssemblyErrorCode =
   /** 置いた部品の中身(部品文書・規格部品の寸法)が引けない。 */
   | 'missingPart'
+  | 'internal'
   /** 置いた位置の式が数にならない。 */
   | 'invalidValue'
   /** サブアセンブリが自分自身へ戻る。 */
@@ -109,6 +110,8 @@ export interface ResolvedSubAssembly {
 export interface ResolveAssemblyOptions {
   /** 再計算済みの部品。指定された鍵は解決し直さず、その結果を共有する。 */
   readonly resolvedParts?: ReadonlyMap<string, ResolvedPart>;
+  /** Issues from the standard parts already generated in this calculation, keyed by the same part key. */
+  readonly standardPartIssues?: ReadonlyMap<string, FailureText>;
   /**
    * 抱き込んだ部品の一式(`partLibrary.ts`)。**アセンブリ文書と対で持ち回るもの**で、
    * 省くと部品を 1 つも引けない(置いた部品はすべて「部品が見つかりません。」になる)。
@@ -264,10 +267,12 @@ function rigidPlacementOf(
 function partDocumentOf(
   component: AssemblyComponent,
   options: ResolveAssemblyOptions,
-): { readonly document: PartDocument } | { readonly text: FailureText } {
+): { readonly document: PartDocument } | { readonly text: FailureText; readonly internal?: true } {
   const source = component.source;
   if (source.kind === 'standardPart') {
     const rejection = standardPartRejection(source);
+    const generationIssue = options.standardPartIssues?.get(partKeyOf(source));
+    if (generationIssue !== undefined && rejection === null) return { text: generationIssue, internal: true };
     if (rejection !== null) return { text: rejection.text };
     const built = options.standardPart?.(source) ?? null;
     return built === null ? { text: MISSING_STANDARD_SIZE_TEXT } : { document: built };
@@ -380,7 +385,7 @@ export function resolveAssembly(
     const found = partDocumentOf(component, options);
     if ('text' in found) {
       // 同じ部品を指すインスタンスが複数あれば**その数だけ**積む(木の行ごとに理由を出す)。
-      errors.push({ componentId: component.id, code: 'missingPart', text: found.text });
+      errors.push({ componentId: component.id, code: found.internal === true ? 'internal' : 'missingPart', text: found.text });
       continue;
     }
     parts.set(key, resolvePart(applyParameters(found.document).document));

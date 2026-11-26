@@ -1,5 +1,5 @@
 import type { SaveDocumentInput, SaveEncodingStage } from '@pointercad/io';
-import { IO_LIMITS, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
+import { IO_LIMITS, isPcadWriteDiagnostic, PcadWriteError, type PcadWriteDiagnostic, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
   type ThreeMfDataErrorCode, type ThreeMfExportLimitError, type ThreeMfMeshInput } from '@pointercad/io';
 import { isNamedSavePoint, type CreatedSavePointListing, type NamedSavePoint, type SavePointErrorCode, type SavePointKind } from '../history/namedSavePoints.js';
 import { isSaveResultIssue, type SaveResultIssueReport } from './saveResultIssue.js';
@@ -19,7 +19,14 @@ export type PcadSaveReply =
   | { readonly id: string; readonly kind: 'progress'; readonly stage: SaveEncodingStage }
   | ({ readonly id: string; readonly kind: 'success'; readonly bytes: Uint8Array } & SaveResultIssues)
   | ({ readonly id: string; readonly kind: 'success'; readonly parts: readonly Uint8Array[] } & SaveResultIssues)
-  | { readonly id: string; readonly kind: 'failure'; readonly message: string };
+  | { readonly id: string; readonly kind: 'failure'; readonly message: string; readonly diagnostic?: PcadWriteDiagnostic };
+
+export function pcadSaveFailureReply(id: string, error: unknown): Extract<PcadSaveReply, { kind: 'failure' }> {
+  const message = error instanceof Error ? error.message : String(error);
+  return error instanceof PcadWriteError
+    ? { id, kind: 'failure', message, diagnostic: error.diagnostic }
+    : { id, kind: 'failure', message };
+}
 
 /** 成功の中身は 1 つの並びか、空でない部分の並びのどちらか一方だけ。 */
 function isSaveOutput(value: object): boolean {
@@ -42,7 +49,8 @@ export function isPcadSaveReply(value: unknown): value is PcadSaveReply {
     || !('kind' in value)) return false;
   if (value.kind === 'progress') return 'stage' in value && (value.stage === 'preparing' || value.stage === 'compressing');
   if (value.kind === 'success') return isSaveOutput(value) && hasSaveResultIssues(value);
-  return value.kind === 'failure' && 'message' in value && typeof value.message === 'string';
+  return value.kind === 'failure' && 'message' in value && typeof value.message === 'string'
+    && (!('diagnostic' in value) || isPcadWriteDiagnostic(value.diagnostic));
 }
 
 /** 通常保存と同じ短命Workerへ渡す保存点操作。文書本体の参照は渡さない。 */

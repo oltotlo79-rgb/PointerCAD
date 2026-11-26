@@ -121,7 +121,8 @@ it('扉の部品・折戸のスライダ・通し穴付きベース板を開き�
       'flat-hinge-plate-nut-15x3x63-sus', 'flat-hinge-plate-nut-15x5x63-al', 'flag-hinge-plate-nut-15x5x35-al',
       'flag-hinge-plate-nut-15x5x40-al'],
     'slider-box': ['folding-door-slider-23x13x57.5-resin-sus', 'folding-door-slider-20x13x61.5-resin-sus'],
-    't-slot-foot-base': ['adjuster-165x165x12-h10-d9-steel', 'adjuster-165x165x12-h10-d9-stainless'],
+    't-slot-foot-base': ['adjuster-165x165x12-h10-d9-steel', 'adjuster-165x165x12-h10-d9-stainless', 'base-75x75x10-boss25-aluminum'],
+    't-slot-frame-cap': ['s10-40x40-4.8g', 's10-80x40-8.8g', 's10-45x45-7.2g', 's10-90x45-12g'],
   };
   await PRODUCT_CATALOG_REGISTRY.ensure(Object.keys(examples));
   const sources = Object.entries(examples).flatMap(([id, keys]) => keys.map((key) => {

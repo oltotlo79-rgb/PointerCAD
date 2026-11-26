@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -32,6 +33,8 @@ interface NetworkAsset { readonly url: string; readonly status: number; readonly
 interface Observation {
   readonly phases: Phase[]; readonly workers: WorkerLife[]; readonly network: NetworkAsset[];
   readonly errors: string[]; readonly pending: Promise<void>[];
+  initialWebNavigation?: { readonly status: number; readonly fromServiceWorker: boolean };
+  startupTiming?: Awaited<ReturnType<typeof readStartupEnvironment>>['timing'];
 }
 export interface OcctPair {
   readonly index: number; readonly offline: boolean; readonly profile: string;
@@ -401,11 +404,29 @@ function assertOcctNotStarted(observation: Observation): void {
   expect(observation.errors).toEqual([]);
 }
 
+function readStartupEnvironment(page: Page) {
+  return page.evaluate(() => {
+    const entry = window.performance.getEntriesByType('navigation')[0];
+    const navigation = typeof window.PerformanceNavigationTiming !== 'undefined' && entry instanceof window.PerformanceNavigationTiming
+      ? { type: entry.type, startTime: entry.startTime, workerStart: entry.workerStart,
+        fetchStart: entry.fetchStart, requestStart: entry.requestStart, responseStart: entry.responseStart,
+        responseEnd: entry.responseEnd, domInteractive: entry.domInteractive,
+        transferSize: entry.transferSize, encodedBodySize: entry.encodedBodySize }
+      : null;
+    const phases = ['paint', 'mark'].flatMap(type => window.performance.getEntriesByType(type))
+      .filter(event => event.entryType === 'paint' || event.name.startsWith('pcad:startup:'))
+      .map(event => ({ name: event.name, ms: event.startTime }));
+    return { online: window.navigator.onLine, timing: { timeOrigin: window.performance.timeOrigin, navigation, phases } };
+  });
+}
+
 async function prepareOcctMeasurement(page: Page, offline: boolean, observation: Observation): Promise<number> {
   await Promise.all(observation.pending);
   await waitForStartupReady(page);
   if (await page.locator('.pcad-restore').isVisible()) await page.locator('.pcad-restore').getByRole('button', { name: '破棄する', exact: true }).click();
-  expect(await page.evaluate(() => navigator.onLine)).toBe(!offline);
+  const { online, timing } = await readStartupEnvironment(page);
+  expect(online).toBe(!offline);
+  observation.startupTiming = timing;
   await Promise.all(observation.pending);
   assertOcctNotStarted(observation);
   return Date.now();
@@ -696,7 +717,10 @@ async function browserOcctPairOn(baseURL: string, playwright: Playwright, browse
       context.setDefaultTimeout(info.project.use.actionTimeout ?? 15_000);
       const page = context.pages()[0] ?? await context.newPage(); observation = observe(page);
       stopCodeCacheDiagnostic = await beginCodeCacheDiagnostic(context, page, info, mode);
-      await page.goto(baseURL);
+      const navigation = await page.goto(baseURL);
+      if (navigation !== null) {
+        observation.initialWebNavigation = { status: navigation.status(), fromServiceWorker: navigation.fromServiceWorker() };
+      }
       const uiReadyAtEpochMs = await prepareOcctMeasurement(page, offline, observation);
       const started = Date.now(); sampler = startSampler();
       return await measure(page, context, info, mode, offline, observation, sampler, started, { launchStartedAtEpochMs, uiReadyAtEpochMs });

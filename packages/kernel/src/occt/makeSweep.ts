@@ -1,5 +1,6 @@
 import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 import { unitDirection as toUnit } from './normalizeDirection.js';
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
 import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
  * スイープ(経路に沿った押し出し、FR-409)。
@@ -219,7 +220,7 @@ export interface SweepInput {
 function makeWire(
   oc: OpenCascadeInstance,
   curves: readonly CurveSpec[],
-  notConnectedMessage: string,
+  disconnect: () => SolidGeometryFailure,
   keep: Allocations['keep'],
 ): TopoDS_Wire {
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
@@ -227,7 +228,7 @@ function makeWire(
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
   }
   if (!wireMaker.IsDone()) {
-    throw new Error(notConnectedMessage);
+    throw disconnect();
   }
   return keep(wireMaker.Wire());
 }
@@ -247,7 +248,7 @@ function samplePoints(
   const adaptor = keep(new oc.BRepAdaptor_CompCurve_2(wire, false));
   const sampler = keep(new oc.GCPnts_QuasiUniformAbscissa_2(adaptor, count));
   if (!sampler.IsDone() || Number(sampler.NbPoints()) < count) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-build', BUILD_FAILED_MESSAGE);
   }
   const points: Vec3Tuple[] = [];
   for (let index = 1; index <= count; index += 1) {
@@ -341,16 +342,16 @@ function readProfileFrame(
   keep: Allocations['keep'],
 ): ProfileFrame {
   if (!wire.Closed_1()) {
-    throw new Error(OPEN_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-open-profile', OPEN_PROFILE_MESSAGE);
   }
   // 第 2 引数 true は「平面だけを許す」(makePlanarFace.ts と同じ)。
   const faceMaker = keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
   if (!faceMaker.IsDone()) {
-    throw new Error(NON_PLANAR_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-non-planar-profile', NON_PLANAR_PROFILE_MESSAGE);
   }
   const face = keep(faceMaker.Face());
   if (!oc.BRepAlgo.IsValid_1(face)) {
-    throw new Error(SELF_INTERSECTING_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-self-intersecting-profile', SELF_INTERSECTING_PROFILE_MESSAGE);
   }
 
   const properties = keep(new oc.GProp_GProps_1());
@@ -364,7 +365,7 @@ function readProfileFrame(
   const direction = keep(keep(keep(surface.Plane()).Axis()).Direction());
   const normal = toUnit([direction.X(), direction.Y(), direction.Z()]);
   if (normal === null) {
-    throw new Error(NON_PLANAR_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-non-planar-profile', NON_PLANAR_PROFILE_MESSAGE);
   }
 
   const centre: Vec3Tuple = [centreOfMass.X(), centreOfMass.Y(), centreOfMass.Z()];
@@ -401,7 +402,7 @@ function readPathStart(
   adaptor.D1(adaptor.FirstParameter(), point, derivative);
   const tangent = toUnit([derivative.X(), derivative.Y(), derivative.Z()]);
   if (tangent === null) {
-    throw new Error(NO_TANGENT_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-no-tangent', NO_TANGENT_MESSAGE);
   }
   return { point: [point.X(), point.Y(), point.Z()], tangent };
 }
@@ -537,8 +538,9 @@ function sweepOrientation(oc: OpenCascadeInstance, input: SweepInput, context: S
   const twist = input.twist ?? 0, endScale = input.endScale ?? 1;
   const usesLaw = twist !== 0 || endScale !== 1;
   if (input.guide !== undefined) {
-    if (usesLaw) throw new Error(LAW_WITH_GUIDE_MESSAGE);
-    const guideWire = makeWire(oc, input.guide, '案内線は1本につながった線を選んでください。', keep);
+    if (usesLaw) throw new SolidGeometryFailure('geometry-pathSweep-law-with-guide', LAW_WITH_GUIDE_MESSAGE);
+    const guideWire = makeWire(oc, input.guide,
+      () => new SolidGeometryFailure('geometry-pathSweep-guide-disconnected', '案内線は1本につながった線を選んでください。'), keep);
     const plan = prepareSweepGuide(oc, context.spine, guideWire, context.placed, keep);
     return { apply: (pipe) => { applyGuideMode(oc, pipe, guideWire); },
       addSections: (pipe, placed) => { addGuidedSections(oc, pipe, placed, plan, keep); },
@@ -549,7 +551,7 @@ function sweepOrientation(oc: OpenCascadeInstance, input: SweepInput, context: S
     const normal = context.frame.normal;
     const axis: Vec3Tuple = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
     const inPlane = toUnit(subtract(axis, [normal[0] * dot(axis, normal), normal[1] * dot(axis, normal), normal[2] * dot(axis, normal)]));
-    if (inPlane === null) throw new Error(NO_TANGENT_MESSAGE);
+    if (inPlane === null) throw new Error('Could not construct a basis from the sweep profile normal');
     const plan = prepareSweepLaw(oc, context.spine, applyTransformToDirection(context.placement, inPlane),
       { twist, endScale, profileRadius: context.frame.radius }, keep);
     return { apply: (pipe) => { applyGuideMode(oc, pipe, plan.auxiliary, false); }, addSections: plan.addSections,
@@ -578,14 +580,14 @@ function sweepSolid(oc: OpenCascadeInstance, spine: TopoDS_Wire, orientation: Sw
   // まで平行移動する指定で、重心を経路に乗せる置き方(冒頭の注釈)と食い違う。
   orientation.addSections(pipe, placed);
   if (!pipe.IsReady()) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-build', BUILD_FAILED_MESSAGE);
   }
   pipe.Build(keep(new oc.Message_ProgressRange_1()));
   mark?.('build');
   // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
   // (makeSpring.ts と同じ扱い)。
   if (!pipe.IsDone()) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-build', BUILD_FAILED_MESSAGE);
   }
   let shape: TopoDS_Shape;
   if (pipe.MakeSolid()) {
@@ -595,7 +597,7 @@ function sweepSolid(oc: OpenCascadeInstance, spine: TopoDS_Wire, orientation: Sw
     const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
     const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
     if (!solidMaker.IsDone()) {
-      throw new Error(BUILD_FAILED_MESSAGE);
+      throw new SolidGeometryFailure('geometry-pathSweep-build', BUILD_FAILED_MESSAGE);
     }
     shape = keep(solidMaker.Shape());
   }
@@ -607,10 +609,10 @@ function sweepSolid(oc: OpenCascadeInstance, spine: TopoDS_Wire, orientation: Sw
   if (signedVolume < 0) shape = keep(shape.Reversed());
   const volume = Math.abs(signedVolume);
   if (!hasSolid(oc, shape) || volume < MIN_SOLID_VOLUME_MM3) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-not-solid', NOT_SOLID_MESSAGE);
   }
   if (!isValidShape(oc, shape)) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-not-solid', NOT_SOLID_MESSAGE);
   }
   mark?.('validity');
   return { shape, volume };
@@ -632,10 +634,10 @@ function sweepSolid(oc: OpenCascadeInstance, spine: TopoDS_Wire, orientation: Sw
 export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
   observe?: (stage: SweepStage, elapsedMs: number) => void): OcctShapeHandle {
   if (input.path.length === 0) {
-    throw new Error(NO_PATH_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-no-path', NO_PATH_MESSAGE);
   }
   if (input.profile.length === 0) {
-    throw new Error(NO_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-pathSweep-no-profile', NO_PROFILE_MESSAGE);
   }
 
   const { keep, release } = createAllocations();
@@ -645,11 +647,13 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     const now = performance.now(); observe(stage, now - previousTime); previousTime = now;
   };
   try {
-    const spine = makeWire(oc, input.path, PATH_NOT_CONNECTED_MESSAGE, keep);
+    const spine = makeWire(oc, input.path,
+      () => new SolidGeometryFailure('geometry-pathSweep-path-disconnected', PATH_NOT_CONNECTED_MESSAGE), keep);
     const profileWire = makeWire(
       oc,
       input.profile,
-      '選んだ線・円弧がつながっていないため、断面を作れませんでした。',
+      () => new SolidGeometryFailure('geometry-pathSweep-profile-disconnected',
+        '選んだ線・円弧がつながっていないため、断面を作れませんでした。'),
       keep,
     );
 
@@ -662,7 +666,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     // 作る前に断る(冒頭の注釈 (b)、NFR-UX-5)。
     const minimumRadius = minimumCurvatureRadius(oc, spine, keep);
     if (frame.radius >= minimumRadius) {
-      throw new Error(TOO_TIGHT_MESSAGE);
+      throw new SolidGeometryFailure('geometry-pathSweep-tight', TOO_TIGHT_MESSAGE);
     }
     // Copy = true で複製を作るので、もとの断面のワイヤは触られない。中空の内側の線にも同じ置き方を当てる。
     const placement = placementOf(frame, start);
@@ -670,8 +674,8 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     const placed = place(profileWire);
 
     const orientation = sweepOrientation(oc, input, { spine, frame, start, placement, placed }, keep);
-    if (frame.radius * orientation.maxScale >= minimumRadius) throw new Error(TOO_TIGHT_MESSAGE);
-    const inner = innerProfileWires(oc, input, frame.area, (curves, message) => makeWire(oc, curves, message, keep), keep);
+    if (frame.radius * orientation.maxScale >= minimumRadius) throw new SolidGeometryFailure('geometry-pathSweep-tight', TOO_TIGHT_MESSAGE);
+    const inner = innerProfileWires(oc, input, frame.area, (curves, disconnect) => makeWire(oc, curves, disconnect, keep), keep);
     const innerPlaced = inner.wires.map(place);
     mark('placement');
 
@@ -686,13 +690,12 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     const expectedVolume = (frame.area - inner.area) * orientation.volumePerArea();
     mark('length');
     if (exceedsMagnitude(volume - expectedVolume, expectedVolume * SWEPT_LENGTH_TOLERANCE)) {
-      throw new Error(INCOMPLETE_MESSAGE);
+      throw new SolidGeometryFailure('geometry-pathSweep-incomplete', INCOMPLETE_MESSAGE);
     }
 
     return { shape, delete: release };
   } catch (error) {
-    release();
-    // OCCT の C++ 例外は数値で飛んでくる(makeFillet.ts / makeSpring.ts と同じ)。
-    throw error instanceof Error ? error : new Error(BUILD_FAILED_MESSAGE);
+    releaseGeometryOnError(release, error instanceof Error ? error
+      : new SolidGeometryFailure('geometry-internal', BUILD_FAILED_MESSAGE, undefined, { cause: error }));
   }
 }

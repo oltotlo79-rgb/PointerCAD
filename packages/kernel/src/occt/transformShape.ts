@@ -30,6 +30,7 @@ import type {
 import type { RigidTransformSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
 import type { OcctShapeHandle } from './makeBox.js';
 
 /** 変換の数値に NaN・∞ が混ざっていたとき。OCCT へ渡すと C++ 側が落ちうるので手前で弾く。 */
@@ -97,10 +98,10 @@ function checkTransform(spec: RigidTransformSpec): void {
     !isFiniteTuple(spec.rotationAxis) ||
     !Number.isFinite(spec.rotationAngle)
   ) {
-    throw new Error(NOT_FINITE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-transform-not-finite', NOT_FINITE_MESSAGE);
   }
   if (spec.rotationAngle !== 0 && toUnit(spec.rotationAxis) === null) {
-    throw new Error(NO_AXIS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-transform-axis', NO_AXIS_MESSAGE);
   }
 }
 
@@ -171,7 +172,7 @@ function rotate(spec: RigidTransformSpec, value: Vec3Tuple): Vec3Tuple {
   }
   const axis = toUnit(spec.rotationAxis);
   if (axis === null) {
-    throw new Error(NO_AXIS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-transform-axis', NO_AXIS_MESSAGE);
   }
   const cos = Math.cos(spec.rotationAngle);
   const sin = Math.sin(spec.rotationAngle);
@@ -213,7 +214,7 @@ export function makeTransform(
 
   const axis = toUnit(spec.rotationAxis);
   if (axis === null) {
-    throw new Error(NO_AXIS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-transform-axis', NO_AXIS_MESSAGE);
   }
   const turned = keep(new oc.gp_Trsf_1());
   const origin = keep(
@@ -245,15 +246,15 @@ export function transformShape(
     // もとの形と幾何を共有し、もとを解放したときに複製まで壊れる。
     const maker = keep(new oc.BRepBuilderAPI_Transform_2(shape, trsf, true));
     if (!maker.IsDone()) {
-      throw new Error(NOT_FINITE_MESSAGE);
+      throw new SolidGeometryFailure('geometry-internal', NOT_FINITE_MESSAGE, undefined,
+        { cause: { operation: 'transform', maker: 'BRepBuilderAPI_Transform', isDone: false } });
     }
     // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
     const moved = keep(maker.Shape());
     onBuilt?.(maker, moved);
     return { shape: moved, delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -279,11 +280,11 @@ export function makeMirrorTransform(
   keep: Allocations['keep'],
 ): gp_Trsf {
   if (!isFiniteTuple(plane.origin) || !isFiniteTuple(plane.normal)) {
-    throw new Error(PLACE_NOT_FINITE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-plane-not-finite', PLACE_NOT_FINITE_MESSAGE);
   }
   const normal = toUnit(plane.normal);
   if (normal === null) {
-    throw new Error(NO_MIRROR_NORMAL_MESSAGE);
+    throw new SolidGeometryFailure('geometry-mirror-normal', NO_MIRROR_NORMAL_MESSAGE);
   }
   const mirror = keep(new oc.gp_Trsf_1());
   const origin = keep(new oc.gp_Pnt_3(plane.origin[0], plane.origin[1], plane.origin[2]));
@@ -311,15 +312,15 @@ export function mirrorShape(
     // Copy = true。false だともとの形と幾何を共有し、もとを解放したときに鏡像まで壊れる。
     const maker = keep(new oc.BRepBuilderAPI_Transform_2(shape, trsf, true));
     if (!maker.IsDone()) {
-      throw new Error(TRANSFORM_FAILED_MESSAGE);
+      throw new SolidGeometryFailure('geometry-internal', TRANSFORM_FAILED_MESSAGE, undefined,
+        { cause: { operation: 'mirror', maker: 'BRepBuilderAPI_Transform', isDone: false } });
     }
     const mirrored = keep(maker.Shape());
     // 鏡像も BRepBuilderAPI_Transform の履歴なので、移動(transformShape)と同じく出どころの写しに渡す。
     onBuilt?.(maker, mirrored);
     return { shape: mirrored, delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -339,9 +340,9 @@ export interface ScaleSpec {
 }
 
 /** 倍率として使える数か(0 以下と非数を断る)。負は鏡像になるので mirrorShape へ回す。 */
-function checkFactor(value: number): void {
+function checkFactor(value: number, axis: 'uniform' | 'x' | 'y' | 'z'): void {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(BAD_SCALE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-scale-factor', BAD_SCALE_MESSAGE, { minimum: '0', axis });
   }
 }
 
@@ -359,21 +360,22 @@ export function scaleShape(
   onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   if (!isFiniteTuple(spec.origin)) {
-    throw new Error(PLACE_NOT_FINITE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-plane-not-finite', PLACE_NOT_FINITE_MESSAGE);
   }
   if ((spec.uniform === null) === (spec.perAxis === null)) {
-    throw new Error(SCALE_CHOICE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-scale-choice', SCALE_CHOICE_MESSAGE);
   }
   const { keep, release } = createAllocations();
   try {
     if (spec.uniform !== null) {
-      checkFactor(spec.uniform);
+      checkFactor(spec.uniform, 'uniform');
       const trsf = keep(new oc.gp_Trsf_1());
       const center = keep(new oc.gp_Pnt_3(spec.origin[0], spec.origin[1], spec.origin[2]));
       trsf.SetScale(center, spec.uniform);
       const maker = keep(new oc.BRepBuilderAPI_Transform_2(shape, trsf, true));
       if (!maker.IsDone()) {
-        throw new Error(TRANSFORM_FAILED_MESSAGE);
+        throw new SolidGeometryFailure('geometry-internal', TRANSFORM_FAILED_MESSAGE, undefined,
+          { cause: { operation: 'scale', maker: 'BRepBuilderAPI_Transform', isDone: false } });
       }
       const scaled = keep(maker.Shape());
       onBuilt?.(maker, scaled);
@@ -383,11 +385,11 @@ export function scaleShape(
     const perAxis = spec.perAxis;
     if (perAxis === null) {
       // 上の分岐で必ずどちらかが非 null になるが、型を絞るために書いてある。
-      throw new Error(SCALE_CHOICE_MESSAGE);
+      throw new SolidGeometryFailure('geometry-scale-choice', SCALE_CHOICE_MESSAGE);
     }
-    checkFactor(perAxis[0]);
-    checkFactor(perAxis[1]);
-    checkFactor(perAxis[2]);
+    checkFactor(perAxis[0], 'x');
+    checkFactor(perAxis[1], 'y');
+    checkFactor(perAxis[2], 'z');
 
     // gp_GTrsf は X' = M·X + V の形なので、中心 O まわりの拡大縮小
     // X' = M·(X − O) + O は V = O − M·O、つまり成分ごとに o(1 − s) になる。
@@ -407,12 +409,12 @@ export function scaleShape(
     // BSpline へ変えるので、面の種類と役割の素性を一対一とは示せない。結果は出どころ無し(untracked)のまま。
     const maker = keep(new oc.BRepBuilderAPI_GTransform_2(shape, gtrsf, true));
     if (!maker.IsDone()) {
-      throw new Error(TRANSFORM_FAILED_MESSAGE);
+      throw new SolidGeometryFailure('geometry-internal', TRANSFORM_FAILED_MESSAGE, undefined,
+        { cause: { operation: 'scale', maker: 'BRepBuilderAPI_GTransform', isDone: false } });
     }
     return { shape: keep(maker.Shape()), delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -432,7 +434,8 @@ export function makeCompound(
   shapes: readonly TopoDS_Shape[],
 ): OcctShapeHandle {
   if (shapes.length === 0) {
-    throw new Error(NO_SHAPE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', NO_SHAPE_MESSAGE, undefined,
+      { cause: { operation: 'compound', shapeCount: 0 } });
   }
   const { keep, release } = createAllocations();
   try {
@@ -444,7 +447,6 @@ export function makeCompound(
     }
     return { shape: compound, delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }

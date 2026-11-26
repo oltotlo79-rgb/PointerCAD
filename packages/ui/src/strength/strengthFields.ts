@@ -2,6 +2,7 @@ import { readStrengthInputs, type Parameter, type StrengthFieldName, type Streng
 import { expressionValueFromNumber } from '@pointercad/expression';
 import type { MessageKey } from '../i18n/t.js';
 import type { FieldUnit, NumericField, NumericFieldResult } from '../sketch/numericInput.js';
+import { strengthFailureMessage, strengthInternalFailure } from './strengthFailureMessage.js';
 import type { StrengthSession } from './strengthSession.js';
 
 export const STRENGTH_FIELD_LABELS: Readonly<Record<StrengthFieldName, MessageKey>> = {
@@ -21,6 +22,21 @@ export function strengthExpressionField(session: StrengthSession, parameters: re
     field: { key: name, labelKey, tooltipKey: quantity === 'length' ? 'strength.lengthTooltip' : 'strength.expressionTooltip',
       unit: units[quantity], source, defaultSource: source, typed: true },
     result: { key: name, value: canonical === undefined ? null : { ...expressionValueFromNumber(canonical.value), source },
-      error: parsed.ok ? null : { code: 'outOfRange', position: -1, message: parsed.message } },
+      error: parsed.ok ? null : { code: 'outOfRange', position: -1, message: strengthFailureMessage(parsed) } },
   };
+}
+
+export function strengthExpressionFieldForPanel(...inputs: Parameters<typeof strengthExpressionField>):
+  ReturnType<typeof strengthExpressionField> {
+  try {
+    return strengthExpressionField(...inputs);
+  } catch (error) {
+    const [, , name, quantity, labelKey, source] = inputs;
+    const { message } = strengthInternalFailure(name, error);
+    return {
+      field: { key: name, labelKey, tooltipKey: quantity === 'length' ? 'strength.lengthTooltip' : 'strength.expressionTooltip',
+        unit: units[quantity], source, defaultSource: source, typed: true },
+      result: { key: name, value: null, error: { code: 'outOfRange', position: -1, message } },
+    };
+  }
 }

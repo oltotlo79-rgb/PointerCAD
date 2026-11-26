@@ -36,11 +36,10 @@ function validateResponseHeaders(asset: OfflineAssetRecord, response: Response):
   }
 }
 
-/** Verify one bounded clone while retaining the fetched response URL for the loader and cache. */
+/** Verify the supplied body once; the caller decides whether it must keep the response. */
 async function verifyResponse(response: Response, asset: OfflineAssetRecord, signal: AbortSignal,
   fetchedBytes: (bytes: number) => void): Promise<void> {
-  const bytes = await readBoundedOfflineBody(response.clone(), asset.byteLength, asset.url, signal, fetchedBytes);
-  if (bytes.byteLength !== asset.byteLength) throw new OfflineTransferError('size', asset.url);
+  const bytes = await readBoundedOfflineBody(response, asset.byteLength, asset.url, signal, fetchedBytes, 'exact');
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   signal.throwIfAborted();
   const hash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -62,6 +61,19 @@ function validateAssetRecord(asset: OfflineAssetRecord): void {
 /** Cached responses are checked with exactly the same bytes, origin and response requirements. */
 export async function verifyOfflineAssetResponse(baseUrl: URL, asset: OfflineAssetRecord, response: Response,
   signal: AbortSignal, fetchedBytes: (bytes: number) => void): Promise<Response> {
+  validateAssetResponse(baseUrl, asset, response);
+  await verifyResponse(response.clone(), asset, signal, fetchedBytes);
+  return response;
+}
+
+/** Consume an inspection-only response without buffering a second branch of its body. */
+export async function verifyAndConsumeOfflineAsset(baseUrl: URL, asset: OfflineAssetRecord, response: Response,
+  signal: AbortSignal): Promise<void> {
+  validateAssetResponse(baseUrl, asset, response);
+  await verifyResponse(response, asset, signal, () => undefined);
+}
+
+function validateAssetResponse(baseUrl: URL, asset: OfflineAssetRecord, response: Response): void {
   validateAssetRecord(asset);
   const expected = offlineAssetRequestUrl(baseUrl, asset.url);
   if (response.status !== 200 || response.redirected || response.url !== expected.href || response.type !== 'basic') {
@@ -69,8 +81,6 @@ export async function verifyOfflineAssetResponse(baseUrl: URL, asset: OfflineAss
   }
   // Header policy follows the logical asset within the app, including deployments under a subdirectory.
   validateResponseHeaders(asset, response);
-  await verifyResponse(response, asset, signal, fetchedBytes);
-  return response;
 }
 
 /** Download only the exact same-origin asset of a previously validated manifest. */

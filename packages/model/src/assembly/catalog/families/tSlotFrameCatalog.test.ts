@@ -8,13 +8,16 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { frameCapCandidates } from '../../accessories/frameEndCaps.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../../createAssemblyDocument.js';
+import { frameSlotLines } from '../../frame/frameSlots.js';
 import { buildSteelStockList } from '../../standard/steelStockList.js';
 import type { AssemblyComponent } from '../../types.js';
-import { createCatalogRegistry } from '../registry.js';
-import { catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
+import { createCatalogRegistry, PRODUCT_CATALOG_REGISTRY } from '../registry.js';
+import { buildCatalogItemPart, catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { T_SLOT_DIMENSIONED_RECORDS } from './frameDimensionedRows.js';
 import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 import { T_SLOT_CATALOG_FAMILIES, type TSlotCatalogRecord } from './tSlotFrameCatalog.js';
 
@@ -61,9 +64,9 @@ describe('資料 1 の溝つきフレームの 3 族', () => {
       ['t-slot-frame-s10', 'aluminumFrame', 'catalog.frame.kind.tSlotS10', 't-slot-frame-s10-2026-11-r1', 't-slot-2', 'linear', 'tSlotSeries',
         [['length', '1000'], ...MITER_KEYS]],
     ]);
-    // 長方形の格子の行の後に、外周の指定を持つ行(frameOutlineRows.ts)が溝幅ごとに続く。
+    // 長方形の格子、外周の指定、寸法を補読した長方形の順で登録する。
     for (const [slot, family] of [[6, FAMILIES.s6], [8, FAMILIES.s8], [10, FAMILIES.s10]] as const) {
-      expect(family.rows.map((row) => row.key)).toEqual([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS]
+      expect(family.rows.map((row) => row.key)).toEqual([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS, ...T_SLOT_DIMENSIONED_RECORDS]
         .filter((item) => item.slot === slot).map((item) => item.key));
     }
   });
@@ -144,6 +147,105 @@ describe('資料 1 の溝つきフレームの 3 族', () => {
       placed('c', closed, 500)] }, new Map(), new Map(), registry);
     expect(list.catalogRows.map((row) => [row.familyId, row.size, row.lengthMm, row.quantity, row.unitMassKgPerM, row.massEachG]))
       .toEqual([['t-slot-frame-s6', '溝幅 6 20×20', 1200, 2, 0.49, 0.49 * 1200], ['t-slot-frame-s6', '溝幅 6 20×20 3 面溝', 500, 1, 0.52, 0.52 * 500]]);
+  });
+
+  it('追加断面は登録した族から寸法・溝の座標を読み、従来のキャップと保存形式を使う', async () => {
+    const registry = PRODUCT_CATALOG_REGISTRY;
+    await registry.ensure(['t-slot-frame-s8', 't-slot-frame-s10', 't-slot-frame-cap']);
+    const cases = [
+      { familyId: 't-slot-frame-s8', key: 's8-30x60-tb-light', dimensions: [30, 60, 8, 30, 6.8, 2, 7],
+        slotCenters: [['top', [0, 30]], ['bottom', [0, -30]]], holes: 2, mass: 790, cap: ['s8-60x30', 3, 1] },
+      { familyId: 't-slot-frame-s10', key: 's10-40x80-tb-light', dimensions: [40, 80, 10, 40, 10.5, 3, 7],
+        slotCenters: [['top', [0, 40]], ['bottom', [0, -40]]], holes: 2, mass: 1400, cap: ['s10-80x40-10.9g', 3, 1] },
+      { familyId: 't-slot-frame-s10', key: 's10-45x135-light', dimensions: [45, 135, 10, 45, 12.5, 3, 7],
+        slotCenters: [['top', [0, 67.5]], ['left', [-22.5, 45]], ['left', [-22.5, 0]], ['left', [-22.5, -45]],
+          ['bottom', [0, -67.5]], ['right', [22.5, -45]], ['right', [22.5, 0]], ['right', [22.5, 45]]],
+        holes: 3, mass: 2715, cap: null },
+      { familyId: 't-slot-frame-s8', key: 's8-30x50-light', dimensions: [30, 50, 8, 20, 6.8, 2, 7],
+        slotCenters: [['top', [0, 25]], ['left', [-15, 10]], ['left', [-15, -10]], ['bottom', [0, -25]],
+          ['right', [15, -10]], ['right', [15, 10]]], holes: 2, mass: 705, cap: ['s8-50x30', 3, 1] },
+      { familyId: 't-slot-frame-s10', key: 's10-40x40-tb-light', dimensions: [40, 40, 10, 40, 10.5, 3, 7],
+        slotCenters: [['top', [0, 20]], ['bottom', [0, -20]]], holes: 1, mass: 785, cap: ['s10-40x40-4.7g', 3, 0] },
+    ] as const;
+    for (const item of cases) {
+      const family = registry.loaded(item.familyId);
+      const row = family?.rows.find((candidate) => candidate.key === item.key);
+      if (family === undefined || row === undefined) throw new Error(`row ${item.key} is missing`);
+      const selected = values(500);
+      const dimensions = ['width', 'height', 'slotOpening', 'slotPitch', 'centerHole', 'cornerRadius', 'slotDepth'];
+      expect(dimensions.map((key) => row.dims[key]), item.key).toEqual(item.dimensions);
+      expect(family.sectionSlots?.(row, selected)?.map(({ face, center }) => [face, center]), item.key).toEqual(item.slotCenters);
+      const source = createCatalogItemSource(family, row, selected);
+      expect(source.options).toEqual({ family: item.familyId, item: item.key, length: '500' });
+      const saved: typeof source = { ...source, options: { ...source.options } };
+      expect(catalogItemRejection(saved, registry)).toBeNull();
+      expect(catalogItemNominalMass(saved, registry)).toBeCloseTo(item.mass, 9);
+      expect(buildCatalogItemPart(saved, registry)?.solids.map((feature) => feature.kind)).toEqual(
+        ['extrude', ...Array.from({ length: item.holes }, () => ['extrude', 'boolean']).flat()],
+      );
+      const caps = frameCapCandidates({ family, row, values: selected }, registry);
+      if (item.cap === null) {
+        expect(caps).toEqual({ ok: false, reason: 'noMatchingCap' });
+        continue;
+      }
+      expect(caps.ok ? caps.value.map((cap) => [cap.itemKey, cap.thicknessMm, cap.quarterTurn]) : caps).toContainEqual(item.cap);
+    }
+
+    const legacy = createCatalogItemSource(FAMILIES.s10, rowOfRecord(record('s10-40x40-tb-core')), values(500));
+    expect([legacy.catalogRevision, legacy.generatorRevision, legacy.options.item]).toEqual(
+      ['t-slot-frame-s10-2026-11-r1', 't-slot-2', 's10-40x40-tb-core'],
+    );
+    expect(buildCatalogItemPart(legacy, registry)?.solids.map((feature) => feature.kind)).toEqual(['extrude']);
+  });
+
+  it.each([
+    { key: 's6-20x20-tb', size: [20, 20], faceCenters: [['top', [0, 10]], ['bottom', [0, -10]]],
+      holeArcs: [[0, 0, 2.1]], mass: 270 },
+    { key: 's6-20x40-tl', size: [20, 40], faceCenters: [['top', [0, 20]], ['left', [-10, 10]], ['left', [-10, -10]]],
+      holeArcs: [], mass: 390 },
+    { key: 's6-25x25', size: [25, 25], faceCenters: [['top', [0, 12.5]], ['left', [-12.5, 0]], ['bottom', [0, -12.5]],
+      // 図の中心間は 18.5 mm。中央の後に四隅を右上から反時計回りに作図する。
+      ['right', [12.5, 0]]], holeArcs: [[0, 0, 3.4], [9.25, 9.25, 2.1], [-9.25, 9.25, 2.1], [-9.25, -9.25, 2.1], [9.25, -9.25, 2.1]],
+      mass: 390 },
+  ] as const)('図面の面・穴・質量を、保存した行から組む断面で区別する($key)', async (item) => {
+    const registry = PRODUCT_CATALOG_REGISTRY;
+    await registry.ensure(['t-slot-frame-s6']);
+    const family = registry.loaded('t-slot-frame-s6');
+    const row = family?.rows.find((entry) => entry.key === item.key);
+    if (family === undefined || row === undefined) throw new Error(item.key);
+    const selected = values(500);
+    const [width, height] = item.size;
+    expect(family.sectionBounds?.(row, selected)).toEqual({ minX: -width / 2, minY: -height / 2, maxX: width / 2, maxY: height / 2 });
+    const slots = family.sectionSlots?.(row, selected);
+    expect(slots?.map(({ face, center }) => [face, center])).toEqual(item.faceCenters);
+    expect(slots?.map(({ opening, shoulder, slotDepth }) => [opening, shoulder, slotDepth]))
+      .toEqual(item.faceCenters.map(() => [6, 2, 4]));
+    const source = structuredClone(createCatalogItemSource(family, row, selected));
+    expect(source.options).toEqual({ family: 't-slot-frame-s6', item: item.key, length: '500' });
+    expect([source.catalogRevision, source.generatorRevision]).toEqual(['t-slot-frame-s6-2026-11-r1', 't-slot-2']);
+    expect(catalogItemRejection(source, registry)).toBeNull();
+    expect(catalogItemNominalMass(source, registry)).toBeCloseTo(item.mass, 9);
+    const part = buildCatalogItemPart(source, registry);
+    expect(part?.solids.map((feature) => feature.kind))
+      .toEqual(['extrude', ...item.holeArcs.flatMap(() => ['extrude', 'boolean'])]);
+    const boreArcs = part?.sketches[0]?.features.flatMap((feature) => feature.kind === 'arc' && feature.center.mode === 'absolute'
+      && feature.radius.value > 1 && feature.startAngle.value === 0
+      ? [[feature.center.x.value, feature.center.y.value, feature.radius.value]] : []);
+    expect(boreArcs).toEqual(item.holeArcs);
+  });
+
+  it('20×40 の左溝だけを、部材の向きに合わせ世界座標へ移す', () => {
+    const family = FAMILIES.s6;
+    const row = family.rows.find((item) => item.key === 's6-20x40-tl');
+    if (row === undefined) throw new Error('20×40');
+    const selected = values(500);
+    const slots = family.sectionSlots?.(row, selected);
+    if (slots == null) throw new Error('slots');
+    const placement = { position: [100, 200, 300], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] } as const;
+    const lines = frameSlotLines(slots, placement, 500, null, []);
+    expect(lines.map(({ face, start, end, inward }) => [face, start.map(Math.round), end.map(Math.round), inward.map((v) => Math.round(v) + 0)]))
+      .toEqual([['top', [80, 200, 300], [80, 200, 800], [1, 0, 0]],
+        ['left', [90, 190, 300], [90, 190, 800], [0, 1, 0]], ['left', [110, 190, 300], [110, 190, 800], [0, 1, 0]]]);
   });
 
   it('製品の行(2 回の読みが一致した行)は、全部で形が作れ、鍵と呼びが重ならず、単位質量が正', () => {

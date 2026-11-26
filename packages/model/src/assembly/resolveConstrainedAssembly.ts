@@ -14,7 +14,7 @@ import type { FailureText } from '../failureText.js';
  * 合致の道を鍵へ移す束(D4 の 0c)で、全部を鍵と値にする(統括の決定 2026-11-20 19:0x)。
  */
 export type ConstrainedAssemblyResult = { readonly ok: true; readonly resolved: ResolvedAssembly }
-  | { readonly ok: false; readonly reason: 'source' | 'constraints'; readonly messages: readonly (string | FailureText)[] };
+  | { readonly ok: false; readonly reason: 'source' | 'constraints'; readonly messages: readonly (string | FailureText)[]; readonly internalFailure?: FailureText };
 
 /** 元文書を変更せず、各階層の合致を解いてから子の配置を親へ合成する。 */
 export function resolveConstrainedAssembly(document: AssemblyDocument,
@@ -89,6 +89,9 @@ function* resolveConstrainedAssemblySteps(document: AssemblyDocument,
   if (messages.length > 0) return { ok: false, reason: 'constraints', messages };
   if (document.mates.some((item) => !item.suppressed) || document.joints.some((item) => !item.suppressed)) {
     const outcome = yield* work.forward(solveMatesSteps(document, targets, resolved.placements, { jointFrames }, budget));
+    if (outcome.internalFailure !== undefined) {
+      return { ok: false, reason: 'constraints', messages: [outcome.internalFailure], internalFailure: outcome.internalFailure };
+    }
     const diagnosis = yield* work.forward(diagnoseMatesSteps(document, outcome, budget));
     if (!diagnosis.converged || !diagnosis.complete) return { ok: false, reason: 'constraints', messages: [] };
     resolved = { ...resolved, placements: outcome.placements };

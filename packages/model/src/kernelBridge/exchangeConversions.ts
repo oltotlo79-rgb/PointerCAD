@@ -59,7 +59,8 @@ export function toShapeExportRequest(
     case 'step':
       return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors, ...diagnosticMode };
     case 'iges':
-      return { format: 'iges', partId: options.partId, bodies: items, withColors: options.withColors, unit: options.igesUnit };
+      return { format: 'iges', partId: options.partId, bodies: items, withColors: options.withColors,
+        unit: options.igesUnit, ...diagnosticMode };
     case 'stl':
       return {
         format: 'stl',
@@ -145,7 +146,8 @@ export function toShapeExportOutcome(
 }
 
 export function usesShapeExportDiagnostics(options: ShapeExportOptions): boolean {
-  return options.reportDiagnostics === true && (options.format === 'step' || options.format === 'stl');
+  return options.reportDiagnostics === true
+    && (options.format === 'step' || options.format === 'iges' || options.format === 'stl');
 }
 
 export function unexpectedShapeExportFailure(options: ShapeExportOptions, cause: unknown): ShapeExportOutcome {

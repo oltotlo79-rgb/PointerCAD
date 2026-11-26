@@ -25,6 +25,10 @@
     "./save-errors": { "types": "./dist/file/saveFailure.d.ts", "default": "./src/file/saveFailure.ts" },
     "./file-contracts": { "types": "./dist/file/fileContracts.d.ts", "default": "./src/file/fileContracts.ts" },
     "./open-with": { "types": "./dist/file/openWith.d.ts", "default": "./src/file/openWith.ts" },
+    "./testing/function-plot-commit": {
+      "types": "./dist/testing/functionPlotCommit.d.ts",
+      "default": "./src/testing/functionPlotCommit.ts"
+    },
     "./style.css": "./src/shell/appShell.css"
   },
   "scripts": {

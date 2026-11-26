@@ -13,6 +13,7 @@ const MESSAGES = {
   loading: 'catalog.loading.inProgress',
   ready: 'catalog.loading.ready',
   failed: 'catalog.loading.failed',
+  internal: 'assembly.error.internal',
 } as const satisfies Readonly<Record<Exclude<CatalogLoadState, 'none'>, Parameters<typeof t>[0]>>;
 
 /**
@@ -34,5 +35,5 @@ export function useCatalogFamilies(open: boolean, group: string | null,
 /** 族の表の状態の 1 行。失敗は警告として読み上げる。 */
 export function CatalogLoadStatus({ state }: { readonly state: CatalogLoadState }): React.JSX.Element | null {
   if (state === 'none') return null;
-  return <p className="pcad-popover__hint" role={state === 'failed' ? 'alert' : 'status'}>{t(MESSAGES[state])}</p>;
+  return <p className="pcad-popover__hint" role={state === 'failed' || state === 'internal' ? 'alert' : 'status'}>{t(MESSAGES[state])}</p>;
 }

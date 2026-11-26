@@ -52,6 +52,7 @@ describe('資料 1 のボス付きのベースの板(取付け穴は作らず印
       const out = dimension(text, '左ボス端面〜板左面');
       const length = dimension(text, '左ボス端面〜右ボス端面');
       expect(cells['ボスの中心とめねじの中心'], record.key).toBe('同じ中心');
+      expect(record.adjusterThreadDiameter, record.key).toBe(Number(/M([0-9]+)\(中央穴\)/u.exec(text)?.[1]));
       expect([record.width, record.depth, record.thickness], record.key)
         .toEqual([dimension(text, '左外面〜右外面'), dimension(text, '上外面〜下外面'), thickness]);
       expect(record.bosses, record.key).toEqual([{ x: dimension(text, '左外面〜中央ねじ中心'), y: dimension(text, '中央ねじ中心〜下外面'),

@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { slottedOutlineProfile } from '../profiles/slottedOutline.js';
 import type { CatalogFamily } from '../types.js';
+import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
 import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 import { T_SLOT_CATALOG_FAMILIES } from './tSlotFrameCatalog.js';
 
@@ -337,12 +338,15 @@ describe('資料 1 の溝つきフレームの外周の指定を持つ行と照�
   });
 
   it('族の行は長方形の格子の行の後に並び、形・体積は外周の台本の面積 × 長さ、質量は単位質量 × 長さ、外形の箱と締結の溝は外周から', () => {
+    for (const slot of [6, 8, 10]) {
+      const gridCount = T_SLOT_CATALOG_RECORDS.filter((row) => row.slot === slot).length;
+      const outlineKeys = FIXTURE.filter((row) => row.key.startsWith(`s${String(slot)}-`)).map((row) => row.key);
+      expect(familyOf(slot).rows.slice(gridCount, gridCount + outlineKeys.length).map((row) => row.key)).toEqual(outlineKeys);
+    }
     for (const record of T_SLOT_OUTLINE_RECORDS) {
       const family = familyOf(record.slot);
       const row = family.rows.find((candidate) => candidate.key === record.key);
       if (row === undefined || record.outline === undefined) throw new Error(`族に ${record.key} が無い`);
-      expect(family.rows.slice(-T_SLOT_OUTLINE_RECORDS.filter((item) => item.slot === record.slot).length).map((item) => item.key))
-        .toContain(record.key);
       const profile = slottedOutlineProfile({ ...record.outline, slotOpening: record.slotOpening, shoulder: record.shoulder,
         slotInnerWidth: record.slotInnerWidth, slotDepth: record.slotDepth });
       const values = { length: '300' };

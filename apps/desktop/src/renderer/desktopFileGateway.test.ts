@@ -1,3 +1,4 @@
+import { SAVE_RECOVERY_COPY_RECEIPT, SaveRecoveryCopyError, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 import { describe, expect, it, vi } from 'vitest';
 import { createDesktopFileGateway } from './desktopFileGateway.js';
 
@@ -300,10 +301,18 @@ describe('「保存」のバイト列は本体が決めた大きさに分けて�
     expect(api.abortPcadSave).toHaveBeenCalledExactlyOnceWith('transfer-1');
   });
 
-  it('確定が失敗したら取消を呼び、本体の文(控えの印を含む)をそのまま返す', async () => {
+  it('確定で型なしの例外が出たら、そのまま返して控えの有無と区別する', async () => {
     const failure = new Error("Error invoking remote method 'pcad:saveCommit': Error: PCAD_SAVE_RECOVERY_COPY: 控えを残しました");
     const { api, gateway } = transferApi({ commit: () => Promise.reject(failure) });
     await expect(gateway.savePcad('A.pcad', whole, true)).rejects.toBe(failure);
+    expect(hasSaveRecoveryCopy(failure)).toBe(false);
+    expect(api.abortPcadSave).toHaveBeenCalledExactlyOnceWith('transfer-1');
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
+
+  it('確定で構造化された控えの返信を受けたら回収用の例外に戻す', async () => {
+    const { api, gateway } = transferApi({ commit: () => Promise.resolve(structuredClone(SAVE_RECOVERY_COPY_RECEIPT)) });
+    await expect(gateway.savePcad('A.pcad', whole, true)).rejects.toBeInstanceOf(SaveRecoveryCopyError);
     expect(api.abortPcadSave).toHaveBeenCalledExactlyOnceWith('transfer-1');
     expect(gateway.hasSaveTarget()).toBe(false);
   });

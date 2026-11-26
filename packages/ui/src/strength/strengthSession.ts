@@ -5,6 +5,7 @@ import {
   type StrengthCalculationValue, type StrengthFieldName, type TensileAreaMethod, type ThreadSeries,
 } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { strengthInternalFailure } from './strengthFailureMessage.js';
 
 export interface StrengthSnapshot {
   readonly value: StrengthCalculationValue;
@@ -94,17 +95,25 @@ export function strengthSessionArea(session: Pick<StrengthSession, 'threadDesign
 }
 
 export function evaluateStrengthSession(session: StrengthSession, parameters: readonly Parameter[]): StrengthCalculationOutcome {
+  try {
+    return evaluateStrengthInputs(session, parameters);
+  } catch (error) {
+    return strengthInternalFailure(session.focusedField ?? '', error);
+  }
+}
+
+function evaluateStrengthInputs(session: StrengthSession, parameters: readonly Parameter[]): StrengthCalculationOutcome {
   const preset = findStrengthMaterial(session.materialId);
   if (preset !== undefined && preset.thicknessMm !== null) {
     const thickness = readStrengthInputs([{ name: 'productThickness', source: session.productThicknessSource, quantity: 'length' }], parameters, session.lengthUnit);
     if (!thickness.ok) return thickness;
     const checked = checkStrengthMaterialCondition(preset, thickness.values.get('productThickness')?.canonical.value ?? null);
-    if (!checked.ok) return { ok: false, field: 'productThickness', message: t('strength.error.thickness') };
+    if (!checked.ok) return { ok: false, field: 'productThickness', message: t('strength.error.thickness'), text: { key: 'strength.error.thickness', parameters: {} } };
   }
   const sources = new Map(session.sources);
   if (session.calculation.kind === 'bolt') {
     const area = strengthSessionArea(session);
-    if (!area.ok) return { ok: false, field: 'tensileArea', message: t('strength.error.area') };
+    if (!area.ok) return { ok: false, field: 'tensileArea', message: t('strength.error.area'), text: { key: 'strength.error.area', parameters: {} } };
     sources.set('tensileArea', area.area.exact);
   }
   return calculateStrength({ calculation: session.calculation, sources, parameters, lengthUnit: session.lengthUnit });

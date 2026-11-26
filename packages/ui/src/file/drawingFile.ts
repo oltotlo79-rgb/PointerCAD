@@ -4,7 +4,7 @@ import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
   readPickedCheckpoint, readPickedForOpen } from './documentOpenGuard.js';
-import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave, reportDocumentSaveFailure } from './documentSaveQueue.js';
 import { concatZipParts } from '@pointercad/io';
 import { encodeSaveParts } from './pcadSaveWorker.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
@@ -13,7 +13,6 @@ import type { PartFileDeps } from './partFile.js';
 import { openErrorMessage } from './documentReadError.js';
 import { recordRecentFile } from './recentFiles.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
-import { saveFailureMessageKey } from './saveFailure.js';
 import { saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
 import { continuingParameterSession, parameterCheckpointIdentity, parameterCheckpointInput,
   parameterCheckpointWriteGuard, resumeParameterTutorialSession } from '../tutorial/tutorialProgress.js';
@@ -150,8 +149,7 @@ export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<
         }
       }, name);
     } catch (error) {
-      if (isCurrent()) before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });
-      reportSaveEncodingFailure(error, isCurrent);
+      reportDocumentSaveFailure(error, isCurrent);
     }
   });
 }

@@ -3,6 +3,8 @@ import {
   collectVariableNames, containsLengthUnit, evaluateExpressionExact,
   type ExactExpressionValue,
 } from '@pointercad/expression';
+import { plainText } from '../failureText.js';
+import { strengthInputFailure, type StrengthInputFailure } from './strengthInputFailure.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import type { Parameter } from '../parameters/types.js';
 import { normalizeInchQuotes, parseDisplayInput, type LengthUnit } from '../units/length.js';
@@ -22,7 +24,7 @@ export interface StrengthInputValue {
 }
 export type StrengthInputOutcome =
   | { readonly ok: true; readonly values: ReadonlyMap<string, StrengthInputValue> }
-  | { readonly ok: false; readonly field: string; readonly message: string };
+  | StrengthInputFailure;
 
 // A suffix applies to the complete entered expression. All conversions are exact decimal factors.
 // Model parameters only distinguish length/angle/scalar; force, stress and torque use scalar parameters.
@@ -54,9 +56,9 @@ export function readStrengthInputs(fields: readonly StrengthInputField[], parame
   const names = new Set<string>();
   // Validate every field before sending even the first source to the expression parser.
   for (const field of fields) {
-    if (names.has(field.name)) return { ok: false, field: field.name, message: '同じ入力欄が重複しています。' };
-    if (field.source.length > 4096) return { ok: false, field: field.name, message: '式は4096文字以内で入力してください。' };
-    if (field.source.trim() === '') return { ok: false, field: field.name, message: '式を入力してください。' };
+    if (names.has(field.name)) return strengthInputFailure(field.name, '同じ入力欄が重複しています。', 'strength.error.duplicate');
+    if (field.source.length > 4096) return strengthInputFailure(field.name, '式は4096文字以内で入力してください。', 'strength.error.tooLong');
+    if (field.source.trim() === '') return strengthInputFailure(field.name, '式を入力してください。', 'strength.error.empty');
     names.add(field.name);
   }
   const analysis = analyzeParameters(parameters, []);
@@ -65,22 +67,25 @@ export function readStrengthInputs(fields: readonly StrengthInputField[], parame
   for (const field of fields) {
     const source = canonicalSource(field, lengthUnit);
     if (field.quantity !== 'length' && containsLengthUnit(source)) {
-      return { ok: false, field: field.name, message: 'この欄には長さの単位を使えません。欄に表示された単位で入力してください。' };
+      return strengthInputFailure(field.name, 'この欄には長さの単位を使えません。欄に表示された単位で入力してください。', 'strength.error.lengthUnit');
     }
     const variables = collectVariableNames(source);
     for (const name of variables) {
       const unit = parameterKinds.get(name);
       if (unit === 'degree' || (field.quantity !== 'length' && unit === 'mm')) {
-        return { ok: false, field: field.name, message: `「${name}」の量の種類がこの入力欄と一致しません。` };
+        return strengthInputFailure(field.name, `「${name}」の量の種類がこの入力欄と一致しません。`, 'strength.error.quantity', { name });
       }
-      if (analysis.circular.includes(name) || analysis.failures.some(failure => failure.name === name)) {
-        return { ok: false, field: field.name, message: `参照するパラメータ「${name}」の式を直してください。` };
+      const circular = analysis.circular.includes(name);
+      if (circular || analysis.failures.some(failure => failure.name === name)) {
+        return strengthInputFailure(field.name, `参照するパラメータ「${name}」の式を直してください。`,
+          circular ? 'strength.error.circular' : 'strength.error.reference', { name });
       }
     }
     const result = evaluateExpressionExact(source, { exactVariables: analysis.exactVariables, nonLengthVariables: analysis.nonLengthVariables });
-    if (!result.ok) return { ok: false, field: field.name, message: result.error.message };
+    if (!result.ok) return { ok: false, field: field.name, message: result.error.message, text: plainText(result.error.message) };
     if (!Number.isFinite(result.value.value) || (field.allowZero ? result.value.value < 0 : result.value.value <= 0)) {
-      return { ok: false, field: field.name, message: field.allowZero ? '0以上の有限の値を入力してください。' : '0より大きい有限の値を入力してください。' };
+      return strengthInputFailure(field.name, field.allowZero ? '0以上の有限の値を入力してください。' : '0より大きい有限の値を入力してください。',
+        field.allowZero ? 'strength.error.nonnegative' : 'strength.error.positive');
     }
     values.set(field.name, { name: field.name, source: field.source, quantity: field.quantity, canonical: result.value });
   }

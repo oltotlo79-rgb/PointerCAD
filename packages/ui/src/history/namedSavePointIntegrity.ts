@@ -23,6 +23,18 @@ export class SavePointError extends Error {
   }
 }
 
+/** Keep a failure's classification while recording only its stage and exception name. */
+export function savePointFailureDetail(site: string, cause: unknown): string {
+  const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : undefined;
+  return typeof name === 'string' && /^[A-Za-z0-9_-]{1,64}$/u.test(name) ? `${site}:${name}` : site;
+}
+
+export function withSavePointFailureDetail(site: string, cause: unknown): SavePointError {
+  if (cause instanceof SavePointError && cause.detail !== null) return cause;
+  return new SavePointError(cause instanceof SavePointError ? cause.reason : 'unavailable',
+    cause instanceof Error ? cause.message : String(cause), savePointFailureDetail(site, cause));
+}
+
 export function refuse(reason: SavePointErrorCode, message: string): never { throw new SavePointError(reason, message); }
 export function cancelled(signal?: AbortSignal): void { if (signal?.aborted) refuse('cancelled', '保存点の操作を取り消しました。'); }
 function safe(value: unknown): value is number { return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0; }
@@ -110,10 +122,16 @@ export function archiveOf(entriesToWrite: readonly SavePointEntry[], blobs: Read
 async function matchesSourceArchive(point: NamedSavePoint, bytes: Uint8Array): Promise<boolean> {
   return bytes.byteLength === point.sourceByteLength && await sha256(bytes) === point.sourceSha256;
 }
-interface VerifiedState { revision: number; points: NamedSavePoint[]; blobs: Map<string, SavePointBlob>;
-  usedBytes: number; selectedBytes?: Uint8Array }
-/** 一覧でも全参照・全実byteを再検証する。blobは一つずつ読み捨てる。 */
-export async function verifySavePointState(storage: SavePointStorage, signal?: AbortSignal, selectedId?: string): Promise<VerifiedState> {
+interface SavePointCatalog {
+  readonly revision: number;
+  readonly points: NamedSavePoint[];
+  readonly blobs: Map<string, SavePointBlob>;
+  readonly usedBytes: number;
+}
+interface VerifiedState extends SavePointCatalog { readonly selectedBytes?: Uint8Array }
+
+/** Read and validate the revision, references and unique blob lengths without reading blob contents. */
+export async function loadSavePointCatalog(storage: SavePointStorage, signal?: AbortSignal): Promise<SavePointCatalog> {
   cancelled(signal);
   const raw = await storage.load();
   if (!safe(raw.revision) || raw.revision === Number.MAX_SAFE_INTEGER ||
@@ -153,6 +171,17 @@ export async function verifySavePointState(storage: SavePointStorage, signal?: A
   for (const blob of blobs.values()) for (let i = 0; i < blob.chunkCount; i += 1) expectedChunks.add(`${blob.sha256}:${i}`);
   if (raw.chunkKeys.length !== expectedChunks.size || raw.chunkKeys.some(key => typeof key !== 'string' || !expectedChunks.delete(key)))
     refuse('corrupt', '保存点のbyte片の参照が壊れています。');
+  return { revision: raw.revision, points, blobs, usedBytes };
+}
+
+/** 一覧でも全参照・全実byteを再検証する。 */
+export async function verifySavePointState(storage: SavePointStorage, signal?: AbortSignal, selectedId?: string): Promise<VerifiedState> {
+  return verifySavePointContents(storage, await loadSavePointCatalog(storage, signal), signal, selectedId);
+}
+
+export async function verifySavePointContents(storage: SavePointStorage, catalog: SavePointCatalog,
+  signal?: AbortSignal, selectedId?: string): Promise<VerifiedState> {
+  const { points, blobs } = catalog;
   const hashed = new Set<string>(), validatedSource = new Set<string>();
   let selectedBytes: Uint8Array | undefined;
   for (const point of points) {
@@ -179,6 +208,6 @@ export async function verifySavePointState(storage: SavePointStorage, signal?: A
     validatedSource.add(sourceKey);
   }
   cancelled(signal);
-  return { revision: raw.revision, points, blobs, usedBytes, selectedBytes };
+  return { ...catalog, selectedBytes };
 }
 

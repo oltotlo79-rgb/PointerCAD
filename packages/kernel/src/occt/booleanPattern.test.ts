@@ -158,13 +158,17 @@ describe('並べる和・差は、工具の写しを 1 回で組み合わせ、�
 
   it('写しが対象から離れた和は、理由を出して断る(直前の段は残る)', async () => {
     const result = await run([...plateWithBoss(3), combine('pattern', 'union', 'first', 'boss', { transforms: [translation(100, 0, 0)] })]);
-    expect(result.failures).toEqual([{ id: 'pattern', message: '並べた立体の一部が、元の立体から離れています。間隔や個数を見直してください。' }]);
+    expect(result.failures).toEqual([{ id: 'pattern',
+      message: '並べた立体の一部が、元の立体から離れています。間隔や個数を見直してください。',
+      code: 'geometry-pattern-detached', parameters: { solids: '2' } }]);
   });
 
   it('変換に数でない値があれば、今の並べると同じ文で断る', async () => {
     const result = await run([...plateWithBoss(3),
       combine('pattern', 'union', 'first', 'boss', { transforms: [translation(Number.NaN, 0, 0)] })]);
-    expect(result.failures.map(failure => failure.message)).toEqual(['並べる位置や角度が数になっていません。']);
+    expect(result.failures).toEqual([{
+      id: 'pattern', code: 'geometry-transform-not-finite', message: '並べる位置や角度が数になっていません。',
+    }]);
   });
 
   it('対象・工具のキャッシュの形に触れない。同じ依頼の 2 回目は全部の段が当たる', async () => {

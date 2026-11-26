@@ -70,6 +70,38 @@ describe('付属の組: フレームの端のキャップ', () => {
     }
   });
 
+  it('SF3 用の既存キャップは対応のある芯つきフレームを選び、長方形の向きを合わせる', () => {
+    const familyId = 't-slot-frame-s10';
+    const family = registry.loaded(familyId);
+    const cases = [
+      ['s10-40x40-blr-core', 's10-40x40-4.8g', 0],
+      ['s10-40x40-bl-core', 's10-40x40-4.8g', 0],
+      ['s10-40x40-tb-core', 's10-40x40-4.8g', 0],
+      ['s10-40x80-tb-core', 's10-80x40-8.8g', 1],
+      ['s10-45x45-core', 's10-45x45-7.2g', 0],
+      ['s10-45x90-core', 's10-90x45-12g', 1],
+    ] as const;
+    for (const [key, cap, quarterTurn] of cases) {
+      expect(family?.rows.some((row) => row.key === key), key).toBe(true);
+      const { document, id } = placed(familyId, key, '1000');
+      const result = accessoryCandidates(document, id, 'frame-end-caps', registry);
+      expect(result.ok ? result.value : [], key).toContainEqual(
+        expect.objectContaining({ itemKey: cap, quarterTurn, thicknessMm: 3 }));
+    }
+    const { document, id } = placed(familyId, 's10-40x40-ultralight', '1000');
+    const result = accessoryCandidates(document, id, 'frame-end-caps', registry);
+    const keys = result.ok ? result.value.map((item) => item.itemKey) : [];
+    expect(keys).toContain('s10-40x40-4.7g');
+    expect(keys).not.toContain('s10-40x40-4.8g');
+    const rectangular = placed(familyId, 's10-40x80-tb-core', '1000');
+    const both = applyAccessorySet(rectangular.document, rectangular.id, 'frame-end-caps',
+      { ends: 'both', endReference: 'overall', itemKey: 's10-80x40-8.8g' }, registry);
+    if (!both.ok) throw new Error(both.reason);
+    expect(positions(both.value.document)).toEqual([[100, 200, 303], [100, 200, 300], [100, 200, 1297]]);
+    expect(both.value.document.components.slice(1).map((item) => item.placement.rotation))
+      .toEqual(Array.from({ length: 2 }, () => quaternionFromAxisAngle([0, 0, 1], Math.PI / 2)));
+  });
+
   it('全長・両端: 1000 の線で本体 994 を +Z へ 3 ずらし、キャップ 2 個を線の両端に置き、組・記録・版 23 を足す', () => {
     const { document, id } = placed(FRAME, FRAME_ROW, '1000');
     const result = applyAccessorySet(document, id, 'frame-end-caps', { ends: 'both', endReference: 'overall', itemKey: 's6-20x20' }, registry);

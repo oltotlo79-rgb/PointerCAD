@@ -42,11 +42,40 @@ describe('自動作図の読込を含む有限期限と取消', () => {
     await vi.advanceTimersByTimeAsync(89_999);
     expect(worker.terminate).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(await result).toMatchObject({ ok: false, error: { kind: 'timeout', message: '実行全体の上限90秒を超えました。' } });
+    expect(await result).toMatchObject({ ok: false, error: { kind: 'timeout', reason: 'totalTimeout' } });
     worker.reply({ ok: true, commands: [], console: [], javascriptMs: 0, initializationMs: 0 });
     expect(await result).toMatchObject({ ok: false, error: { kind: 'timeout' } });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    { kind: 'runtime', message: '以前のWorkerの固有文 {name}', location: { file: 'helpers.js', line: 2, column: null } },
+    { kind: 'timeout', reason: 'runtimeTimeout', location: { file: 'user-script.js', line: 4, column: 1 } },
+    { kind: 'worker', reason: 'internal', location: null },
+  ])('Workerの返信を座標とログを含めて渡す ($kind)', async (error) => {
+    const { result, worker } = fixture();
+    const reply = { ok: false, error, console: [{ level: 'warning', text: '元の記録' }] };
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      worker.reply(reply);
+      expect(await result).toEqual(reply);
+      expect(worker.terminate).toHaveBeenCalledOnce();
+      expect(log).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
+  it('種類が一致しない返信を拒否し、後着の返信では再記録しない', async () => {
+    const { result, worker } = fixture();
+    const invalid = { ok: false, error: { kind: 'module', reason: 'heapLimit', location: null }, console: [] };
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      worker.reply(invalid);
+      worker.reply(invalid);
+      expect(await result).toEqual({ ok: false, error: { kind: 'worker', reason: 'internal', location: null }, console: [] });
+      expect(worker.terminate).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledExactlyOnceWith('PointerCAD script', new Error('Invalid script worker outcome'));
+    } finally { log.mockRestore(); }
   });
 
   it('準備中の取消は期限を待たず終わり、次の独立した実行が成功する', async () => {

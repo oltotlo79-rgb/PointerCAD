@@ -1,10 +1,10 @@
-import { admitThreeMf, checkThreeMfDeadline, concatZipParts, threeMfDeadline,
+import { admitThreeMf, checkThreeMfDeadline, concatZipParts, PcadWriteError, threeMfDeadline,
   ThreeMfDataError, ThreeMfExportLimitError,
   type SaveDocumentEncoder, type SaveDocumentInput, type SaveDocumentPartsEncoder, type SaveEncodingControl,
   type ThreeMfMeshInput } from '@pointercad/io';
 import { SavePointError, type CreatedSavePointListing, type NamedSavePoint, type SavePointKind } from '../history/namedSavePoints.js';
 import { isPcadSavePointReply, isPcadSaveReply, isPcadThreeMfReply, type PcadCloneAndListResult, type PcadSavePointReply,
-  type PcadSaveRequest, type PcadSavePointRequest, type PcadThreeMfReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
+  type PcadSaveReply, type PcadSaveRequest, type PcadSavePointRequest, type PcadThreeMfReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
 import { captureSaveSnapshot, copySaveSnapshot } from './pcadSaveSnapshot.js';
 
 /** headlessの検査では、この小さい境界へ実IOを使う相手を明示注入する。 */
@@ -22,6 +22,13 @@ export class PcadSaveWorkerError extends Error {
     super(message, options);
     this.name = 'PcadSaveWorkerError';
   }
+}
+
+function pcadWriteReplyError(reply: Extract<PcadSaveReply, { kind: 'failure' }>): PcadSaveWorkerError {
+  const { diagnostic, message } = reply;
+  if (diagnostic === undefined) return new PcadSaveWorkerError('rejected', message);
+  return new PcadSaveWorkerError('rejected', message, diagnostic.code === 'internal',
+    { cause: new PcadWriteError(diagnostic, message) });
 }
 
 function browserWorker(): PcadSaveWorkerPort {
@@ -75,7 +82,7 @@ async function encodeInWorker(createWorker: () => PcadSaveWorkerPort, input: Sav
       if (!isPcadSaveReply(reply)) { fail(new PcadSaveWorkerError('rejected', 'Invalid save reply', true)); return; }
       if (reply.id !== id) return;
       if (reply.kind === 'progress') control.onProgress?.(reply.stage);
-      else if (reply.kind === 'failure') fail(new PcadSaveWorkerError('rejected', reply.message));
+      else if (reply.kind === 'failure') fail(pcadWriteReplyError(reply));
       // 頼んだ形と違う成功は採らない(部分の依頼に全体、全体の依頼に部分が返るのは取り違え)。
       else if (('parts' in reply) !== replyAsParts) fail(new PcadSaveWorkerError('rejected', 'Unexpected save reply shape', true));
       else if (cleanup()) {

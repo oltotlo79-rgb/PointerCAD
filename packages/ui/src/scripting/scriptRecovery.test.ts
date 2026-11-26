@@ -33,7 +33,7 @@ describe('自動作図の成功だけを通常の控えへ保存して復元す�
         { kind: 'parameter.set', resultId: null, fields: { name: '厚み', source: '1/7', unit: 'mm' }, callStack: 'at (user-script.js:1:1)' },
         { kind: 'solid.box', resultId: 'run:1', fields: { origin: ['0','0','0'], axis: 'z', x: '20', y: '30', z: '厚み' }, callStack: 'at (user-script.js:1:1)' },
       ], new Map(), 'run', 'mm', new Map([['user-script.js', 'create'] ]));
-      if (!generated.ok) throw new Error(generated.error.message);
+      if (!generated.ok) throw new Error(JSON.stringify(generated.error));
       useAppStore.setState({ scriptPanelOpen: true, scriptLibraryState: 'ready', scriptPhase: 'idle', scriptRequestId: null,
         scriptDraft: { scriptId: 'recovery', name: '控え', icon: 'box', source: 'create', modules: [], seed: '1', time: '2026-09-11T00:00:00Z' },
         scriptExecutor: () => Promise.resolve({ ok: true, prepared: { base: initial, document: generated.document, result: resultFor(generated.document), release: () => Promise.resolve() },

@@ -6,7 +6,7 @@
  * 読み込みが断られても文書は変えない。その族の部品は model の型付きの拒否(読み込み中)のまま残り、帯に
  * 150 字以内の文を 1 つ出す(開き直すと、登録口がもう一度読み込む)。
  */
-import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry, type ComponentSource } from '@pointercad/model';
+import { CatalogDefinitionError, PRODUCT_CATALOG_REGISTRY, type CatalogRegistry, type ComponentSource } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
 
@@ -33,13 +33,13 @@ export async function ensureDocumentCatalogFamilies(sources: Iterable<StandardPa
   try {
     await registry.ensure(ids);
     return [];
-  } catch {
-    return [t('catalog.loading.documentFailed')];
+  } catch (error) {
+    return [t(error instanceof CatalogDefinitionError ? 'assembly.error.internal' : 'catalog.loading.documentFailed')];
   }
 }
 
 /** 選ぶ画面の族の表の状態。'none' はその分類に登録された族が無い時(画面には何も出さない)。 */
-export type CatalogLoadState = 'none' | 'loading' | 'ready' | 'failed';
+export type CatalogLoadState = 'none' | 'loading' | 'ready' | 'failed' | 'internal';
 
 /**
  * 選ぶ画面で選んだ族の分類(機械要素・アルミフレーム)の族だけを読み込み、状態を「読み込み中 → 済み／失敗」の順に知らせる。
@@ -56,7 +56,7 @@ export async function loadRegisteredCatalogFamilies(registry: CatalogRegistry,
   try {
     await registry.ensure(ids);
     if (alive()) report('ready');
-  } catch {
-    if (alive()) report('failed');
+  } catch (error) {
+    if (alive()) report(error instanceof CatalogDefinitionError ? 'internal' : 'failed');
   }
 }

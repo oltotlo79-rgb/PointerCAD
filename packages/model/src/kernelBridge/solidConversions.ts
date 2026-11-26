@@ -1,6 +1,6 @@
 /** 立体の再計算と外観の依頼・結果を変換する。接続や非同期ジョブを所有しない。 */
 import type {
-  AppearanceMatch, AppearanceQuery, SolidBodyMesh, SolidRecomputeRequest, SolidRecomputeResult,
+  AppearanceMatch, AppearanceQuery, SolidBodyMesh, SolidRecomputeRequest, SolidRecomputeResult, SolidStepFailure,
 } from '@pointercad/kernel';
 import type { ResolvedSolidStep } from '../part/resolvePart.js';
 import type {
@@ -332,6 +332,20 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
  * 黙って消えないよう理由を補って失敗として扱う(FR-504。面の詰め替えと同じ書き方)。
  * 計算部のメモリの量(NFR-PF-6)は、カーネルが添えたときだけ `kernelMemory` へ写す。
  */
+function isGeometryCode(code: SolidStepFailure['code']): code is NonNullable<NonNullable<SolidBodyFailure['parameters']>['geometryCode']> {
+  return code?.startsWith('geometry-') === true;
+}
+
+/** The existing part-error route carries these parameters through to the current message reader. */
+function toSolidBodyFailure(failure: SolidStepFailure): SolidBodyFailure {
+  const { id: featureId, message, code, parameters } = failure;
+  if (isGeometryCode(code)) {
+    return { featureId, message, parameters: { ...parameters, geometryCode: code } };
+  }
+  return { featureId, message, ...(code === undefined ? {} : { code }),
+    ...(parameters === undefined ? {} : { parameters }) };
+}
+
 export function toSolidOutcome(
   steps: readonly ResolvedSolidStep[],
   result: SolidRecomputeResult,
@@ -355,12 +369,7 @@ export function toSolidOutcome(
       meshJsAccounting = undefined;
     }
   }
-  const collected: SolidBodyFailure[] = result.failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-    ...(failure.code === undefined ? {} : { code: failure.code }),
-    ...(failure.parameters === undefined ? {} : { parameters: failure.parameters }),
-  }));
+  const collected = result.failures.map(toSolidBodyFailure);
 
   // Returned and intentionally suppressed bodies both preserve the kernel's failure facts.
   const reported = new Set<string>(result.bodies.map((body) => body.id));

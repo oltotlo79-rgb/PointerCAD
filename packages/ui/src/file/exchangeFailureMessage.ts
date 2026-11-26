@@ -34,6 +34,7 @@ const EXPORT_KEYS: Readonly<Record<Exclude<ExportDiagnostic['code'], 'deadline' 
   missingShape: 'exchangeError.export.missingShape',
   noTriangle: 'exchangeError.export.noTriangle',
   workerBroken: 'exchangeError.export.workerBroken',
+  igesUnavailable: 'exchangeError.igesUnavailable',
   internal: 'assembly.error.internal',
 };
 
@@ -43,7 +44,7 @@ export class ExchangeExportError extends Error {
   }
 }
 
-export function shapeExportFailureMessage(format: 'step' | 'stl', error: ExchangeExportError): string {
+export function shapeExportFailureMessage(format: 'step' | 'iges' | 'stl', error: ExchangeExportError): string {
   const diagnostic = error.diagnostic;
   if (diagnostic === undefined) return error.message;
   switch (diagnostic.code) {
@@ -69,6 +70,7 @@ const IMPORT_KEYS: Readonly<Record<Exclude<ImportDiagnostic['code'], 'internal' 
   missingComponent: 'exchangeError.import.missingComponent',
   assemblyCycle: 'exchangeError.import.assemblyCycle',
   noFace: 'exchangeError.import.noFace',
+  igesUnavailable: 'exchangeError.igesUnavailable',
 };
 
 export class ExchangeImportError extends Error {
@@ -77,9 +79,10 @@ export class ExchangeImportError extends Error {
   }
 }
 
-export function shapeImportFailureMessage(format: 'step' | 'stl', error: ExchangeImportError): string {
+export function shapeImportFailureMessage(format: 'step' | 'iges' | 'stl', error: ExchangeImportError): string {
   const diagnostic = error.diagnostic;
   if (diagnostic.code === 'internal') {
+    if (format === 'iges' && diagnostic.detail === '' && error.message === '') return t('assembly.error.internal');
     return unexpectedExchangeFailure(format.toUpperCase(), { message: error.message, detail: diagnostic.detail });
   }
   if (diagnostic.code === 'triangleLimit') {

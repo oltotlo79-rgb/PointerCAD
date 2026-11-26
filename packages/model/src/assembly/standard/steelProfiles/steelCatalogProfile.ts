@@ -8,6 +8,7 @@
  * 資料に無い丸み・勾配は足さない。
  */
 import { crossVec2 as cross } from '../../../sketch/vec2.js';
+import { StandardPartGeometryError } from '../partPrimitives.js';
 import { G3192_CT_ROWS } from '../steelRows/g3192CtRows.js';
 import { G3192_I_BEAM_ROWS, G3192_UNEQUAL_ANGLE_ROWS } from '../steelRows/g3192ExtraRows.js';
 import {
@@ -38,7 +39,7 @@ function roundedLoop(vertices: readonly SteelProfilePoint[], radii: readonly num
     const radius = radii[index];
     const tangent = radius * Math.tan(Math.abs(turn) / 2);
     if (!Number.isFinite(tangent) || radius < 0 || incoming <= 0 || outgoing <= 0) {
-      throw new Error('Invalid sourced steel profile corner.');
+      throw new StandardPartGeometryError('Invalid sourced steel profile corner.');
     }
     const from: SteelProfilePoint = [point[0] - u[0] * tangent, point[1] - u[1] * tangent];
     const to: SteelProfilePoint = [point[0] + v[0] * tangent, point[1] + v[1] * tangent];
@@ -49,7 +50,7 @@ function roundedLoop(vertices: readonly SteelProfilePoint[], radii: readonly num
   const segments: SteelProfileSegment[] = [];
   corners.forEach((corner, index) => {
     const previous = corners[(index + corners.length - 1) % corners.length];
-    if (previous.tangent + corner.tangent > corner.incoming + 1e-10) throw new Error('Overlapping sourced steel profile radii.');
+    if (previous.tangent + corner.tangent > corner.incoming + 1e-10) throw new StandardPartGeometryError('Overlapping sourced steel profile radii.');
     if (distance(previous.to, corner.from) > 1e-10) segments.push({ kind: 'line', from: previous.to, to: corner.from });
     if (corner.radius > 0) {
       segments.push({ kind: 'arc', from: corner.from, to: corner.to, center: corner.center, radius: corner.radius,
@@ -234,6 +235,10 @@ const SOURCED_PROFILES: Readonly<Record<string, (size: string) => SteelCatalogPr
 export function steelCatalogProfile(catalog: string, size: string): SteelCatalogProfile | undefined {
   const sourced = Object.hasOwn(SOURCED_PROFILES, catalog) ? SOURCED_PROFILES[catalog] : undefined;
   if (sourced !== undefined) return sourced(size);
-  const legacy = steelSectionProfile(catalog, size);
-  return legacy === undefined ? undefined : { ...legacy, holes: [] };
+  try {
+    const legacy = steelSectionProfile(catalog, size);
+    return legacy === undefined ? undefined : { ...legacy, holes: [] };
+  } catch (cause) {
+    throw new StandardPartGeometryError(`Invalid sourced steel profile: ${catalog} ${size}`, { cause });
+  }
 }

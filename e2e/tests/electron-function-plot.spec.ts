@@ -5,13 +5,14 @@ import { functionDerivativesFlow } from './functionDerivativesFlow.js';
 import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
 import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { expect, test } from '@playwright/test';
-import { platform } from 'node:process';
+import { env, platform } from 'node:process';
 import { launchDesktop } from './electronAppFlow.js';
 import { functionPlotFlow } from './functionPlotFlow.js';
 import { functionSurfaceFlow } from './functionSurfaceFlow.js';
 import { functionClosedSurfaceFlow } from './functionClosedSurfaceFlow.js';
 import { functionSphereCommitFlow } from './functionSphereCommitFlow.js';
 import { functionImplicitCurveFlow } from './functionImplicitCurveFlow.js';
+import { functionImplicitCurveObservedFlow } from './functionImplicitCurveObservedFlow.js';
 import { functionPointFlow } from './functionPointFlow.js';
 import { functionCurvePointFlow } from './functionCurvePointFlow.js';
 import { functionSurfacePointFlow } from './functionSurfacePointFlow.js';
@@ -117,7 +118,12 @@ test('ADD-FUNCTION 実Electronの平面等式でXYZ・固定軸・保存再開�
   const {app}=await launchDesktop(playwright,info);
   try{
     const page=await app.firstWindow(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-    await functionImplicitCurveFlow(page,info,app);expect(errors).toEqual([]);
+    if (platform === 'win32' && info.retry === 0 && env.PCAD_MANUAL_CAPTURE === undefined) {
+      await functionImplicitCurveObservedFlow(page,info,app);
+    } else {
+      await functionImplicitCurveFlow(page,info,app);
+    }
+    expect(errors).toEqual([]);
   }finally{await app.close();}
 });
 

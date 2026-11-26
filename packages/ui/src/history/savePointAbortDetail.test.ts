@@ -11,14 +11,20 @@ afterEach(() => { vi.useRealTimers(); });
 
 interface Handlers { onabort: (() => void) | null; onerror: (() => void) | null; oncomplete: (() => void) | null }
 /** 取引を作った直後(handler を付けた後)に、指定の誤りの名前で onabort を起こす IndexedDB の代わり。 */
-function abortingFactory(errorName: string | null): IDBFactory {
-  const request = (): Record<string, unknown> => ({ onsuccess: null, onerror: null, result: undefined });
+function abortingFactory(errorName: string | null, firstRequestError?: string): IDBFactory {
+  const request = () => ({ onsuccess: null, onerror: null as (() => void) | null, result: undefined,
+    error: firstRequestError === undefined ? null : { name: firstRequestError } });
   const transaction = (): Handlers & { objectStore: () => unknown; abort: () => void; error: unknown } => {
+    const first = request();
     const tx: Handlers & { objectStore: () => unknown; abort: () => void; error: unknown } = {
       onabort: null, onerror: null, oncomplete: null, abort: () => undefined,
       error: errorName === null ? null : { name: errorName },
-      objectStore: () => ({ getAll: request, getAllKeys: request, get: request, put: request, delete: request }) };
-    setTimeout(() => { tx.onabort?.(); }, 0);
+      objectStore: (name?: string) => ({ getAll: name === 'points' ? () => first : request,
+        getAllKeys: request, get: request, put: request, delete: request }) };
+    setTimeout(() => {
+      if (firstRequestError !== undefined) { first.onerror?.(); tx.onerror?.(); }
+      tx.onabort?.();
+    }, 0);
     return tx;
   };
   const db = { version: 1, close: () => undefined, transaction,
@@ -43,6 +49,11 @@ describe('A-25: 保存点の中断の細目', () => {
   it('読取りの取引の中断(namedSavePointStorage.ts の load): storage-read-abort と誤りの名前', async () => {
     const storage = createIndexedDbSavePointStorage(abortingFactory('AbortError'));
     await expect(storage.load()).rejects.toMatchObject({ reason: 'aborted', detail: 'storage-read-abort:AbortError' });
+  });
+
+  it('retains a catalog request quota failure when the transaction later reports AbortError', async () => {
+    const storage = createIndexedDbSavePointStorage(abortingFactory('AbortError', 'QuotaExceededError'));
+    await expect(storage.load()).rejects.toMatchObject({ reason: 'quota', detail: 'storage-read-abort:QuotaExceededError' });
   });
 
   it('byte 片の読取りの取引の中断(readBlob): storage-chunk-abort と誤りの名前', async () => {

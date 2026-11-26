@@ -5,7 +5,7 @@ import {
   resolveAssembly, resolveConstrainedAssembly,
   createBodyMateTargetResolver, solveMatesSteps, runCooperative,
   type AssemblyDocument, type AssemblyKernelBridge, type ComponentSource, type EmbeddedPartAttachments, type PartDocument, type PartLibrary, type SolveMatesOutcome,
-  type JointFramePair, type MateDiagnosis, type MateResidualTargetPair,
+  type FailureText, type JointFramePair, type MateDiagnosis, type MateResidualTargetPair,
   type PartRecomputeResult, type CooperativeResult, type CooperativeRun, type CooperativeSchedule, type RigidWorkBudget, type RigidWorkPoint,
   type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedPart, type RigidPlacement, type SolidBody,
 } from '@pointercad/model';
@@ -251,6 +251,11 @@ export async function collectLoadedAssemblyPartSources(
  * 解けない子は、解いた親の配置へ置き直すだけにして(文書は変えない)、どの配置の組かを添えた理由を返す。
  * 元の入れ子は解く前の親の配置で合成されているので、そのまま公開すると子が古い位置に描かれ、選べなくなる。
  */
+function addInternalAssemblyMessage(messages: string[], failure: FailureText): void {
+  const message = failureMessage(failure);
+  if (!messages.includes(message)) messages.push(message);
+}
+
 async function solveChildOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly,
   bodies: ReadonlyMap<string, readonly SolidBody[]>, options: ResolveAssemblyOptions,
   execute: <T>(steps: Generator<RigidWorkPoint, T, void>) => Promise<CooperativeResult<T>>, budget: RigidWorkBudget,
@@ -272,6 +277,10 @@ async function solveChildOccurrences(document: AssemblyDocument, resolved: Resol
     }
     subAssemblies.set(id, { ...nested, placement: parent, resolved: resolveAssembly(nested.assembly, childOptions) });
     const name = document.components.find((component) => component.id === id)?.name ?? id;
+    if (solved.internalFailure !== undefined) {
+      addInternalAssemblyMessage(messages, solved.internalFailure);
+      continue;
+    }
     const reasons = solved.messages.length > 0 ? mixedFailureMessages(solved.messages) : [t('assembly.mate.incomplete')];
     messages.push(...reasons.map((reason) => `${name}: ${reason}`));
   }
@@ -284,7 +293,8 @@ export function retainSuccessfulPlacements(
   initial: ReadonlyMap<string, RigidPlacement>, lastGood: Map<string, RigidPlacement>,
 ): ReadonlyMap<string, RigidPlacement> {
   const fixed = new Set(document.components.filter((component) => component.fixed).map((component) => component.id));
-  const failed = new Set(outcome.diagnosis.components.filter((component) => component.status !== 'converged').flatMap((component) => component.componentIds));
+  const failed = outcome.internalFailure !== undefined ? new Set(initial.keys())
+    : new Set(outcome.diagnosis.components.filter((component) => component.status !== 'converged').flatMap((component) => component.componentIds));
   const badMates = new Set([...outcome.skipped.map((item) => item.mateId), ...outcome.branchViolations, ...outcome.diagnosis.constantConflicts]);
   const active = document.mates.filter((mate) => !mate.suppressed);
   for (const mate of active) if (badMates.has(mate.id)) {
@@ -775,6 +785,28 @@ function admitAssemblyPublication(request: Request, sources: ReadonlyMap<string,
   return publication;
 }
 
+function standardDocumentOf(source: StandardPartSource, ref: string,
+  documents: Map<string, PartDocument>, issues: Map<string, FailureText>): PartDocument | undefined {
+  const stored = documents.get(ref);
+  if (stored !== undefined) return stored;
+  const part = buildStandardPartFromSource(source, (text) => { issues.set(ref, text); }) ?? undefined;
+  if (part !== undefined) documents.set(ref, part);
+  return part;
+}
+
+function appendResolvedAssemblyMessages(messages: string[], resolved: ResolvedAssembly): void {
+  for (const error of resolved.errors) {
+    if (error.code === 'internal') addInternalAssemblyMessage(messages, error.text);
+    else messages.push(failureMessage(error.text));
+  }
+}
+
+function assemblyPartResolutionOptions(library: PartLibrary, resolvedParts: ReadonlyMap<string, ResolvedPart>,
+  standardPartIssues: ReadonlyMap<string, FailureText>): ResolveAssemblyOptions {
+  return { library, resolvedParts, standardPartIssues, standardPart: buildStandardPartFromSource,
+    subAssemblies: library.assemblies };
+}
+
 async function calculateAssemblyRequest(request: Request, timing: AssemblyLoadTimingDraft,
   execution: AssemblyRecomputeExecution): Promise<void> {
   const { bridge, constraints, lifetime, partCache, obsolete, gate, refuse } = execution;
@@ -830,17 +862,15 @@ async function calculateAssemblyRequest(request: Request, timing: AssemblyLoadTi
   const bodies = new Map<string, readonly SolidBody[]>();
   const appearances = new Map<string, AppearanceInput>();
   const messages: string[] = [...catalogFailures];
+  const standardPartIssues = new Map<string, FailureText>();
   let cacheHits = 0, workerBroken = false;
   const partsStartedAt = performance.now();
   timing.parts = references.size;
   for (const ref of references) {
     if (obsolete(request)) return;
     const standardSource = standardSources.get(ref);
-    let document = standardSource === undefined ? request.library.parts.get(ref) : standardDocuments.get(ref);
-    if (document === undefined && standardSource !== undefined) {
-      document = buildStandardPartFromSource(standardSource) ?? undefined;
-      if (document !== undefined) standardDocuments.set(ref, document);
-    }
+    const document = standardSource === undefined ? request.library.parts.get(ref)
+      : standardDocumentOf(standardSource, ref, standardDocuments, standardPartIssues);
     if (document === undefined) continue; // resolveAssembly が行ごとの欠落を知らせる。
     const attachments = standardSource === undefined ? request.library.attachments.get(ref) : undefined;
     let found = cache.get(ref);
@@ -913,11 +943,9 @@ async function calculateAssemblyRequest(request: Request, timing: AssemblyLoadTi
   timing.partsMs = performance.now() - partsStartedAt;
   if (obsolete(request)) return;
   const resolveStartedAt = performance.now();
-  let resolved = resolveAssembly(request.document, {
-    library: request.library, resolvedParts, standardPart: buildStandardPartFromSource,
-    subAssemblies: request.library.assemblies,
-  });
-  messages.push(...resolved.errors.map((error) => failureMessage(error.text)));
+  const resolveOptions = assemblyPartResolutionOptions(request.library, resolvedParts, standardPartIssues);
+  let resolved = resolveAssembly(request.document, resolveOptions);
+  appendResolvedAssemblyMessages(messages, resolved);
   let diagnosis: MateDiagnosis | null = null;
   const { mateTargetErrors, jointTargetErrors, targets, jointFrames, activeMates, activeJoints }
     = prepareAssemblyConstraintTargets(request.document, resolved, bodies);
@@ -928,18 +956,19 @@ async function calculateAssemblyRequest(request: Request, timing: AssemblyLoadTi
     gate(request, 'constraints-start', 'solve');
     const solved = await execute(solveMatesSteps(request.document, targets, resolved.placements, { jointFrames }, constraints.budget));
     if (solved.status === 'cancelled' || obsolete(request)) return;
-    gate(request, 'constraints-start', 'diagnose');
-    const diagnosed = await execute(diagnoseMatesSteps(request.document, solved.value, constraints.budget));
-    if (diagnosed.status === 'cancelled' || obsolete(request)) return;
-    diagnosis = diagnosed.value;
+    if (solved.value.internalFailure !== undefined) {
+      addInternalAssemblyMessage(messages, solved.value.internalFailure);
+    } else {
+      gate(request, 'constraints-start', 'diagnose');
+      const diagnosed = await execute(diagnoseMatesSteps(request.document, solved.value, constraints.budget));
+      if (diagnosed.status === 'cancelled' || obsolete(request)) return;
+      diagnosis = diagnosed.value;
+    }
     resolved = { ...resolved, placements: retainSuccessfulPlacements(request.document, solved.value, resolved.placements, nextGoodPlacements) };
   } else {
     nextGoodPlacements = new Map(resolved.placements);
   }
-  const children = await solveChildOccurrences(request.document, resolved, bodies, {
-    library: request.library, resolvedParts, standardPart: buildStandardPartFromSource,
-    subAssemblies: request.library.assemblies,
-  }, execute, constraints.budget);
+  const children = await solveChildOccurrences(request.document, resolved, bodies, resolveOptions, execute, constraints.budget);
   if (children === null || obsolete(request)) return;
   const publicationStartedAt = performance.now();
   timing.constraintsMs = publicationStartedAt - constraintsStartedAt;

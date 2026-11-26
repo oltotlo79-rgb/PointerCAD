@@ -5,7 +5,8 @@ import { createAllocations, type OcctDeletable } from '../occt/allocations.js';
 import { booleanOp } from '../occt/booleanOp.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
 import { intersectionVolume, MIN_INTERFERENCE_VOLUME_MM3 } from '../occt/intersectionVolume.js';
-import { boundingBoxRange, boundingBoxesOverlap, placeShape, transformedBoundingBox } from '../occt/placeBodies.js';
+import { boundingBoxRange, boundingBoxesOverlap, checkedPlacementRotation, placeShape, transformedBoundingBox } from '../occt/placeBodies.js';
+import { GEOMETRY_INTERNAL_MESSAGE, SolidGeometryFailure, releaseGeometryOnError } from '../occt/solidGeometryFailure.js';
 import { DEFAULT_ANGULAR_DEFLECTION, DEFAULT_LINEAR_DEFLECTION } from '../types.js';
 import type {
   InterferenceComponentSpec, InterferenceMesh, InterferencePair, InterferencePairFailure, InterferencePairId,
@@ -111,11 +112,6 @@ export function interferenceRootFailure(result: InterferenceResult, failure: Int
   return { ...result, kind: 'failed', failure };
 }
 
-function validPlacement(placement: PlacementSpec): boolean {
-  return [...placement.position, ...placement.rotation].every(Number.isFinite)
-    && Number.isFinite(Math.hypot(...placement.rotation)) && Math.hypot(...placement.rotation) > 0;
-}
-
 function containsSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
   const { keep, release } = createAllocations();
   try {
@@ -142,14 +138,13 @@ export function conservativeBodyBounds(oc: OpenCascadeInstance, shape: TopoDS_Sh
   const box = new oc.Bnd_Box_1();
   try {
     oc.BRepBndLib.Add(shape, box, false);
-    if (box.IsVoid()) throw new Error('部品の大きさが取れません。');
+    if (box.IsVoid()) throw new Error('BRepBndLib.Add left a void body box');
     const gap = box.GetGap();
-    if (!Number.isFinite(gap) || gap < 0) throw new Error('部品の公差が正しくありません。');
+    if (!Number.isFinite(gap) || gap < 0) throw new RangeError('Invalid body box gap', { cause: gap });
     box.SetGap(gap + INTERFERENCE_AABB_PADDING_MM);
     return box;
   } catch (error) {
-    const cleanup = releaseAll([box]);
-    throw new Error([detail(error), ...cleanup].join('\n'), { cause: error });
+    releaseGeometryOnError(() => box.delete(), error);
   }
 }
 
@@ -165,7 +160,7 @@ export function conservativeWorldBounds(oc: OpenCascadeInstance, box: Bnd_Box, p
   try {
     const range = boundingBoxRange(box);
     if (![...range.min, ...range.max].every(Number.isFinite) || range.min.some((value, axis) => value > range.max[axis])) {
-      throw new Error('部品の大きさが正しくありません。');
+      throw new RangeError('Invalid local body box limits', { cause: range });
     }
     const min = allocations.keep(box.CornerMin()); const max = allocations.keep(box.CornerMax());
     const expanded = allocations.keep(new oc.Bnd_Box_2(min, max));
@@ -173,20 +168,30 @@ export function conservativeWorldBounds(oc: OpenCascadeInstance, box: Bnd_Box, p
     result = new oc.Bnd_Box_1();
     result.Add_1(transformed.box);
     const worldRange = boundingBoxRange(result);
-    if (![...worldRange.min, ...worldRange.max].every(Number.isFinite)) throw new Error('配置後の大きさが正しくありません。');
+    if (![...worldRange.min, ...worldRange.max].every(Number.isFinite)) {
+      throw new RangeError('Invalid placed body box limits', { cause: worldRange });
+    }
   } catch (error) {
     const messages = releaseAll([{ delete: allocations.release }, ...(result === undefined ? [] : [result])]);
-    throw new Error([detail(error), ...messages].join('\n'), { cause: error });
+    if (messages.length === 0) throw error;
+    throw new AggregateError([error, ...messages], 'Interference bounds and native disposal failed', { cause: error });
   }
   try { allocations.release(); } catch (error) {
     const messages = releaseAll(result === undefined ? [] : [result]);
-    throw new Error([detail(error), ...messages].join('\n'), { cause: error });
+    if (messages.length === 0) throw error;
+    throw new AggregateError([error, ...messages], 'Interference bounds and native disposal failed', { cause: error });
   }
-  if (result === undefined) throw new Error('配置後の大きさが取れません。');
+  if (result === undefined) throw new Error('Placed interference box was not produced');
   return result;
 }
 
 type ComponentFailure = Omit<InterferencePairFailure, 'pair'>;
+
+function internalGeometryFailure(stage: 'bounds' | 'union' | 'placement',
+  code: 'boundsFailed' | 'unionFailed' | 'invalidPlacement', subject: string | InterferencePairId, error: unknown): ComponentFailure {
+  console.error('PointerCAD interference geometry', stage, subject, error);
+  return { stage, code, message: GEOMETRY_INTERNAL_MESSAGE, diagnostic: { code: 'geometry-internal' } };
+}
 interface PreparedComponent { readonly shapes: readonly TopoDS_Shape[]; readonly keys: string; readonly box: Bnd_Box | null; readonly spec: Extract<InterferenceComponentSpec, { kind: 'ready' }> }
 type Prepared = PreparedComponent | ComponentFailure;
 
@@ -511,7 +516,12 @@ function createInterferenceComponents(oc: OpenCascadeInstance, borrowed: Readonl
     if (spec.kind === 'unavailable') return { stage: 'input', code: spec.code, message: spec.message,
       ...(spec.missingKeys === undefined ? {} : { missingKeys: spec.missingKeys }) };
     if (spec.kind !== 'ready') return { stage: 'input', code: 'invalidInput', message: '除外済みの部品です。' };
-    if (!validPlacement(spec.placement)) return { stage: 'input', code: 'invalidPlacement', message: '部品の位置や向きが正しくありません。' };
+    const rotation = checkedPlacementRotation(spec.placement);
+    if (rotation instanceof SolidGeometryFailure) {
+      const { code, parameters } = rotation;
+      return { stage: 'input', code: 'invalidPlacement', message: '部品の位置や向きが正しくありません。',
+        diagnostic: { code, ...(parameters === undefined ? {} : { parameters }) } };
+    }
     const missing = spec.bodyKeys.filter((key) => borrowed.get(key) === undefined);
     if (missing.length > 0 || spec.bodyKeys.length === 0) return { stage: 'input', code: 'missingBody',
       message: 'もとになるソリッドが見つかりませんでした。', missingKeys: missing };
@@ -537,7 +547,7 @@ function createInterferenceComponents(oc: OpenCascadeInstance, borrowed: Readonl
       if (box === undefined) {
         if (!await checkpoint('prepare')) return null;
         try { box = conservativeBodyBounds(oc, shapes[index]); boxes.push(box); }
-        catch (error) { box = { stage: 'bounds', code: 'boundsFailed', message: detail(error) }; }
+        catch (error) { box = internalGeometryFailure('bounds', 'boundsFailed', key, error); }
         localBoxes.set(key, box);
       }
       if ('code' in box) return box;
@@ -556,7 +566,7 @@ function createInterferenceComponents(oc: OpenCascadeInstance, borrowed: Readonl
       for (const next of component.shapes.slice(1)) {
         if (!await checkpoint('prepare', pair)) return null;
         try { const joined = booleanOp(oc, 'union', shape, next); unions.push(joined); shape = joined.shape; }
-        catch (error) { shape = { stage: 'union', code: 'unionFailed', message: detail(error) }; break; }
+        catch (error) { shape = internalGeometryFailure('union', 'unionFailed', component.spec.componentId, error); break; }
       }
       combined.set(component.keys, shape);
     }
@@ -564,7 +574,7 @@ function createInterferenceComponents(oc: OpenCascadeInstance, borrowed: Readonl
     if (!await checkpoint('prepare', pair)) return null;
     let world: TopoDS_Shape | ComponentFailure;
     try { const handle = placeShape(oc, shape, component.spec.placement); placed.push(handle); world = handle.shape; }
-    catch (error) { world = { stage: 'placement', code: 'invalidPlacement', message: detail(error) }; }
+    catch (error) { world = internalGeometryFailure('placement', 'invalidPlacement', component.spec.componentId, error); }
     worldShapes.set(component.spec.componentId, world);
     return world;
   }
@@ -641,7 +651,7 @@ export async function checkInterference(
         components.set(spec.componentId, prepared);
       } catch (error) {
         if (checkpointFailureCode !== undefined) throw error;
-        components.set(spec.componentId, { stage: 'bounds', code: 'boundsFailed', message: detail(error) });
+        components.set(spec.componentId, internalGeometryFailure('bounds', 'boundsFailed', spec.componentId, error));
       }
       completedComponents += 1;
     }
@@ -655,7 +665,7 @@ export async function checkInterference(
       try {
         if (a.box !== null && b.box !== null && !boundingBoxesOverlap(a.box, b.box)) { checked += 1; continue; }
         candidates.push(job);
-      } catch (error) { failures.push({ pair: job.pair, stage: 'bounds', code: 'boundsFailed', message: detail(error) }); }
+      } catch (error) { failures.push({ pair: job.pair, ...internalGeometryFailure('bounds', 'boundsFailed', job.pair, error) }); }
     }
     // End of broad-phase scan: flush progress/cancellation before cleanup or any Common, including an empty candidate set.
     if (!cancelled && candidatePacing !== undefined) await checkpoint('candidates', undefined, false, true);

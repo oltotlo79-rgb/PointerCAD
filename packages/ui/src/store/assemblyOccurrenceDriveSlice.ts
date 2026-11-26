@@ -291,7 +291,12 @@ export function* occurrenceJointDriveSteps(state: AppState, path: readonly strin
   const outcome = yield* solveSubAssemblyJointDriveSteps({ inputs: view.source, view: { source: view.source, resolved: view.resolved }, path,
     ...(previous === undefined ? {} : { initial: previous.placements }), targetOptions: occurrenceTargetOptions(view.bodies),
     request: { jointId, coordinate, value, ...(reference === undefined ? {} : { referenceAngle: reference }) } }, budget);
-  if (!outcome.ok) return { ok: false, update: {} };
+  if (!outcome.ok) {
+    const text = outcome.internalFailure;
+    return { ok: false, update: text === undefined ? {} : {
+      assemblyMotionNotice: { kind: 'internal', text },
+    } };
+  }
   const shown = outcome.driven.atLimit ? outcome.driven.target : outcome.driven.actual;
   const drives = currentDrives(state, document, view);
   drives.set(outcome.occurrenceKey, { path: outcome.path, document, view, placements: outcome.placements,

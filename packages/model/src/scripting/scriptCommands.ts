@@ -6,7 +6,8 @@ import { applyScriptSketchCommand } from './scriptSketchCommands.js';
 import { applyScriptSolidCommand } from './scriptSolidCommands.js';
 import { applyScriptParameterCommand } from './scriptParameterCommand.js';
 import { locateScriptError } from './scriptLocation.js';
-import type { ScriptCommand, ScriptTextFailure } from './scriptTypes.js';
+import { plainText } from '../failureText.js';
+import { scriptFailure, scriptInternalFailure, type ScriptCommand, type ScriptFailure } from './scriptTypes.js';
 import { applyScriptFunctionCommand, type CompiledScriptFunction, type ScriptFunctionCompiler } from './scriptFunctionCommands.js';
 export type ScriptCommandBatch = {
   readonly ok: true;
@@ -14,7 +15,7 @@ export type ScriptCommandBatch = {
   readonly locations: ReadonlyMap<string, string>;
 } | {
   readonly ok: false;
-  readonly error: ScriptTextFailure;
+  readonly error: ScriptFailure;
 };
 /** Build immutable definitions, with no app state or kernel access. */
 function createCommandBuilder(initial: PartDocument, commands: readonly ScriptCommand[], existing: ReadonlyMap<string, ScriptModelReference>, commandNamespace: string, lengthUnit: LengthUnit, sources: ReadonlyMap<string, string>) {
@@ -24,17 +25,17 @@ function createCommandBuilder(initial: PartDocument, commands: readonly ScriptCo
     kind: reference.kind, sketch: reference.kind === 'sketch' || reference.sketchId === null ? null : owners.get(reference.sketchId) ?? null,
   }]));
   const check = validateScriptReferences(commands, catalog, commandNamespace);
-  let failure: ScriptTextFailure | null = check.ok ? null : {
-    kind: 'command', message: '要素の参照・順番・種類が一致しません。',
-    location: locateScriptError(commands[check.commandIndex]?.callStack ?? '', sources)
-  };
+  let failure: ScriptFailure | null = check.ok ? null : scriptFailure('referenceSequence',
+    locateScriptError(commands[check.commandIndex]?.callStack ?? '', sources));
   const references = new Map(existing), locations = new Map<string, string>();
   let document = initial;
   const fail = (command: ScriptCommand, error: unknown) => {
-    failure = {
-      kind: 'command', message: error instanceof Error ? error.message : '入力から操作を作成できませんでした。',
-      location: locateScriptError(command.callStack, sources)
-    };
+    const location = locateScriptError(command.callStack, sources);
+    if (error instanceof ScriptCommandError) {
+      failure = typeof error.detail === 'string' ? scriptFailure(error.detail, location) : { kind: 'command', text: error.detail, location };
+    } else {
+      failure = scriptInternalFailure(error, location);
+    }
   };
   const step = (command: ScriptCommand, compiled?: CompiledScriptFunction) => {
     if (failure !== null)
@@ -65,7 +66,7 @@ function createCommandBuilder(initial: PartDocument, commands: readonly ScriptCo
         locations.set(id, command.callStack);
     }
     catch (error) {
-      fail(command, error instanceof ScriptCommandError ? error : new ScriptCommandError('入力から操作を作成できませんでした。'));
+      fail(command, error);
     }
   };
   return {
@@ -84,7 +85,7 @@ export function applyScriptCommands(...input: Parameters<typeof createCommandBui
 }
 /** Compile in document order, so preceding parameter edits and newly created sketches apply. */
 export async function prepareScriptCommands(input: Readonly<Parameters<typeof createCommandBuilder>>, compile: ScriptFunctionCompiler, shouldCancel: () => boolean): Promise<ScriptCommandBatch> {
-  const builder = createCommandBuilder(...input), cancelled = (): ScriptCommandBatch => ({ ok: false, error: { kind: 'cancelled', message: '処理を中止しました。', location: null } });
+  const builder = createCommandBuilder(...input), cancelled = (): ScriptCommandBatch => ({ ok: false, error: scriptFailure('cancelled') });
   for (const command of input[1]) {
     if (shouldCancel())
       return cancelled();
@@ -98,7 +99,10 @@ export async function prepareScriptCommands(input: Readonly<Parameters<typeof cr
       builder.step(command, prepared);
     }
     catch (error) {
-      builder.fail(command, error);
+      if (shouldCancel()) return cancelled();
+      // The function form reports editable fields as a DataError. All other compiler exceptions retain their cause.
+      builder.fail(command, error instanceof DOMException && error.name === 'DataError'
+        ? new ScriptCommandError(plainText(error.message)) : error);
     }
   }
   return shouldCancel() ? cancelled() : builder.result();

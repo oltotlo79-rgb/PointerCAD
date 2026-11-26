@@ -31,6 +31,7 @@ import type { PlacementSpec, QuaternionTuple, Vec3Tuple } from '../types.js';
 import { isFiniteQuaternion } from '../math/vectorArithmetic.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { releaseGeometryOnError, SolidGeometryFailure, type PlacementFailureCode } from './solidGeometryFailure.js';
 import type { OcctShapeHandle } from './makeBox.js';
 
 /** 配置の数値に NaN・∞ が混ざっていたとき。OCCT へ渡すと C++ 側が落ちうるので手前で弾く。 */
@@ -72,10 +73,17 @@ function isFiniteTuple(value: Vec3Tuple): boolean {
  * 保存する値を持つ model 側(`assembly/placementMath.ts` の `normalizeQuaternion`)の
  * 1 か所だけで行う。カーネルは受け取った値をそのまま形にする。
  */
-function unitQuaternion(rotation: QuaternionTuple): QuaternionTuple {
+export function checkedPlacementRotation(placement: PlacementSpec): QuaternionTuple | SolidGeometryFailure<PlacementFailureCode> {
+  const { position, rotation } = placement;
+  if (!isFiniteTuple(position)) {
+    return new SolidGeometryFailure('geometry-placement-not-finite', PLACEMENT_NOT_FINITE_MESSAGE, { field: 'position' });
+  }
+  if (!isFiniteQuaternion(rotation)) {
+    return new SolidGeometryFailure('geometry-placement-not-finite', PLACEMENT_NOT_FINITE_MESSAGE, { field: 'rotation' });
+  }
   const size = Math.hypot(rotation[0], rotation[1], rotation[2], rotation[3]);
   if (!Number.isFinite(size) || size <= 0) {
-    throw new Error(NO_ROTATION_MESSAGE);
+    return new SolidGeometryFailure('geometry-placement-rotation', NO_ROTATION_MESSAGE, { field: 'rotation' });
   }
   return [rotation[0] / size, rotation[1] / size, rotation[2] / size, rotation[3] / size];
 }
@@ -95,10 +103,9 @@ export function makePlacementTransform(
   placement: PlacementSpec,
   keep: Allocations['keep'],
 ): gp_Trsf {
-  if (!isFiniteTuple(placement.position) || !isFiniteQuaternion(placement.rotation)) {
-    throw new Error(PLACEMENT_NOT_FINITE_MESSAGE);
-  }
-  const [x, y, z, w] = unitQuaternion(placement.rotation);
+  const rotation = checkedPlacementRotation(placement);
+  if (rotation instanceof SolidGeometryFailure) throw rotation;
+  const [x, y, z, w] = rotation;
 
   const trsf = keep(new oc.gp_Trsf_1());
   trsf.SetRotation_2(keep(new oc.gp_Quaternion_2(x, y, z, w)));
@@ -128,8 +135,7 @@ export function placeShape(
     const moved = keep(shape.Moved(location, true));
     return { shape: moved, delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -151,8 +157,7 @@ export function boundingBoxOf(oc: OpenCascadeInstance, shape: TopoDS_Shape): Occ
     }
     return { box, delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -178,8 +183,7 @@ export function transformedBoundingBox(
     // Transformed は新しい Bnd_Box を作って返すので、これも控えへ積む。
     return { box: keep(box.Transformed(trsf)), delete: release };
   } catch (error) {
-    release();
-    throw error;
+    releaseGeometryOnError(release, error);
   }
 }
 
@@ -192,7 +196,8 @@ export function transformedBoundingBox(
  */
 export function boundingBoxRange(box: Bnd_Box): BoundingBoxRange {
   if (box.IsVoid()) {
-    throw new Error(EMPTY_BOX_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', EMPTY_BOX_MESSAGE, undefined,
+      { cause: { operation: 'boundingBoxRange', isVoid: true } });
   }
   const { keep, release } = createAllocations();
   try {

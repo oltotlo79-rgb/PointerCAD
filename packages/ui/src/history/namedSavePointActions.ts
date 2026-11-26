@@ -16,6 +16,8 @@ import { DEFINITION_DIFF_MAX_FILE_BYTES } from '../diff/definitionDiffProtocol.j
 import type { ComparisonFile } from '../diff/pickComparisonFile.js';
 import { SavePointError, type CreatedSavePointListing, type NamedSavePoint, type SavePointKind } from './namedSavePoints.js';
 
+import { withSavePointFailureDetail } from './namedSavePointIntegrity.js';
+
 type Repository = Omit<PcadSavePointClient, 'cloneAndList' | 'createAndList'> & Partial<Pick<PcadSavePointClient, 'cloneAndList' | 'createAndList'>>;
 export interface SavePointComparison {
   readonly before: ComparisonFile;
@@ -62,6 +64,7 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
   async function create<T>(signal: AbortSignal | undefined,
     save: (bytes: Uint8Array, kind: SavePointKind, signal: AbortSignal) => Promise<T>): Promise<T> {
     const operation = begin('create', signal);
+    let stage = 'create-snapshot';
     try {
       const state = useAppStore.getState();
       const kind = activeDocument(state).kind;
@@ -82,11 +85,16 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
           options: { savedAt, attachments: currentPcadAttachments(state.document) } });
       }
       if (!operation.current()) cancelled();
+      stage = 'create-encode';
       const bytes = await state.saveDocumentEncoder(snapshot, { signal: operation.signal });
       if (!operation.current()) cancelled();
+      stage = 'create-repository';
       const point = await save(bytes, kind, operation.signal);
       if (!operation.current()) cancelled();
       return point;
+    } catch (cause) {
+      if (!operation.current() || (cause instanceof SavePointError && cause.reason !== 'unavailable')) throw cause;
+      throw withSavePointFailureDetail(stage, cause);
     } finally { operation.finish(); }
   }
   return {

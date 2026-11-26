@@ -16,7 +16,7 @@ import {
   crossLevelCamDocumentFailure, crossLevelGearDocumentFailure, evaluateCamCouplings, evaluateMechanismCouplings,
   prepareCamFollowers, prepareMechanismCouplings, type MechanismCamCoupling, type MechanismGearCoupling,
   type AssemblyDocument, type AssemblyInterferenceProgress, type AssemblyInterferenceResult, type AssemblyKernelBridge,
-  type EmbeddedPartAttachments, type JointCoordinate, type JointFramePair, type JointOccurrenceInputs,
+  type EmbeddedPartAttachments, type FailureText, type JointCoordinate, type JointFramePair, type JointOccurrenceInputs,
   type MateDiagnosis, type MateResidualTargetPair, type PartDocument, type PartLibrary, type ResolvedAssembly,
   type RigidPlacement, type SolidBody, type SubShapeRef, type UndoStack, type WorkPlane,
 } from '@pointercad/model';
@@ -116,7 +116,8 @@ export type AssemblyPlacementState =
 
 export type AssemblyMotionNotice =
   | { readonly kind: 'rangeEnd'; readonly min: number | null; readonly max: number | null; readonly value: number }
-  | { readonly kind: 'failed' };
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'internal'; readonly text: FailureText };
 
 /** アセンブリのスライスが持つ欄と操作。 */
 export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameStrokeSlice, FrameSlotFasteningSlice,

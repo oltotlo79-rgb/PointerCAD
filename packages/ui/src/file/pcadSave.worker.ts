@@ -1,7 +1,7 @@
 import { ThreeMfDataError, ThreeMfExportLimitError, writeThreeMf } from '@pointercad/io';
 import { createNamedSavePoints, SavePointError } from '../history/namedSavePoints.js';
 import { createIndexedDbSavePointStorage } from '../history/namedSavePointStorage.js';
-import { isPcadSavePointRequest, isPcadThreeMfRequest, type PcadSavePointReply, type PcadSavePointRequest,
+import { isPcadSavePointRequest, isPcadThreeMfRequest, pcadSaveFailureReply, type PcadSavePointReply, type PcadSavePointRequest,
   type PcadSaveReply, type PcadWorkerRequest, type ThreeMfDiagnosticCode } from './pcadSaveProtocol.js';
 import { encodeOwnedSaveInput, encodeOwnedSaveInputParts } from './pcadSaveWorkerEncoding.js';
 import type { SaveResultIssueReport } from './saveResultIssue.js';
@@ -115,7 +115,7 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
     void encodeOwnedSaveInputParts(input, stage => send({ id, kind: 'progress', stage })).then(({ parts, analysisResultIssues }) => {
       send({ id, kind: 'success', parts, ...issuesOf(analysisResultIssues) }, partsTransfer(parts));
     }).catch((error: unknown) => {
-      send({ id, kind: 'failure', message: error instanceof Error ? error.message : String(error) });
+      send(pcadSaveFailureReply(id, error));
     });
     return;
   }
@@ -125,6 +125,6 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
     if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error('Unexpected shared save output');
     send({ id, kind: 'success', bytes, ...issuesOf(analysisResultIssues) }, [bytes.buffer]);
   }).catch((error: unknown) => {
-    send({ id, kind: 'failure', message: error instanceof Error ? error.message : String(error) });
+    send(pcadSaveFailureReply(id, error));
   });
 };

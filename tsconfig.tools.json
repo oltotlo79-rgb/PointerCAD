@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "./dist/tools",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@pointercad/ui/testing/function-plot-commit": ["./packages/ui/src/testing/functionPlotCommit.ts"]
+    }
   },
   // TypeScript は include の結果が0件でも、files か references のどちらかが
   // 書かれていれば TS18003 を出さない。空の files を置くことで、対象の設定ファイルが

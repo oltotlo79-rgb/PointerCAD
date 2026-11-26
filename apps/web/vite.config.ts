@@ -1,3 +1,4 @@
+import { env } from 'node:process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,7 @@ import { defineConfig, type Plugin } from 'vite';
 import { webSecurityPolicy } from './build/securityPolicy.js';
 import { occtPreviewHeaders } from './build/occtPreviewHeaders.js';
 import { startupPage } from './build/startupPage.js';
+import { previewStartupAssets } from './build/previewStartupAssets.js';
 import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
@@ -158,16 +160,20 @@ function manualChunks(id: string): string | undefined {
   return undefined;
 }
 
+const previewStartup = env.VITE_PCAD_E2E === '1'
+  && env.PCAD_DEDICATED_MEASUREMENT === undefined && env.PCAD_MANUAL_CAPTURE === undefined
+  ? previewStartupAssets() : undefined;
+
 export default defineConfig({
   // アプリの版は根の package.json の version だけ(desktop と ui の単体の設定と同じ名前・同じ値)。
   define: appVersionDefine(),
-  plugins: [react(), occtAssets(), startupPage(), startupGuard(),
+  plugins: [react(), occtAssets(), startupPage(), startupGuard(), previewStartup?.web,
     { name: 'pointercad-deferred-help-chunks', generateBundle(_options, bundle) { assertDeferredSmallHelp(bundle, true); } }, webSecurityPolicy(), occtPreviewHeaders(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。
   // Worker の中で実行時 import() を使うため(packages/kernel/src/occt/loadOcct.browser.ts)。
-  worker: { format: 'es', plugins: () => [occtAssets(false)] },
+  worker: { format: 'es', plugins: () => [occtAssets(false), previewStartup?.workerPlugin()] },
   build: {
     target: 'esnext',
     // 50MB の WASM が誤って埋め込まれないよう、資産の埋め込みを無効にする。

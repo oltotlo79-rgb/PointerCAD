@@ -57,7 +57,7 @@ export interface ShapeExportOptions {
   readonly partId?: string;
   /** Caller-owned cancellation only; omitted from the serializable kernel request. */
   readonly signal?: AbortSignal;
-  /** The exchange panel resolves STEP/STL diagnostic codes in its message resources. */
+  /** The exchange panel resolves STEP, IGES and STL diagnostic codes in its message resources. */
   readonly reportDiagnostics?: boolean;
   readonly format: ShapeExportFormat;
   /** Optional IGES output unit. The standard export panel uses mm. */

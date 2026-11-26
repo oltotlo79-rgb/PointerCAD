@@ -25,6 +25,34 @@ function inRowOrder(rowKeys: readonly string[], expected: readonly string[]): bo
 }
 
 describe('族の行の表', () => {
+  it('ボス付きのベースの板は取付けの呼び径と板の端からの位置を示す', () => {
+    const family = loaded('t-slot-foot-base');
+    const row = family.rows.find((candidate) => candidate.key === 'base-75x75x10-boss25-aluminum');
+    if (row === undefined) throw new Error('ボス付きのベースの板が無い');
+    const part = familyFigurePart(family, row, {});
+    expect(part.rows.filter((item) => item.key.startsWith('boss') || item.key === 'adjusterThreadDiameter')
+      .map((item) => [t(item.label), item.value, item.unit])).toEqual([
+      ['ボスの外径', 25, 'mm'], ['ボスの両端面の間隔', 20, 'mm'],
+      ['板の左端からボス中心まで', 43, 'mm'], ['板の手前端からボス中心まで', 43, 'mm'],
+      ['アジャスターのめねじの呼び径', 12, 'mm'],
+    ]);
+    expect(part.rows.some((item) => item.key === 'holeCount')).toBe(false);
+    expect(part.marks).toContainEqual({ kind: 'simplified', parts: ['取付け穴は作っていない', 'アジャスターのめねじ'] });
+    expect(part.build()).not.toBeNull();
+  });
+
+  it('現行のアルミ蝶番板ナットに、めねじの呼び径・軸間・長手端からの位置を表示する', () => {
+    const family = loaded('door-part-box');
+    const row = family.rows.find((candidate) => candidate.key === 'flat-hinge-plate-nut-15x5x55-al');
+    if (row === undefined) throw new Error('アルミ蝶番板ナットが無い');
+    const part = familyFigurePart(family, row, {});
+    const fields = ['mountingThreadDiameter', 'holePitch', 'mountingThreadFromEnd'];
+    expect(part.rows.filter((item) => fields.includes(item.key)).map((item) => [item.key, item.value, item.unit]))
+      .toEqual([['mountingThreadDiameter', 6, 'mm'], ['holePitch', 37, 'mm'], ['mountingThreadFromEnd', 9, 'mm']]);
+    expect(part.rows.some((item) => item.key === 'holeDiameter')).toBe(false);
+    expect(part.build()).not.toBeNull();
+  });
+
   it('板皿の寸法は台座の幅・奥行き、穴数、左下基準の軸中心、厚さを見出しと単位つきで出す', () => {
     const family = loaded('t-slot-adjuster');
     const dims = { padWidth: 80, padDepth: 64, holeCount: 4, shaftCenterX: 28, shaftCenterY: 39, padThickness: 6, threadLength: 30 };
@@ -35,6 +63,50 @@ describe('族の行の表', () => {
       ['holeCount', '穴の数', dims.holeCount, ''], ['shaftCenterX', '台座の左端から軸中心まで', dims.shaftCenterX, 'mm'],
       ['shaftCenterY', '台座の手前端から軸中心まで', dims.shaftCenterY, 'mm'], ['padThickness', '台座の厚さ', dims.padThickness, 'mm'],
       ['threadLength', t('catalog.dimension.threadLength'), dims.threadLength, 'mm'],
+    ]);
+  });
+
+  it.each([
+    ['s6-20x20x50-t3-h4-aluminum', 10, 30, 20, 40],
+    ['s8-30x30x60-t5-h4-aluminum', 10, 37, 23, 50],
+    ['s10-40x40x70-t5-h4-aluminum-67g-a22.5', 10, 43.5, 26.5, 60],
+  ] as const)('両脚の穴を共通の幅端から測る (%s)', (key, firstA, lastA, firstB, lastB) => {
+    const family = loaded('t-slot-angle-bracket');
+    const row = family.rows.find((item) => item.key === key);
+    if (row === undefined) throw new Error(key);
+    const figure = familyFigurePart(family, row, {});
+    expect(figure.rows.filter((item) => item.key.startsWith('angleAcross')).map((item) => [item.value, item.unit]))
+      .toEqual([[firstA, 'mm'], [lastA, 'mm'], [firstB, 'mm'], [lastB, 'mm']]);
+  });
+
+  it.each([
+    ['s10-80x80x75-t14-hb4-rib-aluminum', 'A', 4, 24],
+    ['s10-51x40x65-t14-ha2-aluminum', 'B', 2, 22.5],
+  ] as const)('取付穴の未作成側を実形状と区別する (%s)', (key, leg, count, center) => {
+    const family = loaded('t-slot-angle-bracket');
+    const row = family.rows.find((item) => item.key === key);
+    if (row === undefined) throw new Error(key);
+    const figure = familyFigurePart(family, row, {});
+    const value = (field: string) => figure.rows.find((item) => item.key === field)?.value;
+    expect(value(`angleHoleCount${leg}`)).toBe(0);
+    expect(value(`angleAcross${leg}`)).toBeUndefined();
+    expect(value(`angleDrawingCount${leg}`)).toBe(count);
+    expect(value(`angleDrawingAlong${leg}`)).toBe(center);
+    expect(figure.marks.some((item) => item.kind === 'simplified')).toBe(true);
+  });
+
+  it.each([
+    ['s10-30x40x40-h2-aluminum', 10, 20, 14, 34, 34],
+    ['s10-30x40x50-h2-aluminum', 17.5, 41, 15, 36, 26],
+    ['s10-30x40x55-h2-aluminum', 15, 41, 15, 41, 26],
+  ] as const)('上面と前面それぞれの穴位置・通し径・座ぐりを表示する (%s)', (key, topV, frontV, bore, topDepth, frontDepth) => {
+    const family = loaded('t-slot-block-bracket');
+    const row = family.rows.find((item) => item.key === key);
+    if (row === undefined) throw new Error(key);
+    const figure = familyFigurePart(family, row, {});
+    expect(figure.rows.filter((item) => item.key.startsWith('block')).map((item) => [item.value, item.unit])).toEqual([
+      [15, 'mm'], [topV, 'mm'], [9, 'mm'], [bore, 'mm'], [topDepth, 'mm'],
+      [15, 'mm'], [frontV, 'mm'], [9, 'mm'], [bore, 'mm'], [frontDepth, 'mm'],
     ]);
   });
 
@@ -88,6 +160,20 @@ describe('族の行の表', () => {
       .toEqual([pitch, holeCount, diameter, center, radius]);
     expect(part.build()).not.toBeNull();
     if (row.simplified !== undefined) expect(part.marks).toContainEqual({ kind: 'simplified', parts: row.simplified });
+  });
+
+  it('20×40 の上・左の型を選ぶと資料の軸穴を mm で示し、簡略形と区別する', () => {
+    const family = loaded('t-slot-frame-s6');
+    const row = family.rows.find((item) => item.key === 's6-20x40-tl');
+    if (row === undefined) throw new Error('20×40');
+    expect(row.size).toContain('上 1 本・左 2 本');
+    const figure = familyFigurePart(family, row, { length: '500' });
+    expect(figure.rows.filter(({ key }) => ['holeCount', 'holeDiameter', 'holePitch', 'centerHole', 'ixCm4', 'iyCm4'].includes(key))
+      .map(({ key, value, unit }) => [key, value, unit])).toEqual([
+      ['holeCount', 2, ''], ['holeDiameter', 4.2, 'mm'], ['holePitch', 20, 'mm'],
+    ]);
+    expect(figure.marks).toContainEqual({ kind: 'simplified', parts: ['寸法表の軸穴とそれにつながる内空・溝の細部'] });
+    expect(figure.build()?.solids.map((feature) => feature.kind)).toEqual(['extrude']);
   });
 
   it('印の数(車輪の止め・旋回・取付け)と系列の番号は出さず、質量は g、接触角は度', () => {

@@ -26,6 +26,24 @@ export interface BlockBracketRecord {
 
 const MATERIAL_LABEL: Readonly<Record<BlockBracketRecord['material'], string>> = { aluminum: 'アルミ', steel: '鋼', stainless: 'ステンレス' };
 
+/** 座ぐりを加工した側の面で、穴の実位置と座ぐり寸法を表示する。 */
+function blockMountDims(holes: readonly BlockHole[]): Readonly<Record<string, number>> {
+  const top = holes.find((hole) => hole.face === 'top');
+  const front = holes.find((hole) => hole.face === 'front');
+  return {
+    ...(top === undefined ? {} : {
+      blockTopU: top.u, blockTopV: top.v, blockTopDiameter: top.diameter,
+      ...(top.counterbore === undefined ? {} : { blockTopBoreDiameter: top.counterbore.diameter, blockTopBoreDepth: top.counterbore.depth }),
+    }),
+    ...(front === undefined ? {} : {
+      blockFrontU: front.u, blockFrontV: front.v, blockFrontDiameter: front.diameter,
+      ...(front.counterbore === undefined ? {} : {
+        blockFrontBoreDiameter: front.counterbore.diameter, blockFrontBoreDepth: front.counterbore.depth,
+      }),
+    }),
+  };
+}
+
 function rowOf(record: BlockBracketRecord): CatalogItemRow {
   return {
     key: record.key,
@@ -33,7 +51,8 @@ function rowOf(record: BlockBracketRecord): CatalogItemRow {
     standardLabel: '製造元の寸法に合わせた物',
     materialLabel: MATERIAL_LABEL[record.material],
     densityMaterialId: record.material,
-    dims: { slot: record.slot, width: record.width, depth: record.depth, height: record.height, holeCount: record.holes.length, massG: record.massG },
+    dims: { slot: record.slot, width: record.width, depth: record.depth, height: record.height, holeCount: record.holes.length, massG: record.massG,
+      ...blockMountDims(record.holes) },
     evidence: { title: '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null,
       locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, reference: '' },
     verification: 'manufacturer-catalog',

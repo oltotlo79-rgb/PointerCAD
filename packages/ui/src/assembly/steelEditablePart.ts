@@ -8,7 +8,7 @@ import { createPartLineageId } from '../store/documentIdentity.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitStandardPartChoice } from './standardPartPicker.js';
 
-export type EditableSteelPartFailure = 'unknownChoice' | 'invalidLength' | 'notSteelStock' | 'unavailable';
+export type EditableSteelPartFailure = 'unknownChoice' | 'invalidLength' | 'notSteelStock' | 'unavailable' | 'internal';
 export type EditableSteelPartResult =
   | { readonly ok: true; readonly document: PartDocument; readonly fileName: string }
   | { readonly ok: false; readonly reason: EditableSteelPartFailure };
@@ -23,7 +23,9 @@ export function buildEditableSteelPart(choiceKey: string, lengthSource: string,
   lineageId: () => string = createPartLineageId): EditableSteelPartResult {
   const committed = commitStandardPartChoice('structuralSection', choiceKey, lengthSource);
   if (!committed.ok) return { ok: false, reason: committed.reason };
-  const document = buildStandardPartFromSource(committed.value.source);
+  let internalFailure = false;
+  const document = buildStandardPartFromSource(committed.value.source, () => { internalFailure = true; });
+  if (internalFailure) return { ok: false, reason: 'internal' };
   // Legacy rows without a material grade have no steel provenance; they stay standard parts only.
   if (document !== null && document.steelStockSource === undefined) return { ok: false, reason: 'notSteelStock' };
   if (document === null || document.solids.length === 0) return { ok: false, reason: 'unavailable' };

@@ -29,7 +29,7 @@ async function run(source: string, requestId: string) {
   const document = createEmptyPartDocument(), snapshot = createScriptSnapshot(document, 'performance', 'mm'), commandNamespace = 'a'.repeat(64);
   const vm = await executeScriptVm({ executionId: requestId, commandNamespace, program: { apiVersion: 1, source, sha256: await sha256ScriptSource(source), modules: [] },
     snapshot: snapshot.json, seed: 1, timeMs: 0 }, wasm);
-  expect(vm.ok).toBe(true); if (!vm.ok) throw new Error(vm.error.message);
+  expect(vm.ok).toBe(true); if (!vm.ok) throw new Error(JSON.stringify(vm.error));
   const start = performance.now();
   const prepared = await prepareScriptTransaction({ requestId, document, commandNamespace, commands: vm.commands,
     references: snapshot.references, lengthUnit: 'mm', sources: new Map([['user-script.js', source]]), importedShapes: new Map() }, bridge, () => false);

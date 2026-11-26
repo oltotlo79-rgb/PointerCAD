@@ -1,3 +1,4 @@
+import { pcadVersionError } from './writeDiagnostic.js';
 import { parseFailure as fail } from './codedFailure.js';
 import { canonicalSteelOptions, readComponentSource } from './codecs/componentSource.js';
 import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } from './codecs/jointOccurrenceConnections.js';
@@ -350,10 +351,12 @@ function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocu
   assertFrameJointsVersion(document);
   assertAccessorySetsVersion(document);
   if (document.jointOccurrenceConnections !== undefined && document.schemaVersion < 21) {
-    throw new RangeError('Persisted joint occurrence provenance requires document schema 21');
+    throw pcadVersionError('jointOccurrence', document,
+      'Persisted joint occurrence provenance requires document schema 21');
   }
   if (document.beamAnalysisInputs !== undefined && document.schemaVersion < 20) {
-    throw new RangeError('Persisted beam inputs require document schema 20');
+    throw pcadVersionError('beamInputs', document,
+      'Persisted beam inputs require document schema 20');
   }
   return {
     ...(document.beamAnalysisInputs === undefined ? {} : {

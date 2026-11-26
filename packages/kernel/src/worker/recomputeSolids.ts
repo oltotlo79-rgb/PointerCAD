@@ -85,7 +85,8 @@ import { OriginCacheBudget, originBytes as measuredOriginBytes, originRows, with
 import { EdgeTreatmentFailure } from '../occt/edgeTreatmentFailure.js';
 import { HoleFailure } from '../occt/holeFailure.js';
 import { SolidSweepFailure } from '../occt/solidSweepFailure.js';
-import { KernelStepError } from '../occt/kernelStepError.js';
+import { isNothingLeft, KernelStepError, sketchInputReason } from '../occt/kernelStepError.js';
+import { GEOMETRY_INTERNAL_MESSAGE, isSolidGeometryFailure, releaseGeometryOnError, SolidGeometryFailure } from '../occt/solidGeometryFailure.js';
 
 const originCacheBudgets = new WeakMap<ShapeCache<CachedSolid>, OriginCacheBudget>();
 
@@ -320,6 +321,7 @@ function upstreamFailedMessage(label: string): string {
  * 画面に数字や `[object Object]` を出さない(NFR-RE-1「止めずに理由を出す」)。
  */
 function toFailureMessage(error: unknown): string {
+  if (isSolidGeometryFailure(error) && error.code === 'geometry-internal') return GEOMETRY_INTERNAL_MESSAGE;
   if (error instanceof Error) {
     return error.message;
   }
@@ -327,7 +329,16 @@ function toFailureMessage(error: unknown): string {
 }
 
 /** 符号を持つ計算部の誤り(面による切断・面の厚み付け・つなぎ面・加工のもとが無い/立体が残らない)の符号。無ければ空。 */
-function failureCode(error: unknown): Pick<SolidStepFailure, 'code' | 'parameters'> {
+function failureCode(error: unknown, stepId: string, step?: SolidStepSpec): Pick<SolidStepFailure, 'code' | 'parameters'> {
+  if (isSolidGeometryFailure(error)) {
+    if (error.code === 'geometry-internal') {
+      console.error('PointerCAD solid geometry', stepId, 'cause' in error ? error.cause : error);
+    }
+    return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
+  }
+  if (step?.kind === 'boolean' && isNothingLeft(error)) {
+    return { code: 'nothingLeft', parameters: { geometryCode: 'geometry-nothing-left', operation: step.operation } };
+  }
   if (error instanceof SolidSweepFailure) {
     if (error.code === 'sweep-internal') console.error('PointerCAD solid sweep', error.cause);
     return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
@@ -385,6 +396,38 @@ function findStepInput(
   throw new Error(failedLabel === undefined ? MISSING_INPUT_MESSAGE : upstreamFailedMessage(failedLabel));
 }
 
+/** Classify raw exceptions only while the requested geometry producer is running. */
+function runGeometryProducer<T>(operation: string, build: () => T): T {
+  try {
+    return build();
+  } catch (error) {
+    if (isSolidGeometryFailure(error) || isNothingLeft(error)) throw error;
+    throw new SolidGeometryFailure('geometry-internal', GEOMETRY_INTERNAL_MESSAGE, undefined,
+      { cause: { operation, error } });
+  }
+}
+
+// Shared curve and planar makers already report input facts to the sketch Worker.
+function runProfileGeometryProducer<T>(build: () => T): T {
+  try {
+    return build();
+  } catch (error) {
+    if (error instanceof KernelStepError || (error instanceof Error && error.name === 'AbortError')) throw error;
+    if (isSolidGeometryFailure(error) && !error.code.startsWith('geometry-transform-')) throw error;
+    const original = error instanceof Error ? error : undefined;
+    const reason = original === undefined ? undefined : sketchInputReason(original);
+    switch (reason?.code) {
+      case 'arcRadius':
+        throw new SolidGeometryFailure('geometry-profile-arcRadius', original?.message ?? GEOMETRY_INTERNAL_MESSAGE, { radius: reason.radius });
+      case 'faceNoCurves': case 'notConnected': case 'faceOpen': case 'faceNotPlanar':
+      case 'faceSelfIntersection': case 'segmentEdge': case 'arcEdge':
+        throw new SolidGeometryFailure(`geometry-profile-${reason.code}`, original?.message ?? GEOMETRY_INTERNAL_MESSAGE);
+      default:
+        throw new SolidGeometryFailure('geometry-internal', GEOMETRY_INTERNAL_MESSAGE, undefined, { cause: error });
+    }
+  }
+}
+
 /**
  * 2 つの立体を組み合わせる段。
  * 入力の形はキャッシュの持ち物なので、この段では解放しない(booleanOp も引数に触れない)。
@@ -400,15 +443,18 @@ function createBooleanSolid(
   const tool = findStepInput(cache, failedLabels, spec.toolKey);
   if (spec.transforms !== undefined) {
     const shape = spec.patternTool === 'rib' ? tool.ribTool : tool.shape;
-    if (shape === undefined) throw new Error(MISSING_INPUT_MESSAGE);
-    return booleanPattern(oc, spec, spec.transforms, { shape: target.shape, origins: target.mesh.origins }, shape, featureId);
+    const transforms = spec.transforms;
+    return runGeometryProducer('boolean-pattern', () => {
+      if (shape === undefined) throw new Error(MISSING_INPUT_MESSAGE);
+      return booleanPattern(oc, spec, transforms, { shape: target.shape, origins: target.mesh.origins }, shape, featureId);
+    });
   }
   const semantic = featureId !== undefined && target.mesh.origins?.state === 'tracked'
     && tool.mesh.origins?.state === 'tracked'
     ? { featureId, target: target.mesh.origins, tool: tool.mesh.origins } : undefined;
   // 「何も削れない差」の断りは、段の欄が立っているときだけ頼む(既定は従来どおり)。
-  return booleanOp(oc, spec.operation, target.shape, tool.shape, semantic, undefined,
-    spec.requireRemoval === true ? { requireRemoval: true } : undefined);
+  return runGeometryProducer(spec.operation, () => booleanOp(oc, spec.operation, target.shape, tool.shape, semantic, undefined,
+    spec.requireRemoval === true ? { requireRemoval: true } : undefined));
 }
 
 /**
@@ -493,17 +539,21 @@ function createThruSectionsSolid(
       const target = findStepInput(cache, failedLabels, section.targetKey);
       faceWires.set(
         index,
-        sectionWireFromFace(oc, target.shape, target.mesh, section.query, keep),
+        runProfileGeometryProducer(() => sectionWireFromFace(oc, target.shape, target.mesh, section.query, keep)),
       );
     }
-    const handle = keep(makeThruSections(oc, spec, options, faceWires));
+    const handle = keep(runProfileGeometryProducer(() => makeThruSections(oc, spec, options, faceWires)));
     return {
       shape: handle.shape,
       delete: release,
     };
   } catch (error) {
-    release();
-    throw error;
+    try {
+      releaseGeometryOnError(release, error);
+    } catch (failure) {
+      if (failure === error) throw error;
+      throw new SolidGeometryFailure('geometry-internal', GEOMETRY_INTERNAL_MESSAGE, undefined, { cause: failure });
+    }
   }
 }
 
@@ -632,10 +682,10 @@ function createSurfaceSolid(
   featureId?: string,
 ): SurfaceResult {
   if (spec.targetKey === null) {
-    return makeSurface(oc, spec.shape, null, null, options, featureId);
+    return runProfileGeometryProducer(() => makeSurface(oc, spec.shape, null, null, options, featureId));
   }
   const target = findStepInput(cache, failedLabels, spec.targetKey);
-  return makeSurface(oc, spec.shape, target.shape, target.mesh, options, featureId);
+  return runProfileGeometryProducer(() => makeSurface(oc, spec.shape, target.shape, target.mesh, options, featureId));
 }
 
 /**
@@ -896,9 +946,9 @@ function createStepSolid(
       // 実の変換の履歴で写し、鏡像の面・辺の参照を意味のまま保つ(以前は untracked と記録された)。
       const source = target.mesh.origins;
       const rebound: { origins?: NonNullable<typeof source> } = {};
-      const mirrored = mirrorShape(oc, target.shape, spec, source?.state === 'tracked'
+      const mirrored = runGeometryProducer('mirror', () => mirrorShape(oc, target.shape, spec, source?.state === 'tracked'
         ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
-        : undefined);
+        : undefined));
       return noMarks(rebound.origins === undefined ? mirrored
         : { shape: mirrored.shape, origins: rebound.origins, delete: () => mirrored.delete() });
     }
@@ -908,9 +958,9 @@ function createStepSolid(
       // transform history, so references to the moved body stay semantic (previously recorded as untracked).
       const source = target.mesh.origins;
       const rebound: { origins?: NonNullable<typeof source> } = {};
-      const moved = transformShape(oc, target.shape, spec, source?.state === 'tracked'
+      const moved = runGeometryProducer('transform', () => transformShape(oc, target.shape, spec, source?.state === 'tracked'
         ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
-        : undefined);
+        : undefined));
       return noMarks(rebound.origins === undefined ? moved
         : { shape: moved.shape, origins: rebound.origins, delete: () => moved.delete() });
     }
@@ -920,15 +970,15 @@ function createStepSolid(
       // 軸ごとの倍率(GTransform)は scaleShape が onBuilt を呼ばず、従来どおり untracked(unsupported-producer)。
       const source = target.mesh.origins;
       const rebound: { origins?: NonNullable<typeof source> } = {};
-      const scaled = scaleShape(oc, target.shape, spec, source?.state === 'tracked'
+      const scaled = runGeometryProducer('scale', () => scaleShape(oc, target.shape, spec, source?.state === 'tracked'
         ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
-        : undefined);
+        : undefined));
       return noMarks(rebound.origins === undefined ? scaled
         : { shape: scaled.shape, origins: rebound.origins, delete: () => scaled.delete() });
     }
     case 'sweep':
       // スイープ(FR-409)は対象を取らない「作る」段(ばね・基本形状と同じ)。
-      return noMarks(makeSweep(oc, spec));
+      return noMarks(runProfileGeometryProducer(() => makeSweep(oc, spec)));
     case 'rib': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 「材料まで伸ばすか」(`extendToBody`)も段の欄のまま `makeRib` が読む。
@@ -1587,7 +1637,7 @@ export async function recomputeSolids(
           rememberBodyForAppearance(step.key, step.id, cached.shape);
         } catch (error) {
           if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-          failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error) });
+          failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error, step.id, step.step) });
           failedLabels.set(step.key, step.label);
         }
       }
@@ -1659,7 +1709,7 @@ export async function recomputeSolids(
     } catch (error) {
       if (error instanceof CancelProbeError) throw error.cause;
       if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-      failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error) });
+      failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error, step.id, step.step) });
       failedLabels.set(step.key, step.label);
     }
   }
@@ -1693,7 +1743,7 @@ export async function recomputeSolids(
       bodies.sort((left, right) => (order.get(left.id) ?? total) - (order.get(right.id) ?? total));
     } catch (error) {
       if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-      failures.push({ id: source.id, message: toFailureMessage(error), ...failureCode(error) });
+      failures.push({ id: source.id, message: toFailureMessage(error), ...failureCode(error, source.id) });
     }
   }
 

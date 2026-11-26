@@ -48,7 +48,9 @@ function rowDimensions(row: CatalogItemRow): TSlotDimensions {
   return { width: dims.width ?? NaN, height: dims.height ?? NaN, slotPitch: dims.slotPitch ?? NaN, slotsAcross: dims.slotsAcross,
     ...(hasFaces ? { openFaces: { top: face('slotTop'), bottom: face('slotBottom'), left: face('slotLeft'), right: face('slotRight') } } : {}),
     slotOpening: dims.slotOpening ?? NaN, shoulder: dims.shoulder ?? NaN, slotInnerWidth: dims.slotInnerWidth ?? NaN,
-    slotDepth: dims.slotDepth ?? NaN, centerHole: dims.centerHole ?? NaN, cornerRadius: dims.cornerRadius ?? NaN,
+    // 図 45 頁の軸穴は右の内空に連結し、この断面の簡略形では独立した円を抜かない。
+    slotDepth: dims.slotDepth ?? NaN, centerHole: row.key === 's6-20x40-tl' ? 0 : dims.centerHole ?? NaN,
+    cornerRadius: dims.cornerRadius ?? NaN,
     cornerHoleDiameter: dims.cornerHoleDiameter ?? 0, cornerHoleInset: dims.cornerHoleInset ?? 0 };
 }
 

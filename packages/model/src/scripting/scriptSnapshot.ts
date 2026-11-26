@@ -9,6 +9,10 @@ export interface ScriptSnapshot {
   readonly references: ReadonlyMap<string, ScriptModelReference>;
 }
 /** Aliases include document generation; point-1 may belong to many different sketches. */
+export class ScriptSnapshotSizeError extends Error {
+  constructor() { super('Script snapshot exceeds byte limit'); }
+}
+
 export function createScriptSnapshot(document: PartDocument, namespace: string, lengthUnit: LengthUnit): ScriptSnapshot {
   const references = new Map<string, ScriptModelReference>();
   const alias = (reference: ScriptModelReference): string => {
@@ -28,6 +32,6 @@ export function createScriptSnapshot(document: PartDocument, namespace: string, 
   const json = JSON.stringify({ name: document.name, lengthUnit, parameters: document.parameters.map((parameter) => ({
     name: parameter.name, source: parameter.value.source, unit: parameter.unit, description: parameter.description,
   })), sketches, solids });
-  if (scriptUtf8Bytes(json, SCRIPT_LIMITS.commandBytes) === null) throw new Error('この文書は処理へ渡せる大きさを超えています。');
+  if (scriptUtf8Bytes(json, SCRIPT_LIMITS.commandBytes) === null) throw new ScriptSnapshotSizeError();
   return { json, references };
 }

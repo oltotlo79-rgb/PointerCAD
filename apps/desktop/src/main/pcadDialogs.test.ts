@@ -3,8 +3,8 @@ import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import type { IpcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SAVE_RECOVERY_COPY_MARKER } from '@pointercad/ui/save-errors';
-import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, registerPcadIpc } from './pcadDialogs.js';
+import { SAVE_RECOVERY_COPY_MARKER, SAVE_RECOVERY_COPY_RECEIPT, SaveRecoveryCopyError } from '@pointercad/ui/save-errors';
+import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, registerPcadIpc, saveAsDialog } from './pcadDialogs.js';
 import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => {
@@ -178,9 +178,16 @@ describe('デスクトップ保存の障害時にも元の内容を失わない�
   it.each([false, true])('復元も失敗したら正常な控えを保持する（後始末失敗 %s）', async (cleanupFails) => {
     memory.failRename = true; memory.failReplace = true; memory.failRestore = true;
     memory.failCleanup = cleanupFails;
-    let failure: unknown;
-    try { await save(); } catch (error) { failure = error; }
-    expect(failure).toBeInstanceOf(Error);
+    expect(structuredClone(await save())).toEqual(SAVE_RECOVERY_COPY_RECEIPT);
+    expect(backups()).toHaveLength(1);
+    expect(backups()[0]?.[1]).toEqual(originalBytes);
+    expect(memory.removed.every((path) => path.startsWith(`${destination}.tmp-`))).toBe(true);
+  });
+
+  it('同じ書込みと復元の失敗を直接の書出しではそれぞれ例外に残す', async () => {
+    memory.failRename = true; memory.failReplace = true; memory.failRestore = true;
+    const failure: unknown = await saveAsDialog(null, 'model.pcad', 'pcad', savedBytes).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(SaveRecoveryCopyError);
     if (!(failure instanceof Error)) throw new Error('保存の失敗を返す必要がある');
     expect(failure.message).toContain(SAVE_RECOVERY_COPY_MARKER);
     expect(failure.message).not.toContain(destination);
@@ -192,6 +199,13 @@ describe('デスクトップ保存の障害時にも元の内容を失わない�
     expect(backups()).toHaveLength(1);
     expect(backups()[0]?.[1]).toEqual(originalBytes);
     expect(memory.removed.every((path) => path.startsWith(`${destination}.tmp-`))).toBe(true);
+  });
+
+  it('控えを書き出すIPCでも同じ回収の返信を返す', async () => {
+    memory.failRename = true; memory.failReplace = true; memory.failRestore = true;
+    expect(structuredClone(await invoke('pcad:saveAs', 'model.pcad', 'pcad', savedBytes))).toEqual(SAVE_RECOVERY_COPY_RECEIPT);
+    expect(backups()).toHaveLength(1);
+    expect(backups()[0]?.[1]).toEqual(originalBytes);
   });
 
   it('成功後に一時ファイルを消せなくても保存を巻き戻さない', async () => {

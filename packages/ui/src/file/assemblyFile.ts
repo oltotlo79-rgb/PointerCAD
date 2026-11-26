@@ -17,8 +17,7 @@ import type { PartFileDeps } from './partFile.js';
 import { openErrorMessage } from './documentReadError.js';
 import { hasUnsavedChanges } from './partDocumentDirty.js';
 import { recordRecentFile } from './recentFiles.js';
-import { saveFailureMessageKey } from './saveFailure.js';
-import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave, reportDocumentSaveFailure } from './documentSaveQueue.js';
 import { savedMessageKey, type SaveResultIssueReport } from './saveResultIssue.js';
 import { encodeSaveParts } from './pcadSaveWorker.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
@@ -170,10 +169,7 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
       }
     }, name, savedMessageKey(resultIssues));
   } catch (error) {
-    if (isCurrent()) {
-      before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });
-      reportSaveEncodingFailure(error, isCurrent);
-    }
+    reportDocumentSaveFailure(error, isCurrent);
   }
   });
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createOfflineAssetManifest } from '../../../../scripts/vite/offlineAssets.mjs';
 import { APP_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
-import { inspectPreparedOfflineEdition } from './offlineReady.js';
+import { inspectPreparedOfflineEdition, inspectPreparedOfflineNavigation } from './offlineReady.js';
 import { OFFLINE_CACHE_PREFIX, OFFLINE_READY_FORMAT } from './offlinePreparation.js';
 
 const base = new URL('https://pointercad.test/');
@@ -47,6 +47,22 @@ describe('準備済みの印だけで起動せず、保存された全内容を�
     await expect(f.inspect()).resolves.toEqual({ cacheName, manifest });
     expect(network).not.toHaveBeenCalled();
     expect([...f.values.keys()]).toEqual(before);
+  });
+  it('通常の起動で返す文書だけを複製して検査し、残りの資産は元の本文で検査する', async () => {
+    const f = fixture();
+    const document = response(files[0]), worker = response(files[1]);
+    const documentClone = vi.spyOn(document, 'clone'), workerClone = vi.spyOn(worker, 'clone');
+    f.values.set(new URL('index.html', base).href, () => document);
+    f.values.set(new URL('worker.js', base).href, () => worker);
+    const result = await inspectPreparedOfflineNavigation(base, cacheName, f.storage, f.controller.signal, base);
+    expect(result.ready).toEqual({ cacheName, manifest });
+    expect(result.response).toBe(document);
+    expect(documentClone).toHaveBeenCalledTimes(1);
+    expect(document.bodyUsed).toBe(false);
+    expect(await document.text()).toBe(files[0].text);
+    expect(workerClone).not.toHaveBeenCalled();
+    expect(worker.bodyUsed).toBe(true);
+    expect(f.matches).toEqual([markerUrl, new URL('index.html', base).href, new URL('worker.js', base).href, markerUrl]);
   });
   it.each(['offline-assets.json', 'worker.js'])('印または必要ファイル%sが消えた版を利用可能にしない', async path => {
     const f = fixture();

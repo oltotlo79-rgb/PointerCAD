@@ -13,7 +13,7 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSlotNutPart, slotNutVolume, type SlotNutDimensions } from '../profiles/frameParts.js';
 import {
   adjusterShaftCenter, adjusterVolume, angleBracketCatalogVolume, buildAdjusterPart, buildAngleBracketCatalogPart, buildFlatPlatePart, buildFootBasePart,
-  buildFrameCapPart, buildRoundNutPart, buildShapedPlatePart, flatPlateProfile, footBaseBossVolume, footBaseProfile, frameCapProfile, roundNutVolume,
+  buildFrameCapPart, buildRoundNutPart, buildShapedPlatePart, flatPlateProfile, footBaseVolume, frameCapProfile, roundNutVolume,
   shapedPlateProfile, tSlotNutBarBounds, tSlotNutBarProfile, type AdjusterDimensions, type AngleBracketCatalogDimensions,
   type FlatPlateDimensions, type FootBaseDimensions, type FrameCapDimensions, type RoundNutDimensions, type ShapedPlateDimensions,
   type TSlotNutBarSection,
@@ -223,6 +223,7 @@ export interface FootBaseRecord {
   readonly thickness: number;
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
+  readonly counterbore?: FootBaseDimensions['counterbore'];
   /**
    * L の外形の板と、上の角を 45° に斜めに切った板だけ: 外形の頂点(左下を原点に反時計回り。辺が縦・横か 45° の多角形で、外接の長方形が
    * 幅 × 奥行)。L の外形は 2 組の読みが共通の線((h))まで一致した行(統括の決定 2026-11-18 09:3x の 3)。省略は幅 × 奥行の長方形。
@@ -230,6 +231,8 @@ export interface FootBaseRecord {
   readonly outline?: readonly (readonly [number, number])[];
   /** ボス付きの板だけ: 板を通る円柱のボス(中心 x・y・径・下の端・上の端。統括の決定 2026-11-18 13:3x の (2))。省略はボスなし。 */
   readonly bosses?: readonly { readonly x: number; readonly y: number; readonly diameter: number; readonly bottom: number; readonly top: number }[];
+  /** 資料に記されたアジャスターのめねじの呼び径。加工穴の径には使わない。 */
+  readonly adjusterThreadDiameter?: number;
   readonly massG: number | null;
   readonly simplified: readonly string[];
 }
@@ -515,6 +518,44 @@ function angleDimensions(row: CatalogItemRow): AngleBracketCatalogDimensions | n
     holeDiameter: record.holeDiameter, alongA: record.alongA, acrossA: record.acrossA, alongB: record.alongB, acrossB: record.acrossB };
 }
 
+/**
+ * 図面で穴の列が分かるが、その列の幅位置が決まらず CAD の穴を作っていない行。
+ * 角の反対側の外面から列までの距離 (mm)。穴数は図面の取付穴だけを数える。
+ */
+const OMITTED_MOUNT_HOLES = new Map<string, readonly [leg: 'A' | 'B', count: number, centers: readonly number[]]>([
+  ['s10-80x80x70-t14-hb4-rib-aluminum', ['A', 4, [24, 70]]],
+  ['s10-80x80x75-t14-hb4-rib-aluminum', ['A', 4, [24, 70]]],
+  ['s10-80x80x80-t14-hb4-rib-aluminum', ['A', 4, [24, 70]]],
+  ['s10-51x40x20-t14-ha1-aluminum', ['B', 1, [22.5]]],
+  ['s10-51x40x65-t14-ha2-aluminum', ['B', 2, [22.5]]],
+  ['s10-51x40x25-t14-ha1-aluminum', ['B', 1, [25]]],
+  ['s10-51x40x70-t14-ha2-aluminum', ['B', 2, [25]]],
+]);
+
+/** 寸法表に穴中心の範囲を渡す。along は角の外面から、across は幅の Z=0 側から測る。 */
+function mountCenterRange(key: string, centers: readonly number[]): Readonly<Record<string, number>> {
+  const first = centers[0];
+  const last = centers.at(-1);
+  if (first === undefined || last === undefined) return {};
+  return first === last ? { [key]: first } : { [key]: first, [`${key}Last`]: last };
+}
+
+function angleMountDims(record: AngleBracketRecord): Readonly<Record<string, number>> {
+  const { alongA, acrossA, alongB, acrossB } = record;
+  const countA = alongA.length * acrossA.length;
+  const countB = alongB.length * acrossB.length;
+  const omitted = OMITTED_MOUNT_HOLES.get(record.key);
+  return {
+    angleHoleCountA: countA, angleHoleCountB: countB,
+    ...mountCenterRange('angleAlongA', alongA), ...mountCenterRange('angleAcrossA', acrossA),
+    ...mountCenterRange('angleAlongB', alongB), ...mountCenterRange('angleAcrossB', acrossB),
+    ...(omitted === undefined ? {} : {
+      [`angleDrawingCount${omitted[0]}`]: omitted[1],
+      ...mountCenterRange(`angleDrawingAlong${omitted[0]}`, omitted[2]),
+    }),
+  };
+}
+
 export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-angle-bracket', 'catalog.frame.kind.angleBracketCatalog', 'angleBracketCatalog'),
   options: [],
@@ -522,7 +563,7 @@ export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
   // リブつきの形はリブを省くので、質量は資料の値(形 × 密度より実物に近い)。一定の幅の形は検算と合う時だけ資料の値。
   // 寝た脚の穴を作らない行は、資料の質量が形 × 密度より軽い時だけ入れてある(道具が確かめた。補強の抜き穴を作らない行の決まり)。
   rows: ANGLE_RECORDS.map((record) => baseRow(record, { slot: record.slot, legA: record.legA, legB: record.legB, width: record.width,
-    thickness: record.thickness, holeDiameter: record.holeDiameter, ...(record.massG === null ? {} : { massG: record.massG }) },
+    thickness: record.thickness, holeDiameter: record.holeDiameter, ...angleMountDims(record), ...(record.massG === null ? {} : { massG: record.massG }) },
   massTextOf(record.massG))),
   build: (row) => {
     const dims = angleDimensions(row);
@@ -541,21 +582,63 @@ export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
  * ベースの板の族の行: 穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))、その後に 39 回目の
  * 2 本の読みで外形・穴の並び・材質・質量が揃った長方形の板(extraFootBaseRows.ts。穴の位置の鎖を道具が読み解いて照らした)。
  */
-const FOOT_BASE_ROWS: readonly FootBaseRecord[] = [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS];
+const FOOT_BASE_COUNTERBORES = new Map<string, NonNullable<FootBaseDimensions['counterbore']>>([
+  ['foot-59x25x12-h2-d9-stainless-130g', { diameter: 14, depth: 8.5 }],
+  ['foot-78x38x16-h2-d14-steel', { diameter: 20, depth: 12.5 }],
+  ['foot-78x38x16-h2-d14-stainless', { diameter: 20, depth: 12.5 }],
+  ['foot-79x75x16-h4-d9-steel-723g', { diameter: 14, depth: 8.5 }],
+  ['foot-79x75x16-h4-d9-stainless-729g', { diameter: 14, depth: 8.5 }],
+]);
+const FOOT_BASE_ROWS: readonly FootBaseRecord[] = [
+  ...FOOT_BASE_RECORDS.flatMap((record): readonly FootBaseRecord[] => {
+    const counterbore = FOOT_BASE_COUNTERBORES.get(record.key);
+    if (counterbore === undefined) return [record];
+    const name = record.size.replace(/（質量 [0-9.]+ g）$/u, '');
+    const detailed = {
+      ...record,
+      key: `${record.key}-cb${counterbore.diameter}x${counterbore.depth}`,
+      size: `${name}（座ぐり φ${counterbore.diameter}・深さ ${counterbore.depth}）`,
+      counterbore,
+      massG: null,
+      simplified: ['アジャスターのめねじ'],
+    };
+    return [record, detailed];
+  }),
+  ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS,
+];
 const baseRecord = recordLookup(FOOT_BASE_ROWS);
 
 function baseDimensions(row: CatalogItemRow): FootBaseDimensions | null {
   const record = baseRecord(row);
   return record === undefined ? null : { width: record.width, depth: record.depth, thickness: record.thickness, holes: record.holes,
-    ...(record.outline === undefined ? {} : { outline: record.outline }), ...(record.bosses === undefined ? {} : { bosses: record.bosses }) };
+    ...(record.outline === undefined ? {} : { outline: record.outline }), ...(record.bosses === undefined ? {} : { bosses: record.bosses }),
+    ...(record.counterbore === undefined ? {} : { counterbore: record.counterbore }) };
+}
+
+function footBaseDrillingDimensions(record: FootBaseRecord): Readonly<Record<string, number>> {
+  const { holes, bosses, adjusterThreadDiameter } = record;
+  const boss = bosses?.length === 1 ? bosses[0] : undefined;
+  if (boss === undefined) return { holeCount: holes.length };
+  return { bossDiameter: boss.diameter, bossHeight: boss.top - boss.bottom, bossCenterX: boss.x, bossCenterY: boss.y,
+    ...(adjusterThreadDiameter === undefined ? {} : { adjusterThreadDiameter }),
+    ...(holes.length === 0 ? {} : { holeCount: holes.length }) };
+}
+
+function footBaseRow(record: FootBaseRecord): CatalogItemRow {
+  const bore = record.counterbore;
+  return {
+    ...baseRow(record, { width: record.width, depth: record.depth, thickness: record.thickness, ...footBaseDrillingDimensions(record),
+      ...(bore === undefined ? {} : { counterboreDiameter: bore.diameter, counterboreDepth: bore.depth }),
+      ...(record.massG === null ? {} : { massG: record.massG }) }, massTextOf(record.massG)),
+    ...(FOOT_BASE_COUNTERBORES.has(record.key) ? { listed: false } : {}),
+  };
 }
 
 export const FOOT_BASE_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-foot-base', 'catalog.frame.kind.footBase', 'footBase'),
   options: [],
   stock: 'count',
-  rows: FOOT_BASE_ROWS.map((record) => baseRow(record, { width: record.width, depth: record.depth, thickness: record.thickness,
-    holeCount: record.holes.length, ...(record.massG === null ? {} : { massG: record.massG }) }, massTextOf(record.massG))),
+  rows: FOOT_BASE_ROWS.map(footBaseRow),
   build: (row) => {
     const dims = baseDimensions(row);
     const part = dims === null ? null : buildFootBasePart(dims);
@@ -563,9 +646,7 @@ export const FOOT_BASE_FAMILY: CatalogFamily = {
   },
   nominalVolume: (row) => {
     const dims = baseDimensions(row);
-    const profile = dims === null ? null : footBaseProfile(dims);
-    // ボスの板の外へ出る分を足す(ボスの無い行は 0)。
-    return dims === null || profile === null ? null : profile.areaMm2 * dims.thickness + footBaseBossVolume(dims);
+    return dims === null ? null : footBaseVolume(dims);
   },
   nominalMassG: pieceMass,
   partName: (row) => row.size,

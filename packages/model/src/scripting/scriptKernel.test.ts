@@ -2,7 +2,7 @@ import { SCRIPT_EXAMPLE_PROGRAMS } from './scriptExamples.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createKernelApi } from '@pointercad/kernel';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
@@ -24,7 +24,7 @@ async function prepare(source: string, document: PartDocument = createEmptyPartD
   const modules = await Promise.all(inputs.map(async input => ({ ...input, sha256: await sha256ScriptSource(input.source) })));
   const vm = await executeScriptVm({ executionId: 'kernel-test', commandNamespace, program: { apiVersion: 1, source, sha256: await sha256ScriptSource(source), modules },
     snapshot: snapshot.json, seed: 123, timeMs: 1800000000000 }, wasm);
-  expect(vm.ok).toBe(true); if (!vm.ok) throw new Error(vm.error.message);
+  expect(vm.ok).toBe(true); if (!vm.ok) throw new Error(JSON.stringify(vm.error));
   return prepareScriptTransaction({ requestId: 'kernel-test', document, commandNamespace, commands: vm.commands, references: snapshot.references,
     lengthUnit: 'mm', sources: new Map([['user-script.js', source], ...inputs.map(input => [input.name, input.source] satisfies [string, string])]), importedShapes: new Map() }, bridge, cancel);
 }
@@ -118,6 +118,28 @@ cad.sketch.face(s,e);`);
     const original = createEmptyPartDocument(); let calls = 0;
     const result = await prepare("cad.solid.box({x:'20',y:'20',z:'20'});", original, () => ++calls > 2);
     expect(result).toMatchObject({ ok: false, error: { kind: 'cancelled' } }); expect(original.solids).toEqual([]);
+  });
+  it('再計算と解放が両方失敗しても元の例外を順に一度だけ記録する', async () => {
+    const calculation = new Error('calculation detail'), cleanup = new Error('release detail');
+    const releasePart = vi.fn<AssemblyKernelBridge['releasePart']>(() => Promise.reject(cleanup));
+    const calculate = vi.fn<typeof recomputePart>(() => Promise.reject(calculation));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const document = createEmptyPartDocument();
+    try {
+      const result = await prepareScriptTransaction({
+        requestId: 'failure-order', document, commandNamespace: 'run', commands: [], references: new Map(),
+        lengthUnit: 'mm', sources: new Map(), importedShapes: new Map(),
+      }, { ...bridge, releasePart }, () => false, undefined, calculate);
+      expect(result).toEqual({ ok: false, error: { kind: 'worker', reason: 'internal', location: null } });
+      expect(releasePart).toHaveBeenCalledExactlyOnceWith('script-preview:failure-order');
+      expect(log).toHaveBeenCalledTimes(1);
+      const diagnostic: unknown = log.mock.calls[0]?.[1];
+      expect(diagnostic).toBeInstanceOf(AggregateError);
+      if (!(diagnostic instanceof AggregateError)) throw new Error('Missing script diagnostic');
+      expect(diagnostic.errors).toEqual([calculation, cleanup]);
+      expect(calculate.mock.invocationCallOrder[0]).toBeLessThan(releasePart.mock.invocationCallOrder[0]);
+      expect(releasePart.mock.invocationCallOrder[0]).toBeLessThan(log.mock.invocationCallOrder[0]);
+    } finally { log.mockRestore(); }
   });
   it('成功後の通常所有先が保持してから一時所有先を二重解放しても出力を壊さない', async () => {
     const result = await prepare("cad.solid.box({x:'8',y:'9',z:'10'});"); expect(result.ok).toBe(true); if (!result.ok) return;

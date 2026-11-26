@@ -3,7 +3,7 @@ import type { IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'e
 import { closeSync, constants as fileSystemConstants, promises as fileSystem, unlinkSync } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
-import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
+import { SAVE_RECOVERY_COPY_RECEIPT, SaveRecoveryCopyError } from '@pointercad/ui/save-errors';
 
 import { nativeFileFilter, isFileDialogKind, ARCHIVE_READ_CHUNK_BYTES, MAX_COMPRESSED_INPUT_BYTES, typedReadLimitOf, validArchiveReadRange,
   PCADA_EXTENSION, PCADD_EXTENSION, PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
@@ -312,16 +312,14 @@ async function replaceWithTemporary(filePath: string, temporaryPath: string,
           await fileSystem.copyFile(backupPath, filePath);
           backupMayBeRemoved = true;
         } catch (restoreCause) {
-          throw new AggregateError([copyCause, restoreCause], `${SAVE_RECOVERY_COPY_MARKER} 保存と復元に失敗しました。元の内容は同じフォルダーの .backup- を含む控えに残しています。`, {
-            cause: restoreCause,
-          });
+          throw new SaveRecoveryCopyError([copyCause, restoreCause], { cause: restoreCause });
         }
         throw copyCause;
       }
       backupMayBeRemoved = true;
     }
   } catch (cause) {
-    if (hasSaveRecoveryCopy(cause)) throw cause;
+    if (cause instanceof SaveRecoveryCopyError) throw cause;
     if (cause instanceof ExportCancelledError || signal?.aborted) throw new ExportCancelledError('書き出しを取り消しました。');
     throw new Error('ファイルを保存できませんでした。', { cause });
   } finally {
@@ -784,13 +782,17 @@ async function receiveSaveChunk(event: IpcMainInvokeEvent, args: readonly unknow
  * 確定。全部届いたことを確かめ、一時ファイルをディスクへ書き出して(sync)から閉じ、書き出しと同じ置換の手順で
  * 保存先を置き換える。開始の後に保存先の解除・別の保存の開始があれば、書いたうえで上書き先としては覚えず null を返す(今の決まり)。
  */
-async function commitSaveTransfer(event: IpcMainInvokeEvent, args: readonly unknown[]): Promise<string | null> {
+async function commitSaveTransfer(event: IpcMainInvokeEvent, args: readonly unknown[]):
+  Promise<string | null | typeof SAVE_RECOVERY_COPY_RECEIPT> {
   const { id, transfer } = ownTransfer(event, args[0]);
   if (args.length !== 1 || transfer.busy || transfer.receivedBytes !== transfer.totalBytes) return refuseSaveTransfer(id);
   saveTransfers.delete(id);
   settlingTransfers.add(transfer);
   try {
     await replaceWithTemporary(transfer.path, transfer.temporaryPath, () => syncThenClose(transfer.handle));
+  } catch (error) {
+    if (error instanceof SaveRecoveryCopyError) return SAVE_RECOVERY_COPY_RECEIPT;
+    throw error;
   } finally {
     settlingTransfers.delete(transfer);
   }
@@ -1123,7 +1125,7 @@ export function registerPcadIpc(): void {
 
   ipcMain.handle(
     PCAD_SAVE_AS_CHANNEL,
-    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean | typeof SAVE_RECOVERY_COPY_RECEIPT> => {
       if (!validateAppSender(event)) {
         return false;
       }
@@ -1143,6 +1145,9 @@ export function registerPcadIpc(): void {
       if (attempt === null) return false;
       try {
         return await saveAsDialog(windowOf(event), fileName, kind, bytes, attempt.signal);
+      } catch (error) {
+        if (error instanceof SaveRecoveryCopyError) return SAVE_RECOVERY_COPY_RECEIPT;
+        throw error;
       } finally {
         attempt.finish();
       }

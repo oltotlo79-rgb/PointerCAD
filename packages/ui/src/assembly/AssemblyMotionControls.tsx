@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Joint, JointCoordinate } from '@pointercad/model';
 import { saveFileAsThrough } from '../file/fileGateway.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { AssemblyJointDrive as AppStateJointDrive } from '../store/assemblySlice.js';
@@ -118,6 +119,8 @@ export function AssemblyMotionControls(): React.JSX.Element | null {
   const document = useAppStore((state) => state.assembly);
   const time = useAppStore((state) => state.assemblyMotionTime);
   const playing = useAppStore((state) => state.assemblyMotionPlaying);
+  const internalFailure = useAppStore((state) => state.assemblyMotionNotice?.kind === 'internal'
+    ? state.assemblyMotionNotice.text : null);
   const view = useAppStore((state) => state.assemblyView);
   const selection = useAppStore((state) => state.selection);
   const capture = useAppStore((state) => state.capturePrintFrame);
@@ -194,6 +197,9 @@ export function AssemblyMotionControls(): React.JSX.Element | null {
         title={t('assembly.motion.exportTooltip')} aria-label={t('assembly.motion.export')}
         onClick={() => { void exportFrames(); }}><ExportIcon /></button>
       {selectedJoint === undefined ? null : <JointSliderControls joint={selectedJoint} idPrefix="viewport" />}
+      {internalFailure === null ? null : <span className="pcad-field__message pcad-field__message--error" role="alert">
+        {failureMessage(internalFailure)}
+      </span>}
     </div>
   );
 }

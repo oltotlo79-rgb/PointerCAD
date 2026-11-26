@@ -7,7 +7,7 @@ function setParameter(document: PartDocument, name: string, source: string): Par
   const result = applyScriptCommands(document, [{ kind: 'parameter.set', resultId: null,
     callStack: 'at (user-script.js:1:1)', fields: { name, source, unit: 'mm' } }],
   new Map(), 'run', 'mm', new Map([['user-script.js', 'cad.parameters.set()']]));
-  if (!result.ok) throw new Error(result.error.message);
+  if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.document;
 }
 function roundTrip(document: PartDocument): PartDocument {

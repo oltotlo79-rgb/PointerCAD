@@ -5,6 +5,8 @@ import { conditionEllipseBoolean, type BooleanHistory } from './ellipseBoolean.j
 import type { BooleanOperation } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
+
 const COMBINE_FAILED_MESSAGE = '2 つのソリッドを組み合わせられませんでした。位置や形を見直してください。';
 
 /**
@@ -49,15 +51,19 @@ export function buildBooleanShape(
     // Build より前に立て、許容値や pcurve の更新をキャッシュの入力へ書き戻させない。
     maker.SetNonDestructive(true);
     maker.Build(range);
-  } finally {
-    inputs.release();
+  } catch (error) {
+    releaseGeometryOnError(inputs.release, error);
   }
+  inputs.release();
 
   // 成否は HasErrors() と IsDone() だけで見る。Error() の戻り値は
   // 型定義で空の型 `{}` になっており、比較に強制変換が要るため使わない
   // (makePlanarFace.ts と同じ理由)。
-  if (maker.HasErrors() || !maker.IsDone()) {
-    throw new Error(COMBINE_FAILED_MESSAGE);
+  const hasErrors = maker.HasErrors();
+  const isDone = hasErrors ? undefined : maker.IsDone();
+  if (hasErrors || isDone === false) {
+    throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+      { cause: { operation, phase: 'build', toolCount: tools.length, hasErrors, isDone } });
   }
 
   const shape = allocations.keep(maker.Shape());

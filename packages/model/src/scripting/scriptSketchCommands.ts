@@ -21,7 +21,7 @@ export function applyScriptSketchCommand(context: ScriptCommandContext, command:
   }
   const owner = scriptReference(context, command.fields.sketch, 'sketch');
   const sketch = findSketch(context.document, owner.featureId);
-  if (!sketch) throw new ScriptCommandError('作図するスケッチが見つかりません。');
+  if (!sketch) throw new ScriptCommandError('missingSketch');
   let feature: SketchFeature;
   let kind: 'point' | 'edge' | 'face';
   if (command.kind === 'sketch.point') {
@@ -30,14 +30,14 @@ export function applyScriptSketchCommand(context: ScriptCommandContext, command:
   } else if (command.kind === 'sketch.line') {
     const start = scriptReference(context, command.fields.start, 'point');
     const end = scriptReference(context, command.fields.end, 'point');
-    if (start.sketchId !== sketch.id || end.sketchId !== sketch.id) throw new ScriptCommandError('同じスケッチの点を指定してください。');
+    if (start.sketchId !== sketch.id || end.sketchId !== sketch.id) throw new ScriptCommandError('sameSketchPoints');
     feature = { id: nextFeatureId(sketch, 'line'), name: nextFeatureName(sketch, 'line'), kind: 'line',
       planeId: owner.planeId, construction: false, from: referenceCoordinate(start.featureId), to: referenceCoordinate(end.featureId) };
     kind = 'edge';
   } else {
     const boundary = command.fields.edges.map(alias => {
       const edge = scriptReference(context, alias, 'edge');
-      if (edge.sketchId !== sketch.id) throw new ScriptCommandError('同じスケッチの線を指定してください。');
+      if (edge.sketchId !== sketch.id) throw new ScriptCommandError('sameSketchEdges');
       return { featureId: edge.featureId };
     });
     feature = { id: nextFeatureId(sketch, 'face'), name: nextFeatureName(sketch, 'face'), kind: 'face',

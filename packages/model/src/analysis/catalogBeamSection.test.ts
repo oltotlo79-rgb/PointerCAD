@@ -13,6 +13,13 @@ const registry = createCatalogRegistry(families.map(family => ({ ...family, load
 const records = [...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS];
 beforeAll(() => registry.ensure(families.map(family => family.id)));
 
+// 図 43・45・46 頁と性能表 384 頁。20×40 の図箱の値は図面の軸に対応づけられない。
+const dimensioned = [
+  { key: 's6-20x20-tb', status: 'available', areaMm2: 200, ixCm4: 0.75, iyCm4: 0.89 },
+  { key: 's6-20x40-tl', status: 'missing-properties', areaMm2: null, ixCm4: null, iyCm4: null },
+  { key: 's6-25x25', status: 'available', areaMm2: 288, ixCm4: 1.64, iyCm4: 1.64 },
+] as const;
+
 function expectedStatus(row: TSlotCatalogRecord) {
   if ([row.areaMm2, row.ixCm4, row.iyCm4].includes(null)) return 'missing-properties';
   // For the recorded faces, only no slots, either opposite pair or all four preserve both mirrors.
@@ -23,13 +30,15 @@ function expectedStatus(row: TSlotCatalogRecord) {
 
 describe('published beam sections', () => {
   it.each(families)('matches every printed row and the status counts in $id', family => {
-    const printed = records.filter(row => `t-slot-frame-s${row.slot}` === family.id);
+    const legacy = records.filter(row => `t-slot-frame-s${row.slot}` === family.id);
+    const printed = [...legacy.map(row => ({ ...row, status: expectedStatus(row) })),
+      ...(family.id === 't-slot-frame-s6' ? dimensioned : [])];
     expect(family.rows.map(row => row.key)).toEqual(printed.map(row => row.key));
     const statuses = family.rows.map((row, index) => {
       const record = printed[index];
       const section = catalogBeamSection(createCatalogItemSource(family, row), registry);
       const status = section.ok ? 'available' : section.reason;
-      expect(status, row.key).toBe(expectedStatus(record));
+      expect(status, row.key).toBe(record.status);
       if (section.ok) {
         expect(section).toEqual({ ok: true, areaMm2: record.areaMm2, ixCm4: record.ixCm4, iyCm4: record.iyCm4,
           cx: 0, cy: 0, principalAngle: 0, reference: `${row.evidence.title} ${row.evidence.locator}` });
@@ -40,7 +49,7 @@ describe('published beam sections', () => {
       return status;
     });
     for (const status of ['available', 'missing-properties', 'unverified-symmetry']) {
-      expect(statuses.filter(value => value === status)).toHaveLength(printed.filter(row => expectedStatus(row) === status).length);
+      expect(statuses.filter(value => value === status)).toHaveLength(printed.filter(row => row.status === status).length);
     }
   });
 

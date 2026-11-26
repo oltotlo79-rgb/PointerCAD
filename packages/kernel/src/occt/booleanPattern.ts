@@ -27,6 +27,7 @@ import { OPEN_FACES_NOT_SUPPORTED, shapeBodyKind } from './shapeBodyKind.js';
 import { measureVolume } from './solidMesh.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { rebindTransformedOrigins } from './subShapeOrigins.js';
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
 import { transformShape } from './transformShape.js';
 
 /** 写しの数の上限。model の並べる個数の上限(MAX_PATTERN_COUNT = 100、もとを含む)から、もとの 1 つを引いた数。 */
@@ -53,9 +54,17 @@ function assertPatternContract(spec: PatternBooleanFields, transforms: readonly 
 function copyShape(oc: OpenCascadeInstance, shape: TopoDS_Shape, owned: Allocations):
   { readonly copier: BRepBuilderAPI_Copy; readonly copied: TopoDS_Shape } {
   const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(shape, true, true));
-  if (!copier.IsDone()) throw new Error(COPY_FAILED_MESSAGE);
+  if (!copier.IsDone()) {
+    throw new SolidGeometryFailure('geometry-internal', COPY_FAILED_MESSAGE, undefined,
+      { cause: { phase: 'pattern-copy', isDone: false } });
+  }
   const copied = owned.keep(copier.Shape());
-  if (copied.IsNull() || copied.IsSame(shape)) throw new Error(COPY_FAILED_MESSAGE);
+  const isNull = copied.IsNull();
+  const isSame = !isNull && copied.IsSame(shape);
+  if (isNull || isSame) {
+    throw new SolidGeometryFailure('geometry-internal', COPY_FAILED_MESSAGE, undefined,
+      { cause: { phase: 'pattern-copy', isNull, isSame } });
+  }
   return { copier, copied };
 }
 
@@ -83,8 +92,7 @@ function carryTarget(oc: OpenCascadeInstance, target: TopoDS_Shape, targetOrigin
     const origins = targetOrigins === undefined ? undefined : rebindTransformedOrigins(oc, targetOrigins, target, copier, copied);
     return { shape: copied, volume: measureVolume(oc, copied), ...(origins === undefined ? {} : { origins }), delete: owned.release };
   } catch (error) {
-    owned.release();
-    throw error;
+    releaseGeometryOnError(owned.release, error);
   }
 }
 
@@ -120,23 +128,21 @@ function combineCopies(oc: OpenCascadeInstance, operation: 'union' | 'subtract',
     let origins: CurrentOriginIndex | undefined;
     const result = booleanOpWithTools(oc, operation, workingTarget, copies, naming === undefined || workingOrigins === undefined
       ? undefined : (maker, output) => { origins = targetIdentities(oc, naming.featureId, workingTarget, workingOrigins, maker, output); });
-    let detached: boolean;
+    let solids: number;
     try {
-      detached = operation === 'union' && countSolids(oc, result.shape) > 1;
+      solids = operation === 'union' ? countSolids(oc, result.shape) : 0;
     } catch (error) {
-      result.delete();
-      throw error;
+      releaseGeometryOnError(() => result.delete(), error);
     }
-    if (detached) {
-      result.delete();
-      throw new Error(DETACHED_COPIES_MESSAGE);
+    if (solids > 1) {
+      releaseGeometryOnError(() => result.delete(),
+        new SolidGeometryFailure('geometry-pattern-detached', DETACHED_COPIES_MESSAGE, { solids: String(solids) }));
     }
     // 結果の面は写しの幾何を借りうるので、結果(作り手)を先に、写しを後に解放する。
     return { ...result, ...(origins === undefined ? {} : { origins }),
       delete: () => { try { result.delete(); } finally { owned.release(); } } };
   } catch (error) {
-    owned.release();
-    throw error;
+    releaseGeometryOnError(owned.release, error);
   }
 }
 
@@ -153,7 +159,7 @@ interface PatternTarget {
 export function booleanPattern(oc: OpenCascadeInstance, spec: PatternBooleanFields, transforms: readonly RigidTransformSpec[],
   target: PatternTarget, tool: TopoDS_Shape, featureId?: string): BooleanResult {
   const operation = assertPatternContract(spec, transforms);
-  if (shapeBodyKind(oc, target.shape) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
+  if (shapeBodyKind(oc, target.shape) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new SolidGeometryFailure('geometry-open-solid', OPEN_FACES_NOT_SUPPORTED);
   const naming = featureId !== undefined && target.origins?.state === 'tracked'
     ? { featureId, targetOrigins: target.origins } : undefined;
   return transforms.length === 0

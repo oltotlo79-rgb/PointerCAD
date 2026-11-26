@@ -1,3 +1,4 @@
+import { SAVE_RECOVERY_COPY_RECEIPT, SaveRecoveryCopyError } from '@pointercad/ui/save-errors';
 import { describe, expect, it, vi } from 'vitest';
 import { desktopCamGateway } from './desktopCamGateway.js';
 vi.mock('@pointercad/ui', () => ({ t: (key: string) => key }));
@@ -23,6 +24,18 @@ describe('Desktopの加工受渡しを任意能力として接続する', () => 
     answer({ token: 'old' });
     expect(await saving).toBeNull();
   });
+  it('書込み後に控えが残った返信を、先に届いた取消で消さない', async () => {
+    let answer: (value: unknown) => void = () => { throw new Error('未初期化'); };
+    const pending = new Promise<unknown>(resolve => { answer = resolve; });
+    const native = { ...api(null), saveExport: vi.fn(() => pending), cancelExportSave: vi.fn(() => Promise.resolve(true)) };
+    const controller = new AbortController();
+    const saving = desktopCamGateway(native).saveExport?.('part.stl', 'stl', Uint8Array.of(1),
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted });
+    controller.abort();
+    answer(structuredClone(SAVE_RECOVERY_COPY_RECEIPT));
+    await expect(saving).rejects.toBeInstanceOf(SaveRecoveryCopyError);
+  });
+
   it('取消口がない旧preloadにはcontrol付きexportを開始しない', async () => {
     const native = api({ token: 'old' });
     const controller = new AbortController();

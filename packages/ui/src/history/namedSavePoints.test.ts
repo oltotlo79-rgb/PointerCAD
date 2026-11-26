@@ -6,7 +6,7 @@ import { createEmptyPartDocument } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  MAX_NAMED_SAVE_POINT_BYTES, SavePointError, checkedUsage,
+  MAX_NAMED_SAVE_POINT_BYTES, SAVE_POINT_CHUNK_BYTES, SavePointError, checkedUsage,
   createNamedSavePoints, sameBytes, sha256, type NamedSavePoint, type SavePointBlob,
   type SavePointChange, type SavePointState, type SavePointStorage,
 } from './namedSavePoints.js';
@@ -138,6 +138,35 @@ describe('名前付き保存点の通常PCAD byte共有', () => {
     expect(() => checkedUsage(101, 0, 0)).toThrowError(/100件/);
     expect(() => checkedUsage(1, Number.MAX_SAFE_INTEGER, 1)).toThrowError(/512MiB/);
     expect(() => checkedUsage(1, Number.MAX_SAFE_INTEGER + 1, 0)).toThrowError(/壊れ/);
+  });
+
+  it('refuses a new unique blob above 512MiB before reading bytes or opening a write transaction', async () => {
+    const original = createNamedSavePoints(memoryStorage());
+    const incoming = pcad('new-canvas', '2026-10-04T02:00:00.000Z');
+    const point = await original.create('baseline', incoming, 'part');
+    const byteLength = MAX_NAMED_SAVE_POINT_BYTES / 8;
+    const chunkCount = byteLength / SAVE_POINT_CHUNK_BYTES;
+    const blobs = Array.from({ length: 8 }, (_, index) => ({
+      version: 1, sha256: (index + 1).toString(16).padStart(64, '0'), byteLength, chunkCount,
+    }));
+    const readBlob = vi.fn(() => Promise.reject(new Error('Existing bytes must not be read for a capacity refusal')));
+    const commit = vi.fn(() => Promise.reject(new Error('Capacity refusal must not write')));
+    const repo = createNamedSavePoints({
+      load() {
+        return Promise.resolve({
+          revision: 1,
+          points: [{ ...point, entries: blobs.map((blob, index) => ({
+            name: `canvases/old-${index}.png`, sha256: blob.sha256, byteLength, level: 0,
+          })) }],
+          blobs,
+          chunkKeys: blobs.flatMap(blob => Array.from({ length: chunkCount }, (_, index) => `${blob.sha256}:${index}`)),
+        });
+      },
+      readBlob, commit,
+    });
+    await expect(repo.createAndList('overflow', incoming, 'part')).rejects.toMatchObject({ reason: 'limitBytes' });
+    expect(readBlob).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
   });
 
   it('quota/transaction途中失敗とhash破損を拒み、旧repositoryを維持する', async () => {

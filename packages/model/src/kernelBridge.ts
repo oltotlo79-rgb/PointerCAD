@@ -282,16 +282,20 @@ async function readShapeExport(options: ShapeExportOptions, read: () => Promise<
     const reply = await read();
     return options.signal?.aborted ? { kind: 'cancelled' } : toShapeExportOutcome(reply, options);
   } catch (error) {
-    if (options.signal?.aborted) return { kind: 'cancelled' };
+    if (options.signal?.aborted || (options.format === 'iges' && error instanceof Error && error.name === 'AbortError')) {
+      return { kind: 'cancelled' };
+    }
     if (!usesShapeExportDiagnostics(options)) return { kind: 'failed', message: toFailureMessage(error) };
     if (error instanceof Error && error.name === 'MissingBodiesError') return missingShapeExport(options);
+    // Older IGES workers ignore the diagnostics flag and still reject with the legacy message.
+    if (options.format === 'iges') return { kind: 'failed', message: toFailureMessage(error) };
     return unexpectedShapeExportFailure(options, error);
   }
 }
 
 /** 直呼出しの診断と、旧 Worker の文言付き拒否を公開結果へつなぐ。 */
 function toShapeImportFailure(format: ShapeImportOptions['format'], error: unknown): ShapeImportOutcome {
-  if ((format === 'step' || format === 'stl') && error instanceof Error && error.name === 'AbortError') {
+  if ((format === 'step' || format === 'iges' || format === 'stl') && error instanceof Error && error.name === 'AbortError') {
     return { kind: 'cancelled' };
   }
   if (error instanceof ShapeImportError) {
@@ -931,6 +935,7 @@ function toInterferenceResult(result: InterferenceResult): AssemblyInterferenceR
         indices: pair.mesh.indices, triangleCount: pair.mesh.triangleCount } })),
     failures: result.failures.map((failure) => ({ pair: [failure.pair[0], failure.pair[1]], stage: failure.stage,
       code: failure.code, message: failure.message,
+      ...(failure.diagnostic === undefined ? {} : { diagnostic: failure.diagnostic }),
       ...(failure.missingKeys === undefined ? {} : { missingKeys: [...failure.missingKeys] }),
       ...(failure.cleanupMessages === undefined ? {} : { cleanupMessages: [...failure.cleanupMessages] }) })),
     skips: result.skips.map((skip) => ({ pair: [skip.pair[0], skip.pair[1]], reason: skip.reason })),

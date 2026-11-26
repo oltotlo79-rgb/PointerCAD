@@ -80,10 +80,14 @@ export interface PickedParameterCsvFile {
 
 const PARAMETER_CSV_BYTE_LIMIT = 1024 * 1024;
 
-/** One export attempt; never transfer this callback or signal across desktop IPC. */
+export type ExportSaveStage = 'picker' | 'create' | 'write' | 'close';
+
+/** One export attempt; never transfer its callbacks or signal across desktop IPC. */
 export interface ExportSaveControl {
   readonly signal: AbortSignal;
   readonly isCurrent: () => boolean;
+  /** The browser signals entry into a stage; a stage failure still rejects with the original cause. */
+  readonly onStage?: (stage: ExportSaveStage) => void;
 }
 
 function mayContinueExport(control?: ExportSaveControl): boolean {
@@ -342,12 +346,14 @@ async function writeAndClose(writable: WritableFile, parts: readonly Uint8Array[
         await abortWritable(writable);
         return false;
       }
+      control?.onStage?.('write');
       await writable.write(part);
     }
     if (!mayContinueExport(control)) {
       await abortWritable(writable);
       return false;
     }
+    control?.onStage?.('close');
     await writable.close();
     return true;
   } catch (error) {
@@ -766,11 +772,13 @@ export async function saveFileAsInBrowser(
   if (!hasSavePicker(scope)) {
     // 場所は選べないので、名前を添えてダウンロードする。
     if (!mayContinueExport(control)) return false;
+    control?.onStage?.('write');
     downloadBytes(scope, fileName, primaryMimeTypeOf(kind), [bytes]);
     return true;
   }
   let picked: unknown;
   try {
+    control?.onStage?.('picker');
     picked = await scope.showSaveFilePicker({
       suggestedName: fileName,
       types: [fileTypeOf(kind)],
@@ -785,6 +793,7 @@ export async function saveFileAsInBrowser(
   if (!isWritableFileHandle(picked)) {
     throw new Error(t('file.saveFailed'));
   }
+  control?.onStage?.('create');
   const writable = await picked.createWritable();
   if (!mayContinueExport(control)) {
     if (isWritableFile(writable)) await abortWritable(writable);

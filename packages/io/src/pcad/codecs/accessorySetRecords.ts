@@ -1,3 +1,4 @@
+import { pcadVersionError } from '../writeDiagnostic.js';
 import type { AccessorySetRecord, AssemblyDocument } from '@pointercad/model';
 import { checkRecord, fieldProblem, indexPath, isRecord, isUnknownArray, joinPath, readArray, readLiteral, readString, type Checked } from '../guards.js';
 
@@ -29,7 +30,8 @@ export function hasAccessorySetsField(document: unknown): boolean {
 /** 記録を使った文書は、保存形式の版 23 以上でしか保存しない(古い読み手が記録を捨てないよう、保存の境界で断る)。 */
 export function assertAccessorySetsVersion(document: AssemblyDocument): void {
   if (document.schemaVersion >= ACCESSORY_SETS_SCHEMA_VERSION || (document.accessorySets?.length ?? 0) === 0) return;
-  throw new RangeError('付属の組の記録を保存するには保存形式の版23が必要です。');
+  throw pcadVersionError('accessorySets', document,
+      '付属の組の記録を保存するには保存形式の版23が必要です。');
 }
 
 function readAccessories(source: Record<string, unknown>, path: string): Checked<AccessorySetRecord['accessories']> {

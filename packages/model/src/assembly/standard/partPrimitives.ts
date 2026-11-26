@@ -21,6 +21,9 @@ import { DEFAULT_WORK_PLANE_ID } from '../../sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature, SketchPointFeature, SketchPolygonFeature } from '../../sketch/types.js';
 import { threadMinorDiameter, type ThreadSeries } from '../../thread/metricThread.js';
 
+// These preconditions describe the generated document and its authored construction, not a picker field.
+export class StandardPartGeometryError extends Error {}
+
 export function origin(x: number, y: number, z: number): SolidOrigin {
   return { kind: 'coordinate', value: absoluteCoordinate(x, y, z) };
 }
@@ -31,7 +34,7 @@ export function withName(document: PartDocument, name: string): PartDocument {
 
 export function activeSketch(document: PartDocument): SketchDocument {
   const sketch = document.sketches.find((candidate) => candidate.id === document.activeSketchId);
-  if (sketch === undefined) throw new Error('規格部品の作図面が見つかりません。');
+  if (sketch === undefined) throw new StandardPartGeometryError('規格部品の作図面が見つかりません。');
   return sketch;
 }
 
@@ -196,7 +199,7 @@ export function appendExternalThread(
   shaft: PrimitiveFeature,
   spec: ExternalThreadSpec,
 ): { readonly document: PartDocument; readonly feature: ThreadShaftFeature } {
-  if (shaft.shape.kind !== 'cylinder') throw new Error('外ねじの対象が円柱ではありません。');
+  if (shaft.shape.kind !== 'cylinder') throw new StandardPartGeometryError('外ねじの対象が円柱ではありません。');
   const radius = shaft.shape.radius.value;
   const feature: ThreadShaftFeature = {
     id: nextSolidId(document, 'threadShaft'),

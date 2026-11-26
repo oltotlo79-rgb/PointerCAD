@@ -1,4 +1,5 @@
 import { unitDirection as toUnit } from './normalizeDirection.js';
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
 import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './sketchCorner.js';
 /**
  * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)。
@@ -111,6 +112,7 @@ import type {
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
+import { sketchInputError } from './kernelStepError.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
@@ -155,7 +157,7 @@ const SPHERE_SEGMENT_CHOICES: readonly number[] = [24, 48, 72];
  */
 export function checkSphereSegments(value: number): void {
   if (!SPHERE_SEGMENT_CHOICES.includes(value)) {
-    throw new Error(SEGMENT_COUNT_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-segments', SEGMENT_COUNT_MESSAGE);
   }
 }
 
@@ -227,18 +229,18 @@ function makeSectionWire(
   keep: Allocations['keep'],
 ): TopoDS_Wire {
   if (curves.length === 0) {
-    throw new Error(OPEN_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-open-profile', OPEN_PROFILE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
   for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
   }
   if (!wireMaker.IsDone()) {
-    throw new Error('選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
+    throw sketchInputError({ code: 'notConnected' }, '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
   }
   const wire = keep(wireMaker.Wire());
   if (!wire.Closed_1()) {
-    throw new Error(OPEN_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-open-profile', OPEN_PROFILE_MESSAGE);
   }
   return wire;
 }
@@ -255,7 +257,7 @@ function makePolygonWire(
   }
   polygon.Close();
   if (!polygon.IsDone()) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-build', BUILD_FAILED_MESSAGE);
   }
   return keep(polygon.Wire());
 }
@@ -305,10 +307,10 @@ function checkSectionFace(oc: OpenCascadeInstance, face: TopoDS_Face, wire: Topo
   const wireType = oc.TopAbs_ShapeEnum.TopAbs_WIRE;
   const wireCount = countSubShapes(oc, face, (candidate) => candidate.ShapeType() === wireType);
   if (wireCount > 1) {
-    throw new Error('穴のある面はつなぐ断面に使えません。穴のない輪郭を選んでください。');
+    throw new SolidGeometryFailure('geometry-loft-face-with-holes', '穴のある面はつなぐ断面に使えません。穴のない輪郭を選んでください。');
   }
   if (wireCount !== 1) {
-    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-unusable-face', UNUSABLE_SECTION_FACE_MESSAGE);
   }
   const edgeType = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
   const badEdges = countSubShapes(oc, wire, (candidate) => {
@@ -323,10 +325,10 @@ function checkSectionFace(oc: OpenCascadeInstance, face: TopoDS_Face, wire: Topo
     }
   });
   if (badEdges !== 0) {
-    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-unusable-face', UNUSABLE_SECTION_FACE_MESSAGE);
   }
   if (!wire.Closed_1()) {
-    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-unusable-face', UNUSABLE_SECTION_FACE_MESSAGE);
   }
 }
 
@@ -352,15 +354,15 @@ export function sectionWireFromFace(
 ): TopoDS_Wire {
   // 面以外の指紋(辺・頂点)は輪郭にならない。選び直す前に断る。
   if (query.kind !== 'face') {
-    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-missing-face', MISSING_SECTION_FACE_MESSAGE);
   }
   const picked = pickSubShape(oc, shape, tables, query);
   if (picked === null) {
-    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-missing-face', MISSING_SECTION_FACE_MESSAGE);
   }
   keep(picked);
   if (picked.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) {
-    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', MISSING_SECTION_FACE_MESSAGE);
   }
   // **借りた面は必ず複製してから使う。** 選び直した面は形状キャッシュが持つ立体の
   // 部分形状そのもの(下地の TShape を共有する)で、`BRepOffsetAPI_ThruSections` は
@@ -409,7 +411,7 @@ function toSectionSource(
   }
   const wire = faceWires.get(index);
   if (wire === undefined) {
-    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', MISSING_SECTION_FACE_MESSAGE);
   }
   return { kind: 'wire', wire };
 }
@@ -467,8 +469,7 @@ function findShell(oc: OpenCascadeInstance, shape: TopoDS_Shape): TopoDS_Shell |
     // No return is pending while either the source wrapper or its map is released.
     return selected;
   } catch (error) {
-    returned.release();
-    throw error;
+    releaseGeometryOnError(returned.release, error);
   }
 }
 
@@ -491,16 +492,16 @@ function sewToSolid(
   sewing.Perform(keep(new oc.Message_ProgressRange_1()));
   // 個数を返すメソッドの戻り型 Graphic3d_ZLayerId は型定義に無いので整数へ直す。
   if (Number(sewing.NbFreeEdges()) !== 0) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-not-solid', NOT_SOLID_MESSAGE);
   }
   const shell = findShell(oc, keep(sewing.SewedShape()));
   if (shell === null) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-not-solid', NOT_SOLID_MESSAGE);
   }
   keep(shell);
   const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
   if (!solidMaker.IsDone()) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-not-solid', NOT_SOLID_MESSAGE);
   }
   const solid = keep(solidMaker.Solid());
   return measureVolume(oc, solid) < 0 ? keep(solid.Reversed()) : solid;
@@ -509,10 +510,10 @@ function sewToSolid(
 /** 出来上がった形が閉じた立体になっているかを確かめる(空の結果を通さないための最後の網)。 */
 function checkSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): void {
   if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-not-solid', NOT_SOLID_MESSAGE);
   }
   if (!isValidShape(oc, shape)) {
-    throw new Error(NOT_SOLID_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-not-solid', NOT_SOLID_MESSAGE);
   }
 }
 
@@ -623,7 +624,7 @@ function samplePoints(
   const adaptor = keep(new oc.BRepAdaptor_CompCurve_2(wire, false));
   const sampler = keep(new oc.GCPnts_QuasiUniformAbscissa_2(adaptor, count + 1));
   if (!sampler.IsDone() || Number(sampler.NbPoints()) < count + 1) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-build', BUILD_FAILED_MESSAGE);
   }
   const points: Vec3Tuple[] = [];
   for (let index = 1; index <= count; index += 1) {
@@ -809,7 +810,7 @@ function splitSphereSection(
     const section = sections[index];
     if (section.kind === 'sphere') {
       if (sphere !== null) {
-        throw new Error(TWO_SPHERES_MESSAGE);
+        throw new SolidGeometryFailure('geometry-loft-two-spheres', TWO_SPHERES_MESSAGE);
       }
       sphere = section;
       continue;
@@ -817,7 +818,7 @@ function splitSphereSection(
     profiles.push(toSectionSource(section, index, faceWires));
   }
   if (sphere !== null && profiles.length !== 1) {
-    throw new Error(SPHERE_NEEDS_ONE_PROFILE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-sphere-profile', SPHERE_NEEDS_ONE_PROFILE_MESSAGE);
   }
   return { sphere, profiles };
 }
@@ -855,7 +856,7 @@ function makeSphereRuledSolid(
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) {
-    throw new Error(SPHERE_SIZE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-sphere-radius', SPHERE_SIZE_MESSAGE);
   }
   // 球とつなぐ輪郭にひねりは効かない(始点をずらしても同じ球へ接するだけ)ので 0 で組む。
   const wire = wireOfSource(oc, profile, 0, keep);
@@ -877,7 +878,7 @@ function makeSphereRuledSolid(
   }
   const general = makeGeneralSphereSolid(oc, sphere.center, sphere.radius, wire, segments, keep);
   if (general === null) {
-    throw new Error(NO_TANGENT_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-sphere-tangent', NO_TANGENT_MESSAGE);
   }
   return general;
 }
@@ -907,7 +908,7 @@ function makePlainThruSections(
   maker.Build(keep(new oc.Message_ProgressRange_1()));
   // IsDone() を見る前に Shape() を呼ばない(makeSpring.ts と同じ扱い)。
   if (!maker.IsDone()) {
-    throw new Error(BUILD_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-build', BUILD_FAILED_MESSAGE);
   }
   return keep(maker.Shape());
 }
@@ -931,10 +932,10 @@ export function makeThruSections(
   faceWires: ResolvedSectionWires = new Map<number, TopoDS_Wire>(),
 ): OcctShapeHandle {
   if (spec.sections.length < MINIMUM_SECTION_COUNT) {
-    throw new Error(TOO_FEW_SECTIONS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-sections', TOO_FEW_SECTIONS_MESSAGE);
   }
   if (!Number.isInteger(spec.twist)) {
-    throw new Error(TWIST_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-twist', TWIST_MESSAGE);
   }
   // 球を含まない段でも確かめる。段ごとの値なので、球を足したときに初めて
   // 断られるのでは、利用者にとって理由と操作の間が遠すぎる(NFR-UX-5)。
@@ -950,8 +951,7 @@ export function makeThruSections(
     checkSolid(oc, shape);
     return { shape, delete: release };
   } catch (error) {
-    release();
-    // OCCT の C++ 例外は数値で飛んでくる(makeFillet.ts / makeSpring.ts と同じ)。
-    throw error instanceof Error ? error : new Error(BUILD_FAILED_MESSAGE);
+    releaseGeometryOnError(release, error instanceof Error ? error
+      : new SolidGeometryFailure('geometry-internal', BUILD_FAILED_MESSAGE, undefined, { cause: error }));
   }
 }

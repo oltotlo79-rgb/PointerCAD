@@ -70,15 +70,28 @@ export async function requestOfflineResponse<T>(baseUrl: URL, path: string, opti
   }
 }
 
-/** Bound actual bytes before JSON parsing or hashing. Content-Length is not trusted. */
+function joinOfflineChunks(chunks: readonly Uint8Array[], byteLength: number): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/** Bound actual bytes before JSON parsing or hashing. Exact length comes from a validated asset record. */
 export async function readBoundedOfflineBody(response: Response, maximumBytes: number, path: string,
-  signal: AbortSignal, fetchedBytes: (bytes: number) => void): Promise<Uint8Array<ArrayBuffer>> {
+  signal: AbortSignal, fetchedBytes: (bytes: number) => void, length: 'maximum' | 'exact' = 'maximum',
+): Promise<Uint8Array<ArrayBuffer>> {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > OFFLINE_MAX_STREAM_BYTES) {
     throw new OfflineTransferError('size', path);
   }
   if (response.body === null) throw new OfflineTransferError('size', path);
   const reader = response.body.getReader(), chunks: Uint8Array[] = [];
   let received = 0;
+  let exactBytes: Uint8Array<ArrayBuffer> | undefined;
+  const allocationThreshold = Math.ceil(maximumBytes / 2);
   const onAbort = () => { void reader.cancel().catch(() => undefined); };
   signal.addEventListener('abort', onAbort, { once: true });
   try {
@@ -87,15 +100,23 @@ export async function readBoundedOfflineBody(response: Response, maximumBytes: n
       const chunk = await reader.read();
       signal.throwIfAborted();
       if (chunk.done) break;
-      if (received + chunk.value.byteLength > maximumBytes) throw new OfflineTransferError('size', path);
-      chunks.push(chunk.value.slice());
-      received += chunk.value.byteLength;
+      const next = received + chunk.value.byteLength;
+      if (next > maximumBytes) throw new OfflineTransferError('size', path);
+      // Buffer only the received prefix until the exact allocation is at most twice the observed size.
+      if (length === 'exact' && exactBytes === undefined && next >= allocationThreshold) {
+        exactBytes = joinOfflineChunks(chunks, maximumBytes);
+        chunks.length = 0;
+      }
+      if (exactBytes !== undefined) exactBytes.set(chunk.value, received);
+      else chunks.push(chunk.value.slice());
+      received = next;
       fetchedBytes(received);
     }
-    const bytes = new Uint8Array(received);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    return bytes;
+    if (length === 'exact') {
+      if (exactBytes === undefined || received !== maximumBytes) throw new OfflineTransferError('size', path);
+      return exactBytes;
+    }
+    return joinOfflineChunks(chunks, received);
   } catch (error) {
     void reader.cancel().catch(() => undefined);
     throw error;

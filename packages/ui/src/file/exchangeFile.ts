@@ -586,7 +586,7 @@ export async function prepareExport(
     outcome = deadlineAt === null ? await pending : await awaitThreeMfWork(pending, deadlineAt, control);
   } catch (error) {
     if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
-    if (request.format === 'step' || request.format === 'stl') {
+    if (request.format === 'step' || request.format === 'iges' || request.format === 'stl') {
       if (error instanceof DOMException && error.name === 'AbortError') return { ok: false, cancelled: true };
       if (error instanceof ExchangeExportError) return { ok: false, message: shapeExportFailureMessage(request.format, error) };
     }
@@ -960,7 +960,7 @@ export async function importPickedBody(
       outcome = await deps.kernel.importShape(format, picked.fileName, picked.bytes);
     } catch (error) {
       if (igesIsStale()) return { ok: false, cancelled: true };
-      if (format === 'step' || format === 'stl') {
+      if (format === 'step' || format === 'iges' || format === 'stl') {
         if (deps.importIsCurrent?.() === false || (error instanceof Error && error.name === 'AbortError')) {
           return { ok: false, cancelled: true };
         }

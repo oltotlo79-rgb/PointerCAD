@@ -1,10 +1,10 @@
 import { buildSteelStockList, buildBom, buildStandardPartFromSource, drawingSourceCenter, EMPTY_PART_LIBRARY, resolveConstrainedAssembly,
   type AssemblyDocument, type AssemblyKernelBridge, type BomResolvedData, type DrawingDimensionInstance,
   type DrawingSourceInput, type DrawingSourceResolution, type ResolvedAssembly, type ResolvedPart,
-  type PartDocument, type SolidBody } from '@pointercad/model';
+  type FailureText, type PartDocument, type SolidBody } from '@pointercad/model';
 import { collectLoadedAssemblyPartSources } from '../assembly/attachAssembly.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
-import { mixedFailureMessages } from '../i18n/failureMessage.js';
+import { failureMessage, mixedFailureMessages } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { DrawingCreationError } from './drawingCreationError.js';
 import type { DrawingPartRecomputer } from './attachDrawing.js';
@@ -40,7 +40,11 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
   for (const ref of references) {
     if (shouldCancel()) throw new Error(t('drawing.error.viewFailed'));
     const standard = standardSources.get(ref);
-    const document = standard === undefined ? library.parts.get(ref) : buildStandardPartFromSource(standard);
+    let internalFailure: FailureText | undefined;
+    const document = standard === undefined ? library.parts.get(ref) : buildStandardPartFromSource(standard, (text) => {
+      internalFailure = text;
+    });
+    if (internalFailure !== undefined) throw new Error(failureMessage(internalFailure));
     if (document === undefined || document === null) throw new DrawingCreationError('drawing.error.selectSource');
     const partId = `drawing:${documentId}:${sourceRef}:${ref}`;
     retain(partId);

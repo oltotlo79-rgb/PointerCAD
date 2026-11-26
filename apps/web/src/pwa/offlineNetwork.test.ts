@@ -19,6 +19,27 @@ describe('公開先のHTMLルートを決め、元の資産名と混同しない
     await expect(readBoundedOfflineBody(response, 3, 'stream.wasm', new AbortController().signal,
       () => undefined)).rejects.toMatchObject({ reason: 'size' });
   });
+  it('既知長で読む各チャンクの変更が所有バッファに伝わらない', async () => {
+    const shared = new Uint8Array([0, 1, 2, 0]);
+    const part = shared.subarray(1, 3);
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { stream = controller; controller.enqueue(part); },
+    }));
+    const result = await readBoundedOfflineBody(response, 6, 'stream.wasm', new AbortController().signal, count => {
+      if (count < 6) {
+        part.set([count + 1, count + 2]);
+        stream?.enqueue(part);
+      } else {
+        stream?.close();
+      }
+    }, 'exact');
+    part.fill(0);
+    expect([...result]).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(result.byteOffset).toBe(0);
+    expect(result.buffer.byteLength).toBe(6);
+    expect(response.body?.locked).toBe(false);
+  });
   it.each([
     ['index.html', '/'], ['manual/index.html', '/manual/'],
     ['manual/chapters/sketch.html', '/manual/chapters/sketch'],

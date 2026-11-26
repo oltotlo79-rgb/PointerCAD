@@ -6,7 +6,7 @@ import { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './r
 
 import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
 import { inspectImportedBrep } from '../occt/inspectImportedBrep.js';
-import { withShapeImportDiagnostic, type ImportedMeshData } from '../occt/exchangeShared.js';
+import { ShapeImportError, withShapeImportDiagnostic, type ImportedMeshData } from '../occt/exchangeShared.js';
 import type { ExportMesh } from '../occt/exportMesh.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
 import { buildRequestExportMeshes } from './exportMeshReuse.js';
@@ -43,6 +43,7 @@ import * as Comlink from 'comlink';
 import { AnalysisBoundaryError, analysisMeshBuffers, buildAnalysisSurfaceMesh,
   type AnalysisSurfaceMeshRequest, type AnalysisSurfaceMeshResult } from '../occt/analysisSurfaceMesh.js';
 import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
+import { releaseGeometryOnError } from '../occt/solidGeometryFailure.js';
 import { writeIges } from '../occt/writeIges.js';
 import { ShapeExportError } from '../occt/shapeExportDiagnostic.js';
 import { writeStep } from '../occt/writeStep.js';
@@ -1525,11 +1526,12 @@ function createWorkerShapeExport(geometry: CachedWorkerGeometry, exportTriangleL
   async function exportShapes(request: ShapeExportRequest | ShapeExportDiagnosticRequest): Promise<ShapeExportReply>;
   async function exportShapes(request: ShapeExportRequest | ShapeExportDiagnosticRequest): Promise<ShapeExportReply> {
     const reportDiagnostics = 'reportDiagnostics' in request && request.reportDiagnostics === true
-      && (request.format === 'step' || request.format === 'stl');
+      && (request.format === 'step' || request.format === 'iges' || request.format === 'stl');
     try {
       return await writeShapes(request, reportDiagnostics);
     } catch (error) {
-      if (!reportDiagnostics) throw error;
+      if (!reportDiagnostics
+        || (request.format === 'iges' && error instanceof Error && error.name === 'AbortError')) throw error;
       if (error instanceof MissingBodiesError) {
         return { kind: 'failed', message: error.message, diagnostic: { code: 'missingShape' } };
       }
@@ -1550,10 +1552,37 @@ export type WorkerKernelApi = Omit<AnalysisBoundaryKernelApi, 'importShape'> & {
   importShape(request: ShapeImportRequest): Promise<ShapeImportReply>;
 };
 
+async function importIgesShape(
+  loadOcct: LoadWorkerOcct, request: Extract<ShapeImportRequest, { format: 'iges' }>,
+): Promise<ShapeImportResult> {
+  try {
+    const oc = await loadOcct();
+    const read = readIges(oc, request.bytes, request.withColors);
+    let result: ShapeImportResult;
+    try {
+      result = {
+        bodies: read.bodies.map(body => toImportBody(oc, body.shape, body.name, body.color, body.kind)),
+        unit: read.unit,
+        unitNames: read.unitNames,
+      };
+    } catch (error) {
+      releaseGeometryOnError(() => read.delete(), error);
+    }
+    read.delete();
+    return result;
+  } catch (error) {
+    if (error instanceof ShapeImportError || (error instanceof Error && error.name === 'AbortError')) throw error;
+    console.error('PointerCAD exchange', 'IGES', error);
+    // The original exception has been recorded in this runtime, before serializing the reply.
+    throw new ShapeImportError({ code: 'internal', detail: '' }, '', { cause: error });
+  }
+}
+
 function createWorkerShapeImport(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundaryKernelApi,
   'importShape' | 'inspectImportedBrep'> {
   return {
     async importShape(request): Promise<ShapeImportResult> {
+      if (request.format === 'iges') return importIgesShape(loadOcct, request);
       const oc = await loadOcct();
 
       // 網羅 `switch`。STL / OBJ の読み込みは依頼の union へ 1 つ足すと、
@@ -1587,18 +1616,6 @@ function createWorkerShapeImport(loadOcct: LoadWorkerOcct): Pick<AnalysisBoundar
             };
           } finally {
             read.delete();
-          }
-        }
-        case 'iges': {
-          const result = readIges(oc, request.bytes, request.withColors);
-          try {
-            return {
-              bodies: result.bodies.map(body => toImportBody(oc, body.shape, body.name, body.color, body.kind)),
-              unit: result.unit,
-              unitNames: result.unitNames,
-            };
-          } finally {
-            result.delete();
           }
         }
         case 'brep': {

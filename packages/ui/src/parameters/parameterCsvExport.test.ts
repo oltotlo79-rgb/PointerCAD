@@ -23,9 +23,10 @@ function fixture(stage: 'picker' | 'create' | 'write' | 'close') {
   const gate = deferred<void>();
   const entered = deferred<void>();
   const calls: string[] = [];
+  let paused = false;
   const pause = async (name: typeof stage): Promise<void> => {
     calls.push(name);
-    if (name === stage) { entered.resolve(); await gate.promise; }
+    if (name === stage && !paused) { paused = true; entered.resolve(); await gate.promise; }
   };
   const writable = { write: async () => pause('write'), close: async () => pause('close'),
     abort: () => { calls.push('abort'); return Promise.resolve(); } };
@@ -87,21 +88,37 @@ describe('CSV export panel ownership through the real browser gateway', () => {
     expect(f.attempt.busy.mock.calls).toEqual([[true], [false], [true], [false]]);
   });
 
-  for (const stage of ['picker', 'create', 'write', 'close'] as const) {
-    it(`preserves current ${stage} errors and allows a fresh successful retry`, async () => {
+  const failures = [
+    ['picker', 'parameter.csv.exportPickerFailed', ['picker']],
+    ['create', 'parameter.csv.exportCreateFailed', ['picker', 'create']],
+    ['write', 'parameter.csv.exportWriteFailed', ['picker', 'create', 'write', 'abort']],
+    ['close', 'parameter.csv.exportCloseFailed', ['picker', 'create', 'write', 'close', 'abort']],
+  ] as const;
+  for (const [stage, key, calls] of failures) {
+    it(`reports the ${stage} failure, retains its cause and allows a fresh successful retry`, async () => {
       const f = fixture(stage);
       const saving = exportParameterCsv(f.attempt);
       await f.entered.promise;
-      f.gate.reject(new Error(`failed ${stage}`));
-      await saving;
-      expect(f.attempt.issues.mock.calls).toEqual([[[]], [[`failed ${stage}`]]]);
-      expect(f.attempt.pending.current).toBeNull();
-      const fresh = fixture('picker');
-      const retry = exportParameterCsv(fresh.attempt);
-      await fresh.entered.promise;
-      fresh.gate.resolve();
-      await retry;
-      expect(fresh.attempt.status).toHaveBeenLastCalledWith(t('parameter.csv.exported'));
+      const cause = new Error(`failed ${stage}`);
+      const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        f.gate.reject(cause);
+        await saving;
+        expect(f.attempt.issues.mock.calls).toEqual([[[]], [[t(key)]]]);
+        expect(f.attempt.status.mock.calls).toEqual([['']]);
+        expect(f.calls).toEqual(calls);
+        expect(f.attempt.pending.current).toBeNull();
+        expect(diagnostic).toHaveBeenCalledTimes(1);
+        expect(diagnostic.mock.calls[0]?.[1]).toBe(stage);
+        expect(diagnostic.mock.calls[0]?.[2]).toBe(cause);
+        await exportParameterCsv(f.attempt);
+        expect(f.calls).toEqual([...calls, 'picker', 'create', 'write', 'close']);
+        expect(f.attempt.issues.mock.calls).toEqual([[[]], [[t(key)]], [[]]]);
+        expect(f.attempt.status).toHaveBeenLastCalledWith(t('parameter.csv.exported'));
+        expect(f.attempt.busy.mock.calls).toEqual([[true], [false], [true], [false]]);
+      } finally {
+        diagnostic.mockRestore();
+      }
     });
   }
 

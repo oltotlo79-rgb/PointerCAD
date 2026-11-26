@@ -1,4 +1,5 @@
 import { exceedsMagnitude } from './tolerances.js';
+import { SolidGeometryFailure } from './solidGeometryFailure.js';
 import { subVec as sub, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /** FR-435: 案内線との長さ比の対応と、案内線上の点に追従する断面を作る。 */
 import type { BRepAdaptor_CompCurve, BRepOffsetAPI_MakePipeShell, OpenCascadeInstance, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
@@ -21,7 +22,7 @@ export interface SweepGuidePlan {
   readonly closed: boolean;
 }
 function unit(value: Vec3Tuple): Vec3Tuple {
-  const length = Math.hypot(...value); if (!Number.isFinite(length) || length < LENGTH_TOLERANCE) throw new Error(DEGENERATE);
+  const length = Math.hypot(...value); if (!Number.isFinite(length) || length < LENGTH_TOLERANCE) throw new SolidGeometryFailure('geometry-pathSweep-guide-degenerate', DEGENERATE);
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
@@ -29,7 +30,7 @@ function parameterAt(oc: OpenCascadeInstance, curve: BRepAdaptor_CompCurve, leng
   if (ratio === 0) return curve.FirstParameter();
   if (ratio === 1) return curve.LastParameter();
   const parameter = keep(new oc.GCPnts_AbscissaPoint_3(LENGTH_TOLERANCE, curve, length * ratio, curve.FirstParameter()));
-  if (!parameter.IsDone()) throw new Error(BAD_INTERVAL);
+  if (!parameter.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-guide-interval', BAD_INTERVAL);
   return parameter.Parameter();
 }
 
@@ -41,10 +42,10 @@ function readStation(oc: OpenCascadeInstance, spine: BRepAdaptor_CompCurve, guid
   guide.D1(parameterAt(oc, guide, guideLength, ratio, keep), q, dq);
   const point: Vec3Tuple = [p.X(), p.Y(), p.Z()], target: Vec3Tuple = [q.X(), q.Y(), q.Z()];
   const tangent = unit([dp.X(), dp.Y(), dp.Z()]), offset = sub(target, point), radius = Math.hypot(...offset);
-  if (!Number.isFinite(radius) || radius < CONTACT_TOLERANCE) throw new Error(DEGENERATE);
+  if (!Number.isFinite(radius) || radius < CONTACT_TOLERANCE) throw new SolidGeometryFailure('geometry-pathSweep-guide-degenerate', DEGENERATE);
   // CurvilinearEquivalence=trueに合わせる。単に同方向に延びるだけでは通さず、
   // 各対応点が経路の接線に直交する同じ断面上にあることも確認する。
-  if (exceedsMagnitude(dot(offset, tangent), CONTACT_TOLERANCE) || dot(tangent, unit([dq.X(), dq.Y(), dq.Z()])) <= 0) throw new Error(BAD_INTERVAL);
+  if (exceedsMagnitude(dot(offset, tangent), CONTACT_TOLERANCE) || dot(tangent, unit([dq.X(), dq.Y(), dq.Z()])) <= 0) throw new SolidGeometryFailure('geometry-pathSweep-guide-interval', BAD_INTERVAL);
   const binormal = unit(cross(tangent, offset)), normal = unit(cross(binormal, tangent));
   return { p: point, q: target, tangent, normal, binormal, radius };
 }
@@ -61,27 +62,27 @@ function integral(stations: readonly Station[], stride: number): number {
 
 export function prepareSweepGuide(oc: OpenCascadeInstance, spineWire: TopoDS_Wire, guideWire: TopoDS_Wire,
   placedProfile: TopoDS_Wire, keep: Allocations['keep']): SweepGuidePlan {
-  if (spineWire.Closed_1() !== guideWire.Closed_1()) throw new Error(BAD_INTERVAL);
+  if (spineWire.Closed_1() !== guideWire.Closed_1()) throw new SolidGeometryFailure('geometry-pathSweep-guide-interval', BAD_INTERVAL);
   const spine = keep(new oc.BRepAdaptor_CompCurve_2(spineWire, false)), guide = keep(new oc.BRepAdaptor_CompCurve_2(guideWire, false));
   const spineLength = oc.GCPnts_AbscissaPoint.Length_3(spine, LENGTH_TOLERANCE);
   const guideLength = oc.GCPnts_AbscissaPoint.Length_3(guide, LENGTH_TOLERANCE);
-  if (!Number.isFinite(spineLength) || !Number.isFinite(guideLength) || Math.min(spineLength, guideLength) < CONTACT_TOLERANCE) throw new Error(DEGENERATE);
+  if (!Number.isFinite(spineLength) || !Number.isFinite(guideLength) || Math.min(spineLength, guideLength) < CONTACT_TOLERANCE) throw new SolidGeometryFailure('geometry-pathSweep-guide-degenerate', DEGENERATE);
   const stations: Station[] = [];
   for (let index = 0; index <= INTERVALS; index += 1) {
     const current = readStation(oc, spine, guide, spineLength, guideLength, index / INTERVALS, keep);
     const previous = stations[index - 1];
-    if (previous !== undefined && (dot(current.normal, previous.normal) < 0.5 || dot(current.tangent, previous.tangent) < 0.5)) throw new Error(DEGENERATE);
+    if (previous !== undefined && (dot(current.normal, previous.normal) < 0.5 || dot(current.tangent, previous.tangent) < 0.5)) throw new SolidGeometryFailure('geometry-pathSweep-guide-degenerate', DEGENERATE);
     stations.push(current);
   }
   const q = stations[0].q, vertexMaker = keep(new oc.BRepBuilderAPI_MakeVertex(keep(new oc.gp_Pnt_3(...q))));
   const vertex = keep(vertexMaker.Vertex()), distance = keep(new oc.BRepExtrema_DistShapeShape_1());
   distance.LoadS1(vertex); distance.LoadS2(placedProfile); distance.Perform(keep(new oc.Message_ProgressRange_1()));
   if (!distance.IsDone() || distance.Value() > CONTACT_TOLERANCE) {
-    throw new Error('案内線の始点を、経路の始点に置いた断面の縁に合わせてください。');
+    throw new SolidGeometryFailure('geometry-pathSweep-guide-contact', '案内線の始点を、経路の始点に置いた断面の縁に合わせてください。');
   }
   const fine = integral(stations, 1), coarse = integral(stations, 2);
   if (!Number.isFinite(fine) || fine <= 0 || exceedsMagnitude(fine - coarse, fine * 1e-6)) {
-    throw new Error('案内線による断面の変化が急すぎます。案内線の曲がり方を緩やかにしてください。');
+    throw new SolidGeometryFailure('geometry-pathSweep-guide-change', '案内線による断面の変化が急すぎます。案内線の曲がり方を緩やかにしてください。');
   }
   return { stations, volumePerArea: spineLength * fine,
     maxScale: Math.max(...stations.map((station) => station.radius / stations[0].radius)), closed: spineWire.Closed_1() };
@@ -96,7 +97,7 @@ function transformedSection(oc: OpenCascadeInstance, profile: TopoDS_Wire, start
   transform.SetValues(cell(0, 0), cell(0, 1), cell(0, 2), translation(0), cell(1, 0), cell(1, 1), cell(1, 2), translation(1),
     cell(2, 0), cell(2, 1), cell(2, 2), translation(2));
   const copier = keep(new oc.BRepBuilderAPI_Transform_2(profile, transform, true));
-  if (!copier.IsDone()) throw new Error('案内線に合わせた断面を作れませんでした。');
+  if (!copier.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-guide-section', '案内線に合わせた断面を作れませんでした。');
   return keep(oc.TopoDS.Wire_1(keep(copier.Shape())));
 }
 

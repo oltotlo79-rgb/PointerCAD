@@ -1,3 +1,4 @@
+import { unwrapSaveRecoveryCopyReceipt } from '@pointercad/ui/save-errors';
 import { t, type FileGateway } from '@pointercad/ui';
 import type { CamFormat, CamTool } from '@pointercad/ui/open-with';
 interface CamApi {
@@ -45,8 +46,8 @@ export function desktopCamGateway(api: unknown): Pick<FileGateway, 'saveExport' 
   return {
     async saveExport(name, format, bytes, control) {
       const result = await controlledDesktopExport(api, control,
-        (requestId) => requestId === undefined ? api.saveExport(name, format, bytes)
-          : api.saveExport(name, format, bytes, requestId));
+        (requestId) => (requestId === undefined ? api.saveExport(name, format, bytes)
+          : api.saveExport(name, format, bytes, requestId)).then(unwrapSaveRecoveryCopyReceipt));
       if (result === null) return null;
       if (typeof result !== 'object' || result === null || !('token' in result)
         || (result.token !== null && (typeof result.token !== 'string' || result.token.length === 0 || result.token.length > 100))) {

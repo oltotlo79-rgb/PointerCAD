@@ -1,11 +1,11 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations } from './allocations.js';
 import { hasIgesBindings, IGES_UNAVAILABLE } from './igesBindings.js';
+import { ShapeExportError } from './shapeExportDiagnostic.js';
 import { withVirtualFile } from './virtualFile.js';
 import { buildXcafDocument, type XcafShapeEntry } from './xcafDocument.js';
 
 const WRITE_FAILED = 'IGES ファイルを書き出せませんでした。';
-const RESTORE_FAILED = 'IGES の書出し設定を元に戻せませんでした。';
 const TRIMMED_SURFACES = 0;
 
 interface IgesWriteOptions {
@@ -18,27 +18,52 @@ interface IgesWriteResult {
   readonly colorWritten: boolean;
 }
 
+function withCleanup<T>(perform: () => T, cleanup: () => void): T {
+  let result: T;
+  try {
+    result = perform();
+  } catch (error) {
+    try { cleanup(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'IGES write and cleanup failed', { cause: cleanupError });
+    }
+    throw error;
+  }
+  cleanup();
+  return result;
+}
+
+function restoreSettings(settings: OpenCascadeInstance['IGESControl_Writer'], unit: string, mode: number): void {
+  const failures: unknown[] = [];
+  try {
+    if (!settings.SetWriteUnit(unit)) throw new Error('IGES write unit restoration was rejected');
+  } catch (error) { failures.push(error); }
+  try {
+    if (!settings.SetWriteBRepMode(mode)) throw new Error('IGES write mode restoration was rejected');
+  } catch (error) { failures.push(error); }
+  if (failures.length > 0) throw new AggregateError(failures, 'IGES write settings could not be restored');
+}
+
 export function writeIges(
   oc: OpenCascadeInstance,
   entries: readonly XcafShapeEntry[],
   options: IgesWriteOptions = {},
 ): IgesWriteResult {
-  if (!hasIgesBindings(oc)) throw new Error(IGES_UNAVAILABLE);
-  const document = buildXcafDocument(oc, entries, {
-    withColors: options.withColors,
-    bodyLabelColor: true,
-  });
+  if (!hasIgesBindings(oc)) throw new ShapeExportError({ code: 'igesUnavailable' }, IGES_UNAVAILABLE);
   const { keep, release } = createAllocations();
-  try {
+  return withCleanup(() => {
+    const document = keep(buildXcafDocument(oc, entries, {
+      withColors: options.withColors,
+      bodyLabelColor: true,
+    }));
     const settings = oc.IGESControl_Writer;
     const unit = options.unit === 'inch' ? 'INCH' : 'MM';
     const priorUnit = settings.WriteUnit();
     const priorMode = settings.WriteBRepMode();
     const files = withVirtualFile(oc, 'iges', path => {
       // No await while the OCCT instance's shared IGES settings are overridden.
-      try {
+      withCleanup(() => {
         if (!settings.SetWriteUnit(unit) || !settings.SetWriteBRepMode(TRIMMED_SURFACES)) {
-          throw new Error(WRITE_FAILED);
+          throw new Error('IGES writer rejected supported output settings');
         }
         const writer = keep(new oc.IGESCAFControl_Writer_1());
         writer.SetNameMode(true);
@@ -47,25 +72,12 @@ export function writeIges(
         const file = keep(new oc.TCollection_AsciiString_2(path));
         const progress = keep(new oc.Message_ProgressRange_1());
         if (!writer.Perform_1(document.handle, file, progress)) throw new Error(WRITE_FAILED);
-      } finally {
-        restoreSettings();
-      }
+      }, () => restoreSettings(settings, priorUnit, priorMode));
     });
     const file = files[0];
-    if (files.length !== 1 || file === undefined || file.bytes.byteLength === 0) throw new Error(WRITE_FAILED);
-    return { bytes: file.bytes, colorWritten: document.colorWritten };
-
-    function restoreSettings(): void {
-      let restoredUnit: boolean;
-      let restoredMode: boolean;
-      try {
-        restoredUnit = settings.SetWriteUnit(priorUnit);
-      } finally {
-        restoredMode = settings.SetWriteBRepMode(priorMode);
-      }
-      if (!restoredUnit || !restoredMode) throw new Error(RESTORE_FAILED);
+    if (files.length !== 1 || file === undefined || file.bytes.byteLength === 0) {
+      throw new Error('IGES writer did not produce one nonempty output');
     }
-  } finally {
-    try { release(); } finally { document.delete(); }
-  }
+    return { bytes: file.bytes, colorWritten: document.colorWritten };
+  }, release);
 }

@@ -26,6 +26,7 @@ import type { BRepAdaptor_Curve, BRepOffsetAPI_MakePipeShell, OpenCascadeInstanc
 import type { Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { SolidGeometryFailure } from './solidGeometryFailure.js';
 import { exceedsMagnitude } from './tolerances.js';
 
 const INTERVALS = 128;
@@ -56,7 +57,7 @@ const cross = (a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple =>
   [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 function unit(a: Vec3Tuple): Vec3Tuple {
   const length = Math.hypot(a[0], a[1], a[2]);
-  if (!(length > 1e-12)) throw new Error(FRAME_MESSAGE);
+  if (!(length > 1e-12)) throw new SolidGeometryFailure('geometry-pathSweep-law-frame', FRAME_MESSAGE);
   return mul(a, 1 / length);
 }
 
@@ -122,7 +123,7 @@ function readSpineEdges(oc: OpenCascadeInstance, spine: TopoDS_Wire, keep: Alloc
     const reversed = explorer.Orientation() === reversedOrientation;
     const [startTangent, endTangent] = edgeEndTangents(oc, edge, reversed, keep);
     if (previousEnd !== null && Math.acos(Math.min(1, Math.max(-1, dot(previousEnd, startTangent)))) > JOINT_TANGENT_TOLERANCE_RADIANS) {
-      throw new Error(JOINT_MESSAGE);
+      throw new SolidGeometryFailure('geometry-pathSweep-law-joint', JOINT_MESSAGE);
     }
     previousEnd = endTangent;
     const curve = keep(new oc.BRepAdaptor_Curve_2(edge));
@@ -146,7 +147,7 @@ function lawStations(oc: OpenCascadeInstance, spine: TopoDS_Wire, r0: Vec3Tuple,
     let parameter = i === INTERVALS ? curve.LastParameter() : curve.FirstParameter();
     if (i > 0 && i < INTERVALS) {
       const abscissa = keep(new oc.GCPnts_AbscissaPoint_3(LENGTH_TOLERANCE, curve, length * ratio, curve.FirstParameter()));
-      if (!abscissa.IsDone()) throw new Error(FRAME_MESSAGE);
+      if (!abscissa.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-law-frame', FRAME_MESSAGE);
       parameter = abscissa.Parameter();
     }
     const point = keep(new oc.gp_Pnt_1()), derivative = keep(new oc.gp_Vec_1());
@@ -184,7 +185,7 @@ function sectionAt(oc: OpenCascadeInstance, wire: TopoDS_Wire, start: LawFrame, 
   transform.SetValues(cell(0, 0), cell(0, 1), cell(0, 2), translation(0), cell(1, 0), cell(1, 1), cell(1, 2), translation(1),
     cell(2, 0), cell(2, 1), cell(2, 2), translation(2));
   const copier = keep(new oc.BRepBuilderAPI_Transform_2(wire, transform, true));
-  if (!copier.IsDone()) throw new Error(FRAME_MESSAGE);
+  if (!copier.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-law-frame', FRAME_MESSAGE);
   return keep(oc.TopoDS.Wire_1(keep(copier.Shape())));
 }
 
@@ -209,9 +210,9 @@ function scaleAt(oc: OpenCascadeInstance, edges: readonly SpineEdge[], total: nu
  */
 export function prepareSweepLaw(oc: OpenCascadeInstance, spine: TopoDS_Wire, reference: Vec3Tuple, law: SweepLawSpec,
   keep: Allocations['keep']): SweepLawPlan {
-  if (!Number.isFinite(law.twist) || exceedsMagnitude(law.twist, TWIST_LIMIT_RADIANS)) throw new Error(TWIST_LIMIT_MESSAGE);
-  if (!Number.isFinite(law.endScale) || !(law.endScale > 0) || law.endScale > END_SCALE_LIMIT) throw new Error(END_SCALE_MESSAGE);
-  if (spine.Closed_1()) throw new Error(CLOSED_PATH_MESSAGE);
+  if (!Number.isFinite(law.twist) || exceedsMagnitude(law.twist, TWIST_LIMIT_RADIANS)) throw new SolidGeometryFailure('geometry-pathSweep-law-twist', TWIST_LIMIT_MESSAGE);
+  if (!Number.isFinite(law.endScale) || !(law.endScale > 0) || law.endScale > END_SCALE_LIMIT) throw new SolidGeometryFailure('geometry-pathSweep-law-scale', END_SCALE_MESSAGE);
+  if (spine.Closed_1()) throw new SolidGeometryFailure('geometry-pathSweep-law-closed', CLOSED_PATH_MESSAGE);
   const edges = readSpineEdges(oc, spine, keep);
   const { stations, length } = lawStations(oc, spine, reference, keep);
   const simple = law.endScale === 1 || edges.every((edge) => edge.simple);
@@ -222,7 +223,7 @@ export function prepareSweepLaw(oc: OpenCascadeInstance, spine: TopoDS_Wire, ref
   const auxiliaryPoints = frames.map((frame) => add(frame.p, mul(frame.n, distance)));
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
   wireMaker.Add_1(keep(makeCurveEdge(oc, { kind: 'spline', mode: 'interpolate', points: auxiliaryPoints, closed: false })).edge);
-  if (!wireMaker.IsDone()) throw new Error(FRAME_MESSAGE);
+  if (!wireMaker.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-law-frame', FRAME_MESSAGE);
   const auxiliary = keep(wireMaker.Wire());
   const stride = simple ? INTERVALS : CURVED_SECTION_STRIDE;
   const start = frames[0];

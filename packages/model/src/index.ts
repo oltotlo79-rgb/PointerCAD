@@ -401,6 +401,7 @@ export type {
   ParameterUnit,
 } from './parameters/types.js';
 export { PARAMETER_UNITS } from './parameters/types.js';
+export { ParameterInputError } from './parameters/parameterInputError.js';
 export { ensureParameterMathIds, allocateParameterMathIds, isParameterMathId } from './parameters/parameterMathIdentity.js';
 export { prepareDocumentMathIdentity } from './part/documentMathIdentity.js';
 export { activateMathConfiguration, createMathConfiguration, deleteMathConfiguration } from './part/mathConfigurations.js';
@@ -1222,7 +1223,7 @@ export {
 /** 族の部品(保存の catalog が `catalogItem`)を組めない理由の符号の一覧。画面の文は ui の `catalog.rejection.*`(D4)。 */
 export { CATALOG_ITEM_REJECTION_CODES } from './assembly/catalog/rejection.js';
 /** 規格部品の族の登録口(族の表は必要な時だけ読む)。ui の文書を開く道・図面・選ぶ画面が ensure を待つ。 */
-export { PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
+export { CatalogDefinitionError, PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
 export type { CatalogRegistry } from './assembly/catalog/registry.js';
 /** 読み込んだ族と行から、置く族の部品の保存の形を作る(ui の選ぶ画面が使う。版の書き忘れを起こさない)。 */
 export { createCatalogItemSource } from './assembly/catalog/source.js';

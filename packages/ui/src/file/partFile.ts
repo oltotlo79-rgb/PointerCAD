@@ -43,8 +43,7 @@ import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFai
   pickForOpen, readPickedCheckpoint, readPickedForOpen } from './documentOpenGuard.js';
 import { savePcadThrough, withPcadExtension, type PickedNativeFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
-import { saveFailureMessageKey } from './saveFailure.js';
-import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave, reportDocumentSaveFailure } from './documentSaveQueue.js';
 import { savedMessageKey, type SaveResultIssueReport } from './saveResultIssue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { encodeSaveParts } from './pcadSaveWorker.js';
@@ -491,8 +490,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     }
   }, savedFileName, savedMessageKey(resultIssues));
   } catch (error) {
-    if (isCurrent()) useAppStore.getState().setFileMessage({ key: saveFailureMessageKey(error), failed: true });
-    reportSaveEncodingFailure(error, isCurrent);
+    reportDocumentSaveFailure(error, isCurrent);
   }
   });
 }

@@ -68,10 +68,11 @@ import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { withinMagnitude, APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
+import { releaseGeometryOnError, SolidGeometryFailure } from './solidGeometryFailure.js';
 import { measureArea } from './solidMesh.js';
 import { shapeBodyKind } from './shapeBodyKind.js';
 import type { SubShapeTables } from './subShapes.js';
-import { KernelStepError } from './kernelStepError.js';
+import { KernelStepError, sketchInputError } from './kernelStepError.js';
 
 /** つなぐには断面が 2 つ要る(`makeThruSections.ts` と同じ決め)。 */
 const MINIMUM_SECTION_COUNT = 2;
@@ -224,7 +225,7 @@ function makeProfileWire(
   arcEdges?: TopoDS_Edge[],
 ): TopoDS_Wire {
   if (curves.length === 0) {
-    throw new Error(NO_CURVE_MESSAGE);
+    throw sketchInputError({ code: 'faceNoCurves' }, NO_CURVE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
   let index = 0;
@@ -237,7 +238,7 @@ function makeProfileWire(
     index += 1;
   }
   if (!wireMaker.IsDone()) {
-    throw new Error(DISCONNECTED_MESSAGE);
+    throw sketchInputError({ code: 'notConnected' }, DISCONNECTED_MESSAGE);
   }
   return keep(wireMaker.Wire());
 }
@@ -256,10 +257,10 @@ function extrudeProfile(
 ): TopoDS_Shape {
   const direction = normalizeDirection(input.direction);
   if (direction === null) {
-    throw new Error(DIRECTION_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-direction', DIRECTION_MESSAGE);
   }
   if (!Number.isFinite(input.distance) || input.distance <= 0) {
-    throw new Error(DISTANCE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-extrude-distance', DISTANCE_MESSAGE);
   }
 
   const lines: NativeSurfaceLine[] = [];
@@ -280,7 +281,7 @@ function extrudeProfile(
   const maker = keep(new oc.BRepPrimAPI_MakePrism_1(wire, vector, false, true));
   // 成否は IsDone() だけで見る(Error() の戻り値は空の型 `{}` で比較できない)。
   if (!maker.IsDone()) {
-    throw new Error(SURFACE_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-build', SURFACE_FAILED_MESSAGE);
   }
   const shape = keep(maker.Shape());
   if (semantic !== undefined && anchors !== undefined) {
@@ -339,11 +340,11 @@ function revolveProfile(
   input: Extract<SurfaceInput, { kind: 'revolve' }>,
 ): TopoDS_Shape {
   if (!Number.isFinite(input.angle) || input.angle <= 0 || input.angle > MAX_REVOLVE_ANGLE) {
-    throw new Error(ANGLE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-revolve-angle', ANGLE_MESSAGE);
   }
   const axisDirection = normalizeDirection(input.axisDirection);
   if (axisDirection === null || !isFinitePoint(input.axisOrigin)) {
-    throw new Error(AXIS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-axis', AXIS_MESSAGE);
   }
 
   const wire = makeProfileWire(oc, input.profile, keep);
@@ -354,7 +355,7 @@ function revolveProfile(
   const axis = keep(new oc.gp_Ax1_2(origin, towards));
   const maker = keep(new oc.BRepPrimAPI_MakeRevol_1(wire, axis, input.angle, false));
   if (!maker.IsDone()) {
-    throw new Error(SURFACE_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-build', SURFACE_FAILED_MESSAGE);
   }
   return keep(maker.Shape());
 }
@@ -373,7 +374,7 @@ function loftProfiles(
   input: Extract<SurfaceInput, { kind: 'loft' }>,
 ): TopoDS_Shape {
   if (input.sections.length < MINIMUM_SECTION_COUNT) {
-    throw new Error(TOO_FEW_SECTIONS_MESSAGE);
+    throw new SolidGeometryFailure('geometry-loft-sections', TOO_FEW_SECTIONS_MESSAGE);
   }
   const maker = keep(new oc.BRepOffsetAPI_ThruSections(false, input.ruled, APPROXIMATION_TOLERANCE_MM));
   // 辺の数と向きを揃える(`makeThruSections.ts` と同じ。輪郭ごとに稜線の数が違ってもよい)。
@@ -384,7 +385,7 @@ function loftProfiles(
   maker.Build(keep(new oc.Message_ProgressRange_1()));
   // IsDone() を見る前に Shape() を呼ばない(`makeThruSections.ts` と同じ扱い)。
   if (!maker.IsDone()) {
-    throw new Error(SURFACE_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-build', SURFACE_FAILED_MESSAGE);
   }
   return keep(maker.Shape());
 }
@@ -414,10 +415,10 @@ function copyExistingFace(
   tables: SubShapeTables | null,
 ): TopoDS_Shape {
   if (target === null || tables === null) {
-    throw new Error(NO_TARGET_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', NO_TARGET_MESSAGE);
   }
   if (input.face.kind !== 'face') {
-    throw new Error(NOT_A_FACE_QUERY_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-face-required', NOT_A_FACE_QUERY_MESSAGE);
   }
   const picked = pickSubShape(oc, target, tables, input.face);
   if (picked === null) {
@@ -453,7 +454,7 @@ function offsetExistingFace(
   tables: SubShapeTables | null,
 ): TopoDS_Shape {
   if (!Number.isFinite(input.distance) || input.distance === 0) {
-    throw new Error(OFFSET_DISTANCE_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-offset-distance', OFFSET_DISTANCE_MESSAGE);
   }
   const face = copyExistingFace(oc, keep, { kind: 'face', face: input.face }, target, tables);
   const maker = keep(new oc.BRepOffsetAPI_MakeOffsetShape());
@@ -461,7 +462,7 @@ function offsetExistingFace(
   // IsDone() が偽のまま Shape() を呼ぶと C++ の例外が飛ぶので、先に見る
   // (`makeShell.ts` / `makeThruSections.ts` と同じ扱い)。
   if (!maker.IsDone()) {
-    throw new Error(OFFSET_FAILED_MESSAGE);
+    throw new SolidGeometryFailure('geometry-surface-offset-build', OFFSET_FAILED_MESSAGE);
   }
   return keep(maker.Shape());
 }
@@ -525,20 +526,19 @@ export function makeSurface(
     // ① 立体ができていたら断る。曲面の段はソリッドを作らないので、
     //    立体ができたということは入力か作り方が食い違っている合図である。
     if (!isShellShape(oc, shape)) {
-      throw new Error(NOT_A_SURFACE_MESSAGE);
+      throw new SolidGeometryFailure('geometry-surface-solid-result', NOT_A_SURFACE_MESSAGE);
     }
     // ② 面積が出ていることを確かめる。潰れた輪郭・長さ 0 の掃引では、OCCT が
     //    成功を返しても面積 0 の形になる(立体の段が体積で捕まえているのと同じ性質)。
     const area = measureArea(oc, shape);
     if (!Number.isFinite(area) || withinMagnitude(area, MIN_SURFACE_AREA_MM2)) {
-      throw new Error(SURFACE_FAILED_MESSAGE);
+      throw new SolidGeometryFailure('geometry-surface-build', SURFACE_FAILED_MESSAGE);
     }
 
     return { shape, area: Math.abs(area), delete: release,
       ...(semantic?.origins === undefined ? {} : { origins: semantic.origins }) };
   } catch (error) {
-    release();
-    // OCCT の C++ 例外は数値で飛んでくる(`makeThruSections.ts` / `makeFillet.ts` と同じ)。
-    throw error instanceof Error ? error : new Error(SURFACE_FAILED_MESSAGE);
+    releaseGeometryOnError(release, error instanceof Error ? error
+      : new SolidGeometryFailure('geometry-internal', SURFACE_FAILED_MESSAGE, undefined, { cause: error }));
   }
 }

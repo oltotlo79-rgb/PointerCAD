@@ -51,6 +51,7 @@ import { openParameterCsvThrough } from '../file/fileGateway.js';
 import { exportParameterCsv } from './parameterCsvExport.js';
 import { PARAMETER_UNIT_KEYS } from './parameterUnitKeys.js';
 import { focusByAriaLabelIn } from './focusRestore.js';
+import { parameterCsvIssueMessage, parameterCsvOpenFailure, parameterOperationFailure } from './parameterFailureMessage.js';
 import { applyParameterCsvPreview,prepareParameterCsvForStore, type ParameterCsvPreview } from './parameterCsvActions.js';
 
 /** 表の中で打ちかけになっている欄の種類。 */
@@ -230,7 +231,10 @@ function parameterPanelActions({
     setCsvIssues([]);
     setCsvStatus('');
     try {
-      const picked = await openParameterCsvThrough(useAppStore.getState().fileGateway);
+      const picked = await openParameterCsvThrough(useAppStore.getState().fileGateway).catch((error: unknown) => {
+        if (!controller.signal.aborted && pendingCsv.current === controller) setCsvIssues([parameterCsvOpenFailure(error)]);
+        return null;
+      });
       if (controller.signal.aborted || pendingCsv.current !== controller || picked === null) return;
       const latest = useAppStore.getState();
       if (latest.document !== document || latest.documentVersion !== documentVersion) {
@@ -239,15 +243,15 @@ function parameterPanelActions({
       }
       const parsed = parseParameterCsv(picked.bytes);
       if (!parsed.ok) {
-        setCsvIssues(parsed.diagnostics.map(item => `${t('parameter.csv.issueRow')} ${String(item.recordNumber)} ${item.column}: ${item.reason}`));
+        setCsvIssues(parsed.diagnostics.map(parameterCsvIssueMessage));
         return;
       }
       const preview = await prepareParameterCsvForStore(parsed.records, { signal: controller.signal });
       if (controller.signal.aborted || pendingCsv.current !== controller) return;
       if (preview.ok) setCsvPreview(preview);
-      else setCsvIssues(preview.issues.map(item => `${t('parameter.csv.issueRow')} ${String(item.recordNumber)} ${item.column}: ${item.reason}`));
+      else setCsvIssues(preview.issues.map(parameterCsvIssueMessage));
     } catch (error) {
-      if (!controller.signal.aborted) setCsvIssues([error instanceof Error ? error.message : t('parameter.csv.mathCheckFailed')]);
+      if (!controller.signal.aborted && pendingCsv.current === controller) setCsvIssues([parameterOperationFailure(error)]);
     } finally {
       if (pendingCsv.current === controller) { pendingCsv.current = null; setCsvOperation(null); }
     }

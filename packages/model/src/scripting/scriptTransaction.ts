@@ -7,7 +7,7 @@ import { applyScriptCommands,prepareScriptCommands } from './scriptCommands.js';
 import type {ScriptFunctionCompiler} from './scriptFunctionCommands.js';
 import type { ScriptModelReference } from './scriptCommandContext.js';
 import { locateScriptError } from './scriptLocation.js';
-import type { ScriptCommand, ScriptFailure } from './scriptTypes.js';
+import { scriptFailure, scriptInternalFailure, type ScriptCommand, type ScriptFailure, type ScriptLocation } from './scriptTypes.js';
 
 export interface ScriptTransactionInput {
   readonly requestId: string; readonly document: PartDocument; readonly commandNamespace: string;
@@ -23,29 +23,49 @@ export interface PreparedScriptTransaction {
 }
 export type ScriptPreparation = { readonly ok: true; readonly prepared: PreparedScriptTransaction }
   | { readonly ok: false; readonly error: ScriptFailure };
-function failure(kind: ScriptFailure['kind'], message: string): ScriptPreparation {
-  return { ok: false, error: { kind, message, location: null } };
+function cancelled(): ScriptPreparation {
+  return { ok: false, error: scriptFailure('cancelled') };
 }
 
 /** No app-state mutation. Every failing path releases its separate kernel owner. */
 export async function prepareScriptTransaction(input: ScriptTransactionInput, bridge: AssemblyKernelBridge,
   shouldCancel: () => boolean, onProgress?: PartProgressCallback, calculate:typeof recomputePart=recomputePart,compile?:ScriptFunctionCompiler): Promise<ScriptPreparation> {
-  if (shouldCancel()) return failure('cancelled', '処理を中止しました。');
+  if (shouldCancel()) return cancelled();
   const argumentsForCommands=[input.document,input.commands,input.references,input.commandNamespace,input.lengthUnit,input.sources]as const;
   const batch = compile===undefined?applyScriptCommands(...argumentsForCommands):await prepareScriptCommands(argumentsForCommands,compile,shouldCancel);
   if (!batch.ok) return batch;
   const candidate = input.placeDocument?.(batch.document) ?? batch.document;
   const partId = `script-preview:${input.requestId}`;
-  let released = false, handedOff = false;
+  let released = false;
   const release = async (): Promise<void> => {
     if (released) return;
     released = true; await bridge.releasePart(partId);
   };
+  let location: ScriptLocation | null = null;
+  let outcome: ScriptPreparation | undefined;
+  let diagnostic: { cause: unknown } | undefined;
   try {
+    outcome = await prepare(batch);
+  } catch (cause) {
+    if (!shouldCancel() || !(cause instanceof DOMException && cause.name === 'AbortError')) diagnostic = { cause };
+  }
+  if (outcome?.ok !== true) {
+    try { await release(); }
+    catch (cause) {
+      diagnostic = { cause: diagnostic === undefined ? cause
+        : new AggregateError([diagnostic.cause, cause], 'Script preparation and release failed') };
+    }
+  }
+  const internal = diagnostic === undefined ? undefined : scriptInternalFailure(diagnostic.cause, location);
+  if (outcome !== undefined) return outcome;
+  if (shouldCancel()) return cancelled();
+  return { ok: false, error: internal ?? scriptFailure('internal', location) };
+
+  async function prepare(batch: Extract<Awaited<ReturnType<typeof prepareScriptCommands>>, { ok: true }>): Promise<ScriptPreparation> {
     let steps: readonly ResolvedSolidStep[] = [];
     const result = await calculate(candidate, bridge, { partId, generation: 1, shouldCancel, onProgress,
       importedShapes: input.importedShapes, onResolved: (resolved) => { steps = resolved.steps; } });
-    if (shouldCancel() || result.cancelled) return failure('cancelled', '処理を中止しました。');
+    if (shouldCancel() || result.cancelled) return cancelled();
     const firstError = result.errors[0];
     if (firstError !== undefined) return { ok: false, error: { kind: 'cad', partError: firstError,
       location: locateScriptError(batch.locations.get(firstError.featureId) ?? '', input.sources) } };
@@ -53,17 +73,16 @@ export async function prepareScriptTransaction(input: ScriptTransactionInput, br
     const previousIds = new Set(input.document.solids.map((solid) => solid.id));
     for (const solid of batch.document.solids) {
       if (solid.kind !== 'boolean' || solid.operation !== 'subtract' || previousIds.has(solid.id)) continue;
+      location = locateScriptError(batch.locations.get(solid.id) ?? '', input.sources);
       const before = await bridge.measure(steps, [{ bodyFeatureId: solid.targetFeatureId, subShape: null }], 'massProperties');
-      if (shouldCancel()) return failure('cancelled', '処理を中止しました。');
+      if (shouldCancel()) return cancelled();
       const after = await bridge.measure(steps, [{ bodyFeatureId: solid.id, subShape: null }], 'massProperties');
-      if (shouldCancel()) return failure('cancelled', '処理を中止しました。');
-      if (before.kind !== 'massProperties' || after.kind !== 'massProperties' || !(after.volume > 0 && after.volume < before.volume))
-        return { ok: false, error: { kind: 'cad', message: '穴の位置・向き・深さを確認してください。対象の内側に穴を作れません。',
-          location: locateScriptError(batch.locations.get(solid.id) ?? '', input.sources) } };
+      if (shouldCancel()) return cancelled();
+      if (before.kind !== 'massProperties' || after.kind !== 'massProperties')
+        throw new Error('Script hole volume measurement failed', { cause: { before, after } });
+      if (!(after.volume > 0 && after.volume < before.volume))
+        return { ok: false, error: scriptFailure('holeOutside', location) };
     }
-    handedOff = true;
     return { ok: true, prepared: { base: input.document, document: batch.document, result, release } };
-  } catch (error) {
-    return failure(shouldCancel() ? 'cancelled' : 'cad', error instanceof Error ? error.message : '形を計算できませんでした。');
-  } finally { if (!handedOff) await release(); }
+  }
 }

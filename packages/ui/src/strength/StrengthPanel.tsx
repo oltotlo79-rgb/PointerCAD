@@ -3,7 +3,8 @@ import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { STRENGTH_FIELD_LABELS, strengthExpressionField } from './strengthFields.js';
+import { STRENGTH_FIELD_LABELS, strengthExpressionFieldForPanel } from './strengthFields.js';
+import { strengthFailureMessage } from './strengthFailureMessage.js';
 import { StrengthMaterialFields } from './StrengthMaterialFields.js';
 import { StrengthOptions } from './StrengthOptions.js';
 import { StrengthResults } from './StrengthResults.js';
@@ -26,6 +27,7 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
   const close = useAppStore(state => state.closeStrength);
   const help = useAppStore(state => state.openHelpTopic);
   const evaluation = evaluateStrengthSession(session, parameters);
+  const evaluationMessage = evaluation.ok ? null : strengthFailureMessage(evaluation);
   return <form className="pcad-panel__body pcad-strength" aria-label={t('strength.title')} data-help-topic="strength"
     onSubmit={event => { event.preventDefault(); calculate(); }}
     onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) return; if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
@@ -35,12 +37,12 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
     <StrengthMaterialFields session={session} parameters={parameters} edit={edit} />
     {strengthCalculationFields(session.calculation).filter(([name]) => name !== 'tensileArea').map(([name, quantity, allowZero]) =>
       <ExpressionField key={name}
-        {...strengthExpressionField(session, parameters, name, quantity, STRENGTH_FIELD_LABELS[name], session.sources.get(name) ?? '', allowZero)}
+        {...strengthExpressionFieldForPanel(session, parameters, name, quantity, STRENGTH_FIELD_LABELS[name], session.sources.get(name) ?? '', allowZero)}
         lengthUnit={session.lengthUnit} focused={session.focusedField === name}
         onFocus={() => edit({ kind: 'focus', field: name })} onChange={source => edit({ kind: 'source', field: name, source })} />)}
-    {evaluation.ok ? null : <p role="alert" className="pcad-field__message--error">{evaluation.message}</p>}
+    {evaluationMessage === null ? null : <p role="alert" className="pcad-field__message--error">{evaluationMessage}</p>}
     <div className="pcad-strength__actions">
-      <button type="submit" className="pcad-button pcad-button--primary" disabled={!evaluation.ok} title={evaluation.ok ? t('strength.tooltip') : evaluation.message}>
+      <button type="submit" className="pcad-button pcad-button--primary" disabled={!evaluation.ok} title={evaluationMessage ?? t('strength.tooltip')}>
         {t(session.result === null ? 'strength.calculate' : 'strength.recalculate')}</button>
       <button type="button" className="pcad-button" title={t('strength.guide.close')} onClick={close}>{t('strength.close')}</button>
       <button type="button" className="pcad-button" title={t('strength.guide.help')} onClick={() => help('strength')}>{t('strength.help')}</button>

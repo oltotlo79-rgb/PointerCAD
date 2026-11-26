@@ -19,6 +19,16 @@ import type { CatalogFamily, CatalogFamilyEntry } from './types.js';
 /** 保存の形(`options.family`・`options.item`)が使う鍵。族の options の指定には使えない。 */
 const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set(['family', 'item']);
 
+/**
+ * An invalid application-supplied catalog definition. Loader rejection is kept separate:
+ * the browser can reject the dynamic import before there is a definition to validate.
+ */
+export class CatalogDefinitionError extends Error {
+  constructor(readonly familyId: string, detail: string, cause?: unknown) {
+    super(detail, { cause });
+  }
+}
+
 export interface CatalogRegistry {
   readonly entries: readonly CatalogFamilyEntry[];
   /** 登録された族の入口。知らない id は undefined。 */
@@ -55,16 +65,25 @@ function catalogFamilyIssues(entry: CatalogFamilyEntry, family: CatalogFamily): 
 export function createCatalogRegistry(entries: readonly CatalogFamilyEntry[]): CatalogRegistry {
   const byId = new Map<string, CatalogFamilyEntry>();
   for (const entry of entries) {
-    if (byId.has(entry.id)) throw new Error(`規格部品の族の id が重なっています: ${entry.id}`);
+    if (byId.has(entry.id)) throw new CatalogDefinitionError(entry.id, `規格部品の族の id が重なっています: ${entry.id}`);
     byId.set(entry.id, entry);
   }
   const loadedFamilies = new Map<string, CatalogFamily>();
   const pending = new Map<string, Promise<void>>();
   const loadOne = async (entry: CatalogFamilyEntry): Promise<void> => {
     const family = await entry.load();
-    const issues = catalogFamilyIssues(entry, family);
-    if (issues.length > 0) throw new Error(`規格部品の族の定義に誤りがあります(${entry.id}): ${issues.join(' / ')}`);
-    loadedFamilies.set(entry.id, family);
+    try {
+      const issues = catalogFamilyIssues(entry, family);
+      if (issues.length > 0) throw new CatalogDefinitionError(entry.id,
+        `規格部品の族の定義に誤りがあります(${entry.id}): ${issues.join(' / ')}`);
+      loadedFamilies.set(entry.id, family);
+    } catch (cause) {
+      const failure = cause instanceof CatalogDefinitionError ? cause
+        : new CatalogDefinitionError(entry.id, `規格部品の族の定義に誤りがあります(${entry.id})`, cause);
+      // One record per failed load, even when several consumers await the same promise.
+      console.error('PointerCAD catalog definition', entry.id, failure);
+      throw failure;
+    }
   };
   return {
     entries: [...entries],

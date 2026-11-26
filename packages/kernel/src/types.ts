@@ -17,6 +17,7 @@ import type { BlendSurfaceError } from './occt/blendBoundary.js';
 import type { EdgeTreatmentFailureCode } from './occt/edgeTreatmentFailure.js';
 import type { HoleFailureCode } from './occt/holeFailure.js';
 import type { KernelStepFailureCode, SketchGeometryReason } from './occt/kernelStepError.js';
+import type { GeometryFailureDetails, PlacementFailureCode, SolidGeometryFailureCode } from './occt/solidGeometryFailure.js';
 import type { SolidSweepFailureCode } from './occt/solidSweepFailure.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
@@ -842,7 +843,8 @@ export interface SolidBodyMesh {
 export interface SolidStepFailure {
   readonly id: string;
   readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance'
-    | KernelStepFailureCode | SewFacesReason | EdgeDistanceHoleReason | HoleFailureCode | EdgeTreatmentFailureCode | SolidSweepFailureCode;
+    | KernelStepFailureCode | SewFacesReason | EdgeDistanceHoleReason | HoleFailureCode | EdgeTreatmentFailureCode | SolidSweepFailureCode
+    | SolidGeometryFailureCode;
   readonly parameters?: Readonly<Record<string, string>>;
   /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。code を持つ物は符号の文字で、文は画面の側が持つ(0b-2)。 */
   readonly message: string;
@@ -2166,13 +2168,13 @@ export type ShapeExportRequest =
     };
 
 /** 書き出した立体 1 つぶんの三角形(`format: 'mesh'`)。 */
-/** STEP/STL callers can opt into data-only failure replies over the Worker boundary. */
-export type ShapeExportDiagnosticRequest = Extract<ShapeExportRequest, { format: 'step' | 'stl' }> & {
+/** STEP, IGES and STL callers can opt into data-only failure replies over the Worker boundary. */
+export type ShapeExportDiagnosticRequest = Extract<ShapeExportRequest, { format: 'step' | 'iges' | 'stl' }> & {
   readonly reportDiagnostics: true;
 };
 
 export type ShapeExportDiagnostic =
-  | { readonly code: 'noShape' | 'missingShape' | 'noTriangle' | 'internal' }
+  | { readonly code: 'noShape' | 'missingShape' | 'noTriangle' | 'igesUnavailable' | 'internal' }
   | { readonly code: 'deadline' | 'triangleLimit' | 'memoryLimit'; readonly limit: number };
 
 export type ShapeExportReply = ShapeExportResult | {
@@ -2426,7 +2428,7 @@ export interface ShapeImportResult {
 
 /** 利用者が直せる入力の理由と、実装側で調べる診断。 */
 export type ShapeImportDiagnostic =
-  | { readonly code: 'unreadable' | 'noShape' | 'noSolid' | 'missingComponent' | 'assemblyCycle' | 'noFace' }
+  | { readonly code: 'unreadable' | 'noShape' | 'noSolid' | 'missingComponent' | 'assemblyCycle' | 'noFace' | 'igesUnavailable' }
   | { readonly code: 'triangleLimit'; readonly count: number; readonly limit: number }
   | { readonly code: 'internal'; readonly detail: string };
 
@@ -2497,6 +2499,7 @@ export interface InterferencePairFailure {
   readonly stage: 'input' | 'bounds' | 'union' | 'placement' | 'common' | 'mesh' | 'release';
   readonly code: InterferenceFailureCode;
   readonly message: string;
+  readonly diagnostic?: GeometryFailureDetails<PlacementFailureCode | 'geometry-internal'>;
   readonly missingKeys?: readonly string[];
   readonly cleanupMessages?: readonly string[];
 }

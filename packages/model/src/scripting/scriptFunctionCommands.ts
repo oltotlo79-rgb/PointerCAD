@@ -23,7 +23,7 @@ export function applyScriptFunctionCommand(
   compiled: CompiledScriptFunction | undefined,
 ): ScriptCommandChange {
   if (!compiled || compiled.document.id !== context.document.id) {
-    throw new ScriptCommandError('関数の数学計算部を準備できません。');
+    throw new Error('関数の数学計算部を準備できません。');
   }
   const { document, definition } = compiled;
   if (command.kind === 'function.surface') {
@@ -36,7 +36,7 @@ export function applyScriptFunctionCommand(
   const owner = scriptReference(context, command.fields.sketch, 'sketch');
   const sketch = findSketch(document, owner.featureId);
   if (!sketch) {
-    throw new ScriptCommandError('関数を作図するスケッチが見つかりません。');
+    throw new ScriptCommandError('functionSketch');
   }
   const feature = { ...createFunctionCurve(sketch, definition), id: command.resultId };
   return {

@@ -1,3 +1,4 @@
+import { SAVE_RECOVERY_COPY_RECEIPT, SaveRecoveryCopyError } from '@pointercad/ui/save-errors';
 import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { CAM_TOOL_URLS, isCamFormat, isCamTool, type CamFormat } from '@pointercad/ui/open-with';
 import { validateAppSender } from './appSender.js';
@@ -95,6 +96,9 @@ export function registerExportHandoffIpc(save: (window: BrowserWindow | null, na
       if (path === null || attempt.signal?.aborted) return null;
       const token = handoffs.complete(event.sender.id, revision, format, path);
       return token === null ? null : { token };
+    } catch (error) {
+      if (error instanceof SaveRecoveryCopyError) return SAVE_RECOVERY_COPY_RECEIPT;
+      throw error;
     } finally {
       attempt.finish();
     }

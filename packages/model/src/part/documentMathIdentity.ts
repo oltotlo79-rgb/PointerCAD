@@ -1,4 +1,5 @@
 import { collectMathCoefficients } from '@pointercad/expression';
+import { ParameterInputError } from '../parameters/parameterInputError.js';
 import { allocateParameterMathIds } from '../parameters/parameterMathIdentity.js';
 import { mapDocumentExpressions } from './reevaluatePart.js';
 import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
@@ -12,7 +13,7 @@ export function prepareDocumentMathIdentity(document: PartDocument): PartDocumen
     const match = /^coefficient:([1-9][0-9]*)$/u.exec(id);
     if (match === null) return;
     const value = Number(match[1]);
-    if (!Number.isSafeInteger(value)) throw new Error('係数の参照番号が上限を超えています。');
+    if (!Number.isSafeInteger(value)) throw new ParameterInputError('係数の参照番号が上限を超えています。', 'parameter.identity.serialRange');
     serial = Math.max(serial, value);
   };
   mapDocumentExpressions(document, value => {

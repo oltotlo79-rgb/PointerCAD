@@ -17,6 +17,7 @@ import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { holeOperationOrigins, type NativeHoleToolFace } from './subShapeOrigins.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { releaseGeometryOnError, SolidGeometryFailure, type SolidGeometryFailureCode } from './solidGeometryFailure.js';
 import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /**
@@ -75,7 +76,7 @@ interface BooleanOptions {
  * 境界箱が重なるだけでは「削れる」証拠にならないので、実際の形どうしで確かめる。
  */
 function assertRemovesMaterial(oc: OpenCascadeInstance, target: TopoDS_Shape, tool: TopoDS_Shape): void {
-  assertSolidRemains(oc, 'intersect', target, tool, NOTHING_REMOVED_MESSAGE);
+  assertSolidRemains(oc, 'intersect', target, tool, 'geometry-profile-no-removal', NOTHING_REMOVED_MESSAGE);
 }
 
 /**
@@ -84,31 +85,40 @@ function assertRemovesMaterial(oc: OpenCascadeInstance, target: TopoDS_Shape, to
  * `NOTHING_OUTSIDE_MESSAGE` で断る(差の `assertRemovesMaterial` と同じ境目・同じ作り方)。
  */
 function assertKeepsOutside(oc: OpenCascadeInstance, target: TopoDS_Shape, tool: TopoDS_Shape): void {
-  assertSolidRemains(oc, 'subtract', target, tool, NOTHING_OUTSIDE_MESSAGE);
+  assertSolidRemains(oc, 'subtract', target, tool, 'geometry-profile-no-outside', NOTHING_OUTSIDE_MESSAGE);
 }
 
 /** `operation` の結果を非破壊で作り、立体が残らなければ `message` で断る。作った形はここで解放する。 */
 function assertSolidRemains(oc: OpenCascadeInstance, operation: BooleanOperation, target: TopoDS_Shape,
-  tool: TopoDS_Shape, message: string): void {
+  tool: TopoDS_Shape, code: SolidGeometryFailureCode, message: string): void {
   const owned = createAllocations();
   try {
     const range = owned.keep(new oc.Message_ProgressRange_1());
     // Even a no-op native Boolean can freeze shared input TShapes in non-destructive mode.
     // This is only a disposable material-presence probe; it needs no borrowed topology/history.
-    const copy = (shape: TopoDS_Shape): TopoDS_Shape => {
+    const copy = (shape: TopoDS_Shape, role: 'target' | 'tool'): TopoDS_Shape => {
       const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(shape, true, true));
-      if (!copier.IsDone()) throw new Error(COMBINE_FAILED_MESSAGE);
+      if (!copier.IsDone()) {
+        throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+          { cause: { operation, role, phase: 'profile-copy', isDone: false } });
+      }
       const copied = owned.keep(copier.Shape());
-      if (copied.IsNull() || copied.IsSame(shape)) throw new Error(COMBINE_FAILED_MESSAGE);
+      const isNull = copied.IsNull();
+      const isSame = !isNull && copied.IsSame(shape);
+      if (isNull || isSame) {
+        throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+          { cause: { operation, role, phase: 'profile-copy', isNull, isSame } });
+      }
       return copied;
     };
-    const result = buildBooleanShape(oc, operation, copy(target), [copy(tool)], range, owned);
+    const result = buildBooleanShape(oc, operation, copy(target, 'target'), [copy(tool, 'tool')], range, owned);
     if (!hasResultSolid(oc, result) || measureVolume(oc, result) < MIN_SOLID_VOLUME_MM3) {
-      throw new Error(message);
+      throw new SolidGeometryFailure(code, message);
     }
-  } finally {
-    owned.release();
+  } catch (error) {
+    releaseGeometryOnError(owned.release, error);
   }
+  owned.release();
 }
 
 /**
@@ -209,7 +219,8 @@ function buildBooleanResult(
   }
 
   if (!isValidShape(oc, shape)) {
-    throw new Error(INVALID_RESULT_MESSAGE);
+    throw new SolidGeometryFailure('geometry-internal', INVALID_RESULT_MESSAGE, undefined,
+      { cause: { operation, phase: 'result-validation', valid: false, volume } });
   }
 
   return { shape, volume, ...(origins === undefined ? {} : { origins }), delete: allocations.release };
@@ -243,20 +254,20 @@ export function booleanOp(
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
-    if (target.IsNull() || tool.IsNull()) throw new Error(COMBINE_FAILED_MESSAGE);
-    if (shapeBodyKind(oc, target) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
+    if (target.IsNull() || tool.IsNull()) throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+      { cause: { operation, phase: 'input', nullShape: true } });
+    if (shapeBodyKind(oc, target) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new SolidGeometryFailure('geometry-open-solid', OPEN_FACES_NOT_SUPPORTED);
     if (options?.requireRemoval === true && operation === 'subtract') assertRemovesMaterial(oc, target, tool);
     if (options?.requireRemoval === true && operation === 'intersect') {
       // 輪郭の内側を残す。外側に削るものが無い(輪郭が立体をまるごと囲む)なら断る。
       assertKeepsOutside(oc, target, tool);
       // Refuse an empty inside on copied topology before the real Common touches borrowed inputs.
-      assertSolidRemains(oc, 'intersect', target, tool, NOTHING_INSIDE_MESSAGE);
+      assertSolidRemains(oc, 'intersect', target, tool, 'geometry-profile-no-inside', NOTHING_INSIDE_MESSAGE);
       return buildInsideResult(() => buildBooleanResult(oc, operation, target, [tool], range, allocations, semantic, onBuilt));
     }
     return buildBooleanResult(oc, operation, target, [tool], range, allocations, semantic, onBuilt);
   } catch (error) {
-    allocations.release();
-    throw error;
+    releaseGeometryOnError(allocations.release, error);
   }
 }
 
@@ -269,7 +280,7 @@ function buildInsideResult(build: () => BooleanResult): BooleanResult {
     return build();
   } catch (error) {
     if (isNothingLeft(error)) {
-      throw new Error(NOTHING_INSIDE_MESSAGE, { cause: error });
+      throw new SolidGeometryFailure('geometry-profile-no-inside', NOTHING_INSIDE_MESSAGE, undefined, { cause: error });
     }
     throw error;
   }
@@ -286,20 +297,27 @@ export function booleanOpWithTools(oc: OpenCascadeInstance, operation: 'union' |
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
-    if (target.IsNull() || tools.some(tool => tool.IsNull())) throw new Error(COMBINE_FAILED_MESSAGE);
-    if ([target, ...tools].some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new Error(OPEN_FACES_NOT_SUPPORTED);
+    if (target.IsNull() || tools.some(tool => tool.IsNull())) throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+      { cause: { operation, phase: 'input', nullShape: true } });
+    if ([target, ...tools].some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new SolidGeometryFailure('geometry-open-solid', OPEN_FACES_NOT_SUPPORTED);
     return buildBooleanResult(oc, operation, target, tools, range, allocations, undefined, onBuilt);
-  } catch (error) { allocations.release(); throw error; }
+  } catch (error) { releaseGeometryOnError(allocations.release, error); }
 }
 
 /** 全入力を一度に交差計算する。中間の結合体を繰り返し分割・検査しない。 */
 export function unionShapes(oc: OpenCascadeInstance, shapes: readonly TopoDS_Shape[]): BooleanResult {
-  if (shapes.length < 2) throw new Error('結合するソリッドを2つ以上指定してください。');
+  if (shapes.length < 2) {
+    throw new SolidGeometryFailure('geometry-union-count', '結合するソリッドを2つ以上指定してください。', { minimum: '2' });
+  }
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
-    if (shapes.some(shape => shape.IsNull())) throw new Error(COMBINE_FAILED_MESSAGE);
-    if (shapes.some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new Error(OPEN_FACES_NOT_SUPPORTED);
+    const nullIndex = shapes.findIndex(shape => shape.IsNull());
+    if (nullIndex !== -1) {
+      throw new SolidGeometryFailure('geometry-internal', COMBINE_FAILED_MESSAGE, undefined,
+        { cause: { operation: 'union', phase: 'input', nullIndex } });
+    }
+    if (shapes.some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new SolidGeometryFailure('geometry-open-solid', OPEN_FACES_NOT_SUPPORTED);
     return buildBooleanResult(oc, 'union', shapes[0], shapes.slice(1), range, allocations);
-  } catch (error) { allocations.release(); throw error; }
+  } catch (error) { releaseGeometryOnError(allocations.release, error); }
 }

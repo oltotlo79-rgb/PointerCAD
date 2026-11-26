@@ -1,4 +1,5 @@
 /** 合致を成分ごとに解く。解は文書へ書き戻さない(FR-603/604)。 */
+import type { FailureText } from '../../failureText.js';
 import { belowMagnitude, magnitudeAtLeast } from '../../numericTolerance.js';
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
 import { qrDecompositionSteps } from './rigidQrSteps.js';
@@ -214,6 +215,8 @@ export interface MateSolveDiagnosis {
 }
 
 export interface SolveMatesOutcome {
+  /** The solver rejected an already accepted mechanism step. Placements still describe the initial state. */
+  readonly internalFailure?: FailureText;
   readonly couplingFailure?: MechanismCouplingFailure | CamFollowerFailure;
   readonly skippedJoints?: readonly SkippedJointResidual[];
   readonly jointBranchViolations?: readonly string[];
@@ -604,6 +607,13 @@ function prepareMateCouplings(assembly: AssemblyDocument, options: SolveMatesOpt
   return coupled;
 }
 
+function refusedMateSolve(initial: ReadonlyMap<string, RigidPlacement>,
+  failure: Pick<SolveMatesOutcome, 'couplingFailure' | 'internalFailure'>): SolveMatesOutcome {
+  return { placements: new Map(initial), converged: false, iterations: 0, residualNorm: 0, maxResidual: 0, ...failure,
+    diagnosis: { status: 'stalled', components: [], limits: [], constantConflicts: [], unsupportedJointIds: [] },
+    skipped: [], branchViolations: [], skippedJoints: [], jointBranchViolations: [] };
+}
+
 function* solveMatesCoreSteps(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions,
@@ -643,10 +653,7 @@ function* solveMatesCoreSteps(
   const activeJoints = assembly.joints.filter((joint) => jointsById.has(joint.id));
   const branchGeometry = mateBranchGeometry(prepared.mates, preparedJoints.joints);
   const coupled = prepareMateCouplings(assembly, options, activePlacements, drive);
-  if (!coupled.ok) return { placements: new Map(initial), converged: false, iterations: 0,
-    residualNorm: 0, maxResidual: 0, couplingFailure: coupled,
-    diagnosis: { status: 'stalled', components: [], limits: [], constantConflicts: [], unsupportedJointIds: [] },
-    skipped: [], branchViolations: [], skippedJoints: [], jointBranchViolations: [] };
+  if (!coupled.ok) return refusedMateSolve(initial, { couplingFailure: coupled });
   const groups = mateComponentGroups(allVariables, activeMates, activeJoints,
     [...coupled.prepared.couplings.map(row => row.definition), ...(coupled.prepared.cams ?? []).map(c => ({
       jointAId: c.definition.camJointId, jointBId: c.definition.followerJointId, suppressed: c.definition.suppressed }))]);
@@ -716,6 +723,7 @@ function* solveMatesCoreSteps(
     const groupDrive = drive !== undefined && group.jointIds.includes(drive.joint.jointId) ? drive : undefined;
     const mechanism = solveInput === null || (groupCouplings.couplings.length === 0 && groupCouplings.cams.length === 0) ? null
       : yield* work.forward(solveMechanismGroupSteps(solveInput, variableSet, groupCouplings, groupDrive, budget));
+    if (mechanism !== null && 'internalFailure' in mechanism) return refusedMateSolve(initial, mechanism);
     const driven = mechanism ?? (solveInput === null || groupDrive === undefined
       ? null : yield* work.forward(solveDrivenGroupSteps(solveInput, variableSet, groupDrive, budget)));
     const result = solveInput === null ? null : driven?.result ?? (yield* work.forward(solveRigidSteps(solveInput, budget)));

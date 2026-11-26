@@ -1,6 +1,6 @@
 import { readSerializedScriptCommand } from './commandValidation.js';
 import { scriptUtf8Bytes } from './scriptBytes.js';
-import { SCRIPT_LIMITS, type ScriptCommand, type ScriptConsoleLine, type ScriptExecutionOutcome, type ScriptFailureKind, type ScriptLocation } from './scriptTypes.js';
+import { isScriptFailureReason, scriptFailure, SCRIPT_LIMITS, type ScriptCommand, type ScriptConsoleLine, type ScriptExecutionOutcome, type ScriptFailureKind, type ScriptLocation } from './scriptTypes.js';
 
 const failureKinds: readonly ScriptFailureKind[] = ['source','syntax','runtime','memory','stack','timeout','cancelled','module','command','console','cad','stale','worker'];
 function isFailureKind(value: unknown): value is ScriptFailureKind { return failureKinds.some((kind) => kind === value); }
@@ -22,9 +22,15 @@ export function readScriptOutcome(value: unknown, namespace: string): ScriptExec
     console.push({ level: entry.level, text: entry.text }); logBytes += bytes;
   }
   if (value.ok === false) {
-    if (!row(value.error) || !isFailureKind(value.error.kind) || typeof value.error.message !== 'string' || value.error.message.length > 4096) return null;
+    if (!row(value.error) || !isFailureKind(value.error.kind)) return null;
     const at = location(value.error.location); if (at === undefined) return null;
-    return { ok: false, error: { kind: value.error.kind, message: value.error.message, location: at }, console };
+    if (Object.hasOwn(value.error, 'message')) {
+      if (typeof value.error.message !== 'string' || value.error.message.length > 4096) return null;
+      return { ok: false, error: { kind: value.error.kind, message: value.error.message, location: at }, console };
+    }
+    if (!isScriptFailureReason(value.error.reason)) return null;
+    const error = scriptFailure(value.error.reason, at);
+    return error.kind === value.error.kind ? { ok: false, error, console } : null;
   }
   if (value.ok !== true || !Array.isArray(value.commands) || value.commands.length > SCRIPT_LIMITS.commands
     || typeof value.javascriptMs !== 'number' || !Number.isFinite(value.javascriptMs) || value.javascriptMs < 0

@@ -4,11 +4,11 @@ import type { PartDocument } from '../part/types.js';
 import {recomputePart} from '../part/recomputePart.js';
 import type {ScriptFunctionCompiler} from './scriptFunctionCommands.js';
 import type { LengthUnit } from '../units/length.js';
-import { createScriptSnapshot } from './scriptSnapshot.js';
+import { createScriptSnapshot, ScriptSnapshotSizeError } from './scriptSnapshot.js';
 import { sha256ScriptSource, validateScriptProgram } from './scriptModules.js';
 import { prepareScriptTransaction, type PreparedScriptTransaction } from './scriptTransaction.js';
 import { runScriptWorker, type ScriptWorkerFactory } from './scriptWorkerClient.js';
-import { SCRIPT_LIMITS, SCRIPT_TOTAL_TIMEOUT_MESSAGE, type ScriptConsoleLine, type ScriptFailure, type ScriptProgram } from './scriptTypes.js';
+import { scriptFailure, scriptInternalFailure, SCRIPT_LIMITS, type ScriptConsoleLine, type ScriptFailure, type ScriptProgram } from './scriptTypes.js';
 
 export interface ScriptRequest {
   readonly requestId: string; readonly documentEpoch: string; readonly document: PartDocument;
@@ -27,15 +27,15 @@ export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: Scr
   return async (request, signal, onPhase) => {
     const controller = new AbortController(); let timedOut = false;
     const cancel = (): void => { controller.abort(); };
-    const failure = (kind: ScriptFailure['kind'], message: string): ScriptRunResult => ({ ok: false, error: { kind, message, location: null }, console: [] });
-    if (signal.aborted) return failure('cancelled', '処理を中止しました。');
+    const failure = (error: ScriptFailure): ScriptRunResult => ({ ok: false, error, console: [] });
+    if (signal.aborted) return failure(scriptFailure('cancelled'));
     signal.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, SCRIPT_LIMITS.totalMs);
-    const stopped = (): ScriptRunResult => failure(timedOut ? 'timeout' : 'cancelled', timedOut ? SCRIPT_TOTAL_TIMEOUT_MESSAGE : '処理を中止しました。');
+    const stopped = (): ScriptRunResult => failure(scriptFailure(timedOut ? 'totalTimeout' : 'cancelled'));
     try {
       onPhase('validating');
       const checked = await validateScriptProgram(request.program);
-      if (!checked.ok) return failure('source', '処理の内容・版・照合値が一致しません。');
+      if (!checked.ok) return failure(scriptFailure('programMismatch'));
       if (controller.signal.aborted) return stopped();
       // The UI checks epoch separately. Reopening identical content must not change generated IDs.
       const snapshotNamespace = await sha256ScriptSource(JSON.stringify(request.document));
@@ -55,13 +55,20 @@ export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: Scr
       const prepared = await prepareScriptTransaction({ requestId: request.requestId, document: request.document, commandNamespace,
         commands: result.commands, references: snapshot.references, lengthUnit: request.lengthUnit, sources, importedShapes: request.importedShapes, placeDocument: request.placeDocument },
       bridge, () => controller.signal.aborted,undefined,calculate,compile);
-      if (controller.signal.aborted) { if (prepared.ok) await prepared.prepared.release(); return stopped(); }
+      if (controller.signal.aborted) {
+        if (prepared.ok) {
+          try { await prepared.prepared.release(); }
+          catch (error) { scriptInternalFailure(error); }
+        }
+        return stopped();
+      }
       if (!prepared.ok) return { ...prepared, console: result.console };
       return { ok: true, prepared: prepared.prepared, console: result.console, commandCount: result.commands.length,
         initializationMs: result.initializationMs, javascriptMs: result.javascriptMs, cadMs: performance.now() - cadStarted };
     } catch (error) {
       if (controller.signal.aborted) return stopped();
-      return failure('worker', error instanceof Error ? error.message : '処理を実行できませんでした。');
+      if (error instanceof ScriptSnapshotSizeError) return failure(scriptFailure('snapshotBytes'));
+      return failure(scriptInternalFailure(error));
     } finally { clearTimeout(timer); signal.removeEventListener('abort', cancel); }
   };
 }

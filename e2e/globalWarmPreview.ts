@@ -1,23 +1,15 @@
 /// <reference lib="dom" />
-import { readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import * as console from 'node:console';
+import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 import type { FullConfig } from '@playwright/test';
 
-/**
- * 画面検査の開始の前に、preview が配る dist の全ファイルを 1 回受け取って温める(2026-11-20、統括の案 (a))。
- * 画面検査は 1 回の起動ごとに apps/web/dist を作り直す(scripts/lib/e2eWebServer.mjs)ので、作り直した直後の数百本が、
- * 最初の数ページで初めて読まれる。新しく書いたファイルの最初の読みは、実測で 8〜14ms(2 回目は 0.3ms)かかり、
- * ほかの入出力と重なると 5〜23 秒に伸びて、起動の待ち(startupHealth.ts の 15 秒)の内側で受け取りが終わらない事があった。
- * 先に全部を 1 回受け取っておけば、その時間は検査の待ちの外へ出る。待ちの 15 秒・期待値・やり直しは変えない。
- *
- * Playwright は webServer の起動と待ちを終えてから globalSetup を流す(playwright の runner の createGlobalSetupTasks)。
- * preview を使わない組み立て(Electron だけ。webServer に url が無い)では何もせず、その旨を 1 行出す。
- * 温めの失敗(サーバーが返さない・時間切れ)は検査の失敗にせず、警告の 1 行にして検査を始める: 温めは速さのための手当てで、
- * 本当にサーバーが返さないなら、その後の検査が自分の診断つきで落ちるため、ここで落とすと原因が 1 本の準備の失敗に隠れる。
- */
-const DIST_DIRECTORY = fileURLToPath(new URL('../apps/web/dist/', import.meta.url));
+/** Warm the first-screen files from the same build that the ordinary preview serves. */
+const STARTUP_PLAN = resolve(dirname(fileURLToPath(import.meta.url)),
+  '../apps/web/dist/.vite/preview-startup.json');
 const PARALLEL_REQUESTS = 8;
 const REQUEST_TIMEOUT_MS = 30_000;
 const TOTAL_TIMEOUT_MS = 60_000;
@@ -30,12 +22,17 @@ interface Warmed {
   failures: string[];
 }
 
-async function distFiles(directory: string, prefix = ''): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const nested = await Promise.all(entries.map(async (entry) => (entry.isDirectory()
-    ? distFiles(`${directory}${entry.name}/`, `${prefix}${entry.name}/`)
-    : entry.isFile() ? [`${prefix}${entry.name}`] : [])));
-  return nested.flat().sort();
+function isAssetPath(path: unknown): path is string {
+  return typeof path === 'string' && !/[\\?#:]/u.test(path)
+    && path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+async function readStartupPaths(): Promise<string[]> {
+  const paths: unknown = JSON.parse(await readFile(STARTUP_PLAN, 'utf8'));
+  if (!Array.isArray(paths) || !paths.every(isAssetPath) || paths[0] !== 'index.html') {
+    throw new Error('Invalid preview startup asset list');
+  }
+  return [...new Set(paths)];
 }
 
 function reason(error: unknown): string {
@@ -46,7 +43,8 @@ async function receiveOne(baseUrl: string, path: string, warmed: Warmed, deadlin
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');
   const signal = AbortSignal.any([deadline, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
   try {
-    const response = await fetch(new URL(`./${encodedPath}`, baseUrl), { signal, redirect: 'error' });
+    const url = new URL(path === 'index.html' ? './' : `./${encodedPath}`, baseUrl);
+    const response = await fetch(url, { signal, redirect: 'error' });
     const contentType = response.headers.get('content-type');
     const htmlFallback = contentType?.startsWith('text/html') === true && !/\.html?$/iu.test(path);
     if (!response.ok || response.body === null || htmlFallback) {
@@ -80,6 +78,7 @@ async function receiveAll(baseUrl: string, files: readonly string[]): Promise<Wa
 }
 
 export default async function globalWarmPreview(config: FullConfig): Promise<void> {
+  if (env.PCAD_E2E_PREVIEW_WARMUP === '0') return;
   const baseUrl = config.webServer?.url;
   if (baseUrl === undefined) {
     console.log('[温め] preview を使わない組み立て(Electron だけ)なので、温めは行いません');
@@ -87,9 +86,9 @@ export default async function globalWarmPreview(config: FullConfig): Promise<voi
   }
   let files: string[];
   try {
-    files = await distFiles(DIST_DIRECTORY);
+    files = await readStartupPaths();
   } catch (error) {
-    console.warn(`[温め] 警告: ${DIST_DIRECTORY} を読めないため温めを行わずに検査を始めます(${reason(error)})`);
+    console.warn(`[温め] 警告: ${STARTUP_PLAN} を読めないため温めを行わずに検査を始めます(${reason(error)})`);
     return;
   }
   const startedAt = performance.now();

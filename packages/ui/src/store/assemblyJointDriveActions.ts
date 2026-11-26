@@ -132,7 +132,8 @@ export function createAssemblyJointDriveActions(set: (patch: Partial<AppState>) 
         },
       });
       jointDriveRun = { owner, run };
-      set({ assemblyJointDrive: owner, assemblyMotionPlaying: false });
+      set({ assemblyJointDrive: owner, assemblyMotionPlaying: false,
+        ...(state.assemblyMotionNotice?.kind === 'internal' ? { assemblyMotionNotice: null } : {}) });
       const release = (): void => {
         if (jointDriveRun?.owner === owner) jointDriveRun = null;
       };

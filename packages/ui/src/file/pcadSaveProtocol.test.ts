@@ -1,7 +1,21 @@
+import { PcadWriteError } from '@pointercad/io';
 import { describe, expect, it } from 'vitest';
-import { isPcadSavePointReply, isPcadSavePointRequest, isPcadSaveReply, isPcadThreeMfReply, isPcadThreeMfRequest } from './pcadSaveProtocol.js';
+import { isPcadSavePointReply, isPcadSavePointRequest, isPcadSaveReply, isPcadThreeMfReply, isPcadThreeMfRequest, pcadSaveFailureReply } from './pcadSaveProtocol.js';
 
 describe('保存Workerの返信境界', () => {
+  it('同じ原文を持つ二つの失敗を区別し、未知の符号・矛盾する版を断る', () => {
+    const message = 'Point-slot issuance requires document schema 18';
+    const plain = pcadSaveFailureReply('one', new RangeError(message));
+    const diagnostic = { code: 'requiresVersion', field: 'patternSlots', actualVersion: 17,
+      requiredVersion: 18, documentName: '部品' } as const;
+    const typed = structuredClone(pcadSaveFailureReply('one', new PcadWriteError(diagnostic, message)));
+    expect(plain).toEqual({ id: 'one', kind: 'failure', message });
+    expect(typed).toEqual({ ...plain, diagnostic });
+    expect(isPcadSaveReply(plain)).toBe(true);
+    expect(isPcadSaveReply(typed)).toBe(true);
+    expect(isPcadSaveReply({ ...typed, diagnostic: { ...diagnostic, field: 'future' } })).toBe(false);
+    expect(isPcadSaveReply({ ...typed, diagnostic: { ...diagnostic, requiredVersion: 24 } })).toBe(false);
+  });
   it('複製と一覧の組は両方のmetadataを検証し、一覧だけの失敗を区別する', () => {
     const id = 'point:00000000-0000-4000-8000-000000000001';
     const point = { version: 1, id, originId: id, name: 'A', kind: 'part',

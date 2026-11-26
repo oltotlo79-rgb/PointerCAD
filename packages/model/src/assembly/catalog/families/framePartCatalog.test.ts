@@ -20,7 +20,7 @@ import {
   tSlotNutBarProfile,
 } from '../profiles/framePartShapes.js';
 import { createCatalogRegistry } from '../registry.js';
-import { catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
+import { buildCatalogItemPart, catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
 import { CHAMFERED_FOOT_BASE_RECORDS } from './chamferedFootBaseRows.js';
@@ -45,6 +45,18 @@ const FAMILIES = Object.values(framePartCatalog)
     && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
   .sort((left, right) => left.id.localeCompare(right.id));
 const values = (length: number): Readonly<Record<string, string>> => ({ length: String(length) });
+const FOOT_BASE_RECESS_CASES = [
+  { key: 'foot-59x25x12-h2-d9-stainless-130g', label: 'ステンレス', material: 'stainless', mass: 130, width: 59, depth: 25, thickness: 12,
+    through: 9, diameter: 14, recess: 8.5, centers: [[-15, 0], [15, 0]], massInName: true },
+  { key: 'foot-78x38x16-h2-d14-stainless', label: 'ステンレス', material: 'stainless', mass: 330, width: 78, depth: 38, thickness: 16,
+    through: 14, diameter: 20, recess: 12.5, centers: [[-20, 0], [20, 0]], massInName: false },
+  { key: 'foot-78x38x16-h2-d14-steel', label: '鋼', material: 'steel', mass: 328, width: 78, depth: 38, thickness: 16,
+    through: 14, diameter: 20, recess: 12.5, centers: [[-20, 0], [20, 0]], massInName: false },
+  { key: 'foot-79x75x16-h4-d9-stainless-729g', label: 'ステンレス', material: 'stainless', mass: 729, width: 79, depth: 75, thickness: 16,
+    through: 9, diameter: 14, recess: 8.5, centers: [[-20, -20], [-20, 20], [20, -20], [20, 20]], massInName: true },
+  { key: 'foot-79x75x16-h4-d9-steel-723g', label: '鋼', material: 'steel', mass: 723, width: 79, depth: 75, thickness: 16,
+    through: 9, diameter: 14, recess: 8.5, centers: [[-20, -20], [-20, 20], [20, -20], [20, 20]], massInName: true },
+] as const;
 
 function rowOf(family: CatalogFamily, key: string): CatalogItemRow {
   const row = family.rows.find((candidate) => candidate.key === key);
@@ -76,6 +88,13 @@ describe('資料 1 のフレームの部品の 9 族', () => {
     // 揃った長方形の板、上の角を 45° に斜めに切った板を持つ。
     // 端のキャップの族は、長方形と L 形の行の後に、1 つの角が R のフレームに合うキャップの行(14f)を持つ。
     // アジャスターの族は、今の行の後に、39 回目の 2 本の読みで揃った型番の行を持つ。
+    const footBaseRecords = FOOT_BASE_RECORDS.flatMap((record): readonly { key: string; size: string }[] => {
+      const seat = FOOT_BASE_RECESS_CASES.find(({ key }) => key === record.key);
+      if (seat === undefined) return [record];
+      const { diameter, recess, width, depth, thickness, through, label, centers } = seat;
+      const labelPrefix = `フットベース ${width}×${depth}×${thickness}（取付け穴 ${centers.length}・φ${through}・${label}）`;
+      return [record, { key: `${record.key}-cb${diameter}x${recess}`, size: `${labelPrefix}（座ぐり φ${diameter}・深さ ${recess}）` }];
+    });
     const recordsById = {
       [T_SLOT_NUT_BAR_FAMILY.id]: T_SLOT_NUT_BAR_RECORDS,
       [T_SLOT_NUT_FAMILY.id]: T_SLOT_NUT_RECORDS,
@@ -84,7 +103,7 @@ describe('資料 1 のフレームの部品の 9 族', () => {
       [FLAT_PLATE_FAMILY.id]: FLAT_PLATE_RECORDS,
       [SHAPED_PLATE_FAMILY.id]: SHAPED_PLATE_RECORDS,
       [ANGLE_BRACKET_CATALOG_FAMILY.id]: [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS],
-      [FOOT_BASE_FAMILY.id]: [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS],
+      [FOOT_BASE_FAMILY.id]: [...footBaseRecords, ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS],
       [ADJUSTER_FAMILY.id]: [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS],
     };
     expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
@@ -200,6 +219,48 @@ describe('資料 1 のフレームの部品の 9 族', () => {
 });
 
 describe('資料 1 の部品の読み直しで足した 4 族(平板の L・T・十字、L 形のブラケット、ベースの板、アジャスター)', () => {
+  it('座ぐり付きは選択と保存の新しい行になり、以前のキーは通し穴だけの板として再開する', async () => {
+    const family = FOOT_BASE_FAMILY;
+    const registry = createCatalogRegistry([{ id: family.id, group: family.group, kindKey: family.kindKey,
+      load: () => Promise.resolve(family) }]);
+    await registry.ensure([family.id]);
+    for (const { key, label, mass, width, depth, thickness, through, diameter, recess, centers, massInName } of FOOT_BASE_RECESS_CASES) {
+      const oldSize = `フットベース ${width}×${depth}×${thickness}（取付け穴 ${centers.length}・φ${through}・${label}）`
+        + (massInName ? `（質量 ${mass} g）` : '');
+      const legacy = { kind: 'standardPart', catalog: 'catalogItem', size: oldSize,
+        options: { family: 't-slot-foot-base', item: key }, catalogRevision: 't-slot-foot-base-2026-11-r1',
+        generatorRevision: 'frame-part-1' } as const;
+      const oldRow = rowOf(family, key);
+      const newKey = `${key}-cb${diameter}x${recess}`;
+      const detailed = rowOf(family, newKey);
+      expect(oldRow.listed).toBe(false);
+      expect(detailed.listed).toBeUndefined();
+      expect(detailed.dims).toMatchObject({ width, depth, thickness, holeCount: centers.length,
+        counterboreDiameter: diameter, counterboreDepth: recess });
+      const reopened = buildCatalogItemPart(legacy, registry);
+      const placedSource = createCatalogItemSource(family, detailed);
+      const placed = buildCatalogItemPart(placedSource, registry);
+      expect(placedSource.options.item).toBe(newKey);
+      expect([oldRow.size, reopened?.name]).toEqual([oldSize, oldSize]);
+      const oldSolidCount = 1 + 2 * centers.length;
+      expect(reopened?.solids).toHaveLength(oldSolidCount);
+      expect(placed?.solids.slice(0, oldSolidCount)).toEqual(reopened?.solids);
+      const bores = placed?.solids.filter((feature) => feature.kind === 'primitive' && feature.shape.kind === 'cylinder') ?? [];
+      expect(bores).toHaveLength(centers.length);
+      expect(bores).toMatchObject(centers.map(([x, y]) => ({
+        origin: { kind: 'coordinate', value: { x: { value: x }, y: { value: y }, z: { value: thickness - recess } } },
+        shape: { radius: { value: diameter / 2 }, height: { value: recess } },
+      })));
+      expect(placed?.solids.filter((feature) => feature.kind === 'boolean')).toHaveLength(2 * centers.length);
+      const oldVolume = (width * depth - centers.length * Math.PI * through ** 2 / 4) * thickness;
+      const removed = centers.length * Math.PI * (diameter ** 2 - through ** 2) / 4 * recess;
+      expect(family.nominalVolume(detailed, {})).toBeCloseTo(oldVolume - removed, 9);
+      expect(family.nominalVolume(oldRow, {})).toBeCloseTo(oldVolume, 9);
+      expect(catalogItemNominalMass(legacy, registry)).toBe(mass);
+      expect(catalogItemNominalMass(placedSource, registry)).toBeNull();
+    }
+  });
+
   it('体積は形の関数と同じ式、質量は持つ行だけ資料の値で、簡略の印は族ごとの決まりどおり', () => {
     for (const record of SHAPED_PLATE_RECORDS) {
       const row = rowOf(SHAPED_PLATE_FAMILY, record.key);
@@ -331,7 +392,11 @@ describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-
     for (const family of [ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY]) {
       for (const row of family.rows) {
         const record = records.find((candidate) => candidate.key === row.key);
-        if (record?.material === 'mixed') {
+        const counterbore = family === FOOT_BASE_FAMILY && FOOT_BASE_RECESS_CASES.find(
+          (item) => `${item.key}-cb${item.diameter}x${item.recess}` === row.key);
+        if (counterbore) {
+          expect([row.densityMaterialId, row.materialLabel], row.key).toEqual([counterbore.material, counterbore.label]);
+        } else if (record?.material === 'mixed') {
           expect([row.densityMaterialId, row.materialLabel], row.key).toEqual([undefined, record.materialText]);
           expect(record.materialText?.length ?? 0, row.key).toBeGreaterThan(0);
           expect(family.nominalMassG?.(row, {}), row.key).toBe(record.massG);

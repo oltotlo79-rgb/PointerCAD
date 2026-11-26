@@ -91,5 +91,18 @@
   "strength.guide.help": "計算の前提、単位、材料条件と結果の読み方を説明する章を開きます。",
   "strength.femFailure.assetMissing": "計算の準備のファイルを読み込めませんでした。もう一度計算を始めてください。続けて起きる時は、アプリを再起動してください（Web 版はページを再読み込み）。",
   "strength.femFailure.assetCorrupt": "計算の準備のファイルが壊れているため、もう一度計算しても直りません。アプリを入れ直してください（Web 版はページを再読み込み）。",
-  "strength.femFailure.runtime": "計算部で計算できませんでした（{code}）。"
+  "strength.femFailure.runtime": "計算部で計算できませんでした（{code}）。",
+  "strength.error.duplicate": "同じ入力欄が重複しています。",
+  "strength.error.tooLong": "式は4096文字以内で入力してください。",
+  "strength.error.empty": "式を入力してください。",
+  "strength.error.lengthUnit": "この欄には長さの単位を使えません。欄に表示された単位で入力してください。",
+  "strength.error.quantity": "「{name}」の量の種類がこの入力欄と一致しません。",
+  "strength.error.reference": "参照するパラメータ「{name}」の式を直してください。",
+  "strength.error.circular": "参照するパラメータ「{name}」の式を直してください。",
+  "strength.error.nonnegative": "0以上の有限の値を入力してください。",
+  "strength.error.positive": "0より大きい有限の値を入力してください。",
+  "strength.error.required": "必要な入力欄に式を入力してください。",
+  "strength.error.innerDiameter": "内径は0以上で、外径より小さくしてください。",
+  "strength.error.wallThickness": "肉厚は0より大きく、外径の半分より小さくしてください。",
+  "strength.error.calculatedRange": "入力の範囲を確認してください。正の有限値を計算できません。"
 }

@@ -13,6 +13,8 @@ import type { OpenCascadeInstance, TopoDS_Shape, TopoDS_Wire } from 'opencascade
 
 import type { CurveSpec } from '../types.js';
 import type { Allocations } from './allocations.js';
+import { SolidGeometryFailure } from './solidGeometryFailure.js';
+import { sketchInputReason } from './kernelStepError.js';
 import { makeOffsetWire, type OffsetContour } from './makeOffsetWire.js';
 import { countSolidShapes } from './solidTopology.js';
 import { hasSolid, isValidShape, measureArea } from './solidMesh.js';
@@ -48,33 +50,37 @@ function wireArea(oc: OpenCascadeInstance, wire: TopoDS_Wire, keep: Allocations[
 function offsetContours(oc: OpenCascadeInstance, curves: readonly CurveSpec[], distance: number): readonly OffsetContour[] | null {
   try {
     return makeOffsetWire(oc, { curves, distance, joinType: 'arc' });
-  } catch {
-    return null;
+  } catch (error) {
+    // An offset refusal permits trying the other side. Native or programming faults do not.
+    if (error instanceof Error && sketchInputReason(error) !== undefined) return null;
+    throw error;
   }
 }
 
 /**
- * 内側の線を作る。中空でなければ空。`buildWire` は makeSweep.ts の線の組み立て(つながらない時は渡した文で断る)。
+ * 内側の線を作る。中空でなければ空。`buildWire` は makeSweep.ts の線の組み立て(つながらない時は渡した理由で断る)。
  */
 export function innerProfileWires(oc: OpenCascadeInstance, spec: SweepHollowSpec, outerArea: number,
-  buildWire: (curves: readonly CurveSpec[], message: string) => TopoDS_Wire, keep: Allocations['keep']): SweepInnerProfiles {
+  buildWire: (curves: readonly CurveSpec[], disconnect: () => SolidGeometryFailure) => TopoDS_Wire, keep: Allocations['keep']): SweepInnerProfiles {
   const holes = spec.holes ?? [];
-  if (holes.length > 0 && spec.wallThickness !== undefined) throw new Error(WALL_WITH_HOLES_MESSAGE);
+  if (holes.length > 0 && spec.wallThickness !== undefined) throw new SolidGeometryFailure('geometry-pathSweep-wall-with-holes', WALL_WITH_HOLES_MESSAGE);
   if (spec.wallThickness === undefined) {
-    const wires = holes.map((hole) => buildWire(hole, HOLE_NOT_CONNECTED_MESSAGE));
+    const wires = holes.map((hole) => buildWire(hole,
+      () => new SolidGeometryFailure('geometry-pathSweep-hole-disconnected', HOLE_NOT_CONNECTED_MESSAGE)));
     const area = wires.reduce((sum, wire) => sum + (wireArea(oc, wire, keep) ?? 0), 0);
     return { wires, area };
   }
   const wall = spec.wallThickness;
-  if (!Number.isFinite(wall) || !(wall > 0)) throw new Error(WALL_VALUE_MESSAGE);
+  if (!Number.isFinite(wall) || !(wall > 0)) throw new SolidGeometryFailure('geometry-pathSweep-wall-value', WALL_VALUE_MESSAGE);
   for (const distance of [-wall, wall]) {
     const closed = (offsetContours(oc, spec.profile, distance) ?? []).filter((contour) => contour.closed);
     if (closed.length !== 1) continue;
-    const wire = buildWire(closed[0].curves, INNER_NOT_CONNECTED_MESSAGE);
+    const wire = buildWire(closed[0].curves,
+      () => new SolidGeometryFailure('geometry-pathSweep-offset-disconnected', INNER_NOT_CONNECTED_MESSAGE));
     const area = wireArea(oc, wire, keep);
     if (area !== null && area > 1e-9 && area < outerArea) return { wires: [wire], area };
   }
-  throw new Error(WALL_TOO_THICK_MESSAGE);
+  throw new SolidGeometryFailure('geometry-pathSweep-wall-too-thick', WALL_TOO_THICK_MESSAGE);
 }
 
 /** 外の立体から内側の立体を引く。引く前と後に正しさを確かめる。 */
@@ -85,9 +91,9 @@ export function cutInnerSolids(oc: OpenCascadeInstance, outer: TopoDS_Shape, inn
   for (const inner of inners) {
     if (!isValidShape(oc, inner) || !hasSolid(oc, inner)) throw new Error(INVALID_BEFORE_CUT_MESSAGE);
     const cutter = keep(new oc.BRepAlgoAPI_Cut_3(shape, inner, keep(new oc.Message_ProgressRange_1())));
-    if (!cutter.IsDone()) throw new Error(CUT_FAILED_MESSAGE);
+    if (!cutter.IsDone()) throw new SolidGeometryFailure('geometry-pathSweep-hollow-cut', CUT_FAILED_MESSAGE);
     shape = keep(cutter.Shape());
   }
-  if (!isValidShape(oc, shape) || countSolidShapes(oc, shape) !== 1) throw new Error(CUT_FAILED_MESSAGE);
+  if (!isValidShape(oc, shape) || countSolidShapes(oc, shape) !== 1) throw new SolidGeometryFailure('geometry-pathSweep-hollow-cut', CUT_FAILED_MESSAGE);
   return shape;
 }

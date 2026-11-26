@@ -1,3 +1,5 @@
+import { writePcadFile } from './pcadFile.js';
+import { PcadWriteError } from './writeDiagnostic.js';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { absoluteCoordinate, appendFeature, createEmptyPartDocument, replaceSketch, type PartDocument, type SketchElementRef,
@@ -43,6 +45,18 @@ function faceDocument(inner?: readonly (readonly SketchElementRef[])[]): PartDoc
 }
 
 describe('保存形式の版 24 の守り(M-02)', () => {
+  it.each([17, 21, 22, 23])('旧版%dの書出しで辺からの距離の穴に必要な版24を返す', schemaVersion => {
+    const document = { ...withSolid(createEmptyPartDocument(), edgeDistance), name: '試験部品', schemaVersion };
+    expect.assertions(3);
+    try { writePcadFile(document, { savedAt }); } catch (error) {
+      expect(error).toBeInstanceOf(PcadWriteError);
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error).toMatchObject({ diagnostic: { code: 'requiresVersion', field: 'edgeDistanceHole',
+        requiredVersion: 24, actualVersion: schemaVersion, documentName: '試験部品' },
+      message: schemaVersion < 22 ? '面内X・Yの穴を保存するには保存形式の版22が必要です。'
+        : '辺からの距離の穴を保存するには保存形式の版24が必要です。' });
+    }
+  });
   it('版 24 の文書は辺からの距離の穴を往復し、開いて保存し直しても 1 バイトも変わらない', () => {
     const encoded = serializeDocument({ ...withSolid(createEmptyPartDocument(), edgeDistance), schemaVersion: 24 }, { savedAt });
     expect(encoded).toContain('"schema": 24');

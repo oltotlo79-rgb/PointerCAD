@@ -1,5 +1,5 @@
 import { readScriptOutcome } from './scriptOutcome.js';
-import { SCRIPT_LIMITS, SCRIPT_TOTAL_TIMEOUT_MESSAGE, type ScriptExecutionInput, type ScriptExecutionOutcome } from './scriptTypes.js';
+import { scriptFailure, scriptInternalFailure, SCRIPT_LIMITS, type ScriptExecutionInput, type ScriptExecutionOutcome, type ScriptReasonFailure } from './scriptTypes.js';
 
 export type ScriptWorkerFactory = () => Worker;
 export const createScriptWorker: ScriptWorkerFactory = () => new Worker(new URL('./script.worker.ts', import.meta.url), { type: 'module' });
@@ -13,8 +13,9 @@ export function runScriptWorker(input: ScriptExecutionInput, signal: AbortSignal
       finished = true; if (timer !== undefined) clearTimeout(timer);
       signal.removeEventListener('abort', cancel); worker?.terminate(); resolve(result);
     };
-    const fail = (kind: 'cancelled' | 'timeout' | 'worker', message: string): void => finish({ ok: false, error: { kind, message, location: null }, console: [] });
-    const cancel = (): void => { fail('cancelled', '処理を中止しました。'); };
+    const fail = (error: ScriptReasonFailure): void => finish({ ok: false, error, console: [] });
+    const internal = (cause: unknown): void => { if (!finished) fail(scriptInternalFailure(cause)); };
+    const cancel = (): void => { fail(scriptFailure('cancelled')); };
     if (signal.aborted) { cancel(); return; }
     signal.addEventListener('abort', cancel, { once: true });
     try {
@@ -23,13 +24,17 @@ export function runScriptWorker(input: ScriptExecutionInput, signal: AbortSignal
       worker.addEventListener('message', (event: MessageEvent<unknown>) => {
         try {
           const result = readScriptOutcome(event.data, input.commandNamespace);
-          if (result === null) fail('worker', '処理結果の形式や上限を確認できません。'); else finish(result);
-        } catch { fail('worker', '処理結果を読み取れません。'); }
+          if (result === null) internal(new Error('Invalid script worker outcome')); else finish(result);
+        } catch (error) { internal(error); }
       });
-      worker.addEventListener('error', () => { fail('worker', '処理が停止しました。もう一度実行できます。'); });
-      worker.addEventListener('messageerror', () => { fail('worker', '処理結果を受け取れません。'); });
-      timer = setTimeout(() => { fail('timeout', SCRIPT_TOTAL_TIMEOUT_MESSAGE); }, SCRIPT_LIMITS.totalMs);
+      worker.addEventListener('error', (event) => {
+        if (finished) return;
+        event.preventDefault();
+        internal(event.error ?? new Error(event.message || 'Script worker stopped'));
+      });
+      worker.addEventListener('messageerror', () => { internal(new Error('Script worker outcome could not be received')); });
+      timer = setTimeout(() => { fail(scriptFailure('totalTimeout')); }, SCRIPT_LIMITS.totalMs);
       worker.postMessage(input);
-    } catch { fail('worker', '処理を開始できませんでした。もう一度実行してください。'); }
+    } catch (error) { internal(error); }
   });
 }

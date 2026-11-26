@@ -22,8 +22,6 @@ export const MESSAGE_KIND_BASELINE = [
     plannedFix: '直さない(計算部の境目の 1 か所)' },
   { file: 'packages/model/src/scripting/runtimeErrors.ts', count: 2, kind: 'external',
     reason: '式の実行の仕組みの記憶の不足・呼び出しの深さの超えは、種類を文でしか渡さない', plannedFix: '直さない(外の仕組みの文)' },
-  { file: 'packages/ui/src/file/saveFailure.ts', count: 1, kind: 'boundary',
-    reason: '保存の回収の目印(Electron が誤りを直列化しても残る文)', plannedFix: '直さない(プロセスの境目の目印)' },
   { file: 'packages/ui/src/history/namedSavePointIntegrity.ts', count: 1, kind: 'boundary',
     reason: '自分で付けた [detail: …] の目印から診断の語を取り出す(種類は reason の符号で決まる)', plannedFix: '直さない(診断の語の取り出し)' },
   { file: 'packages/ui/src/shell/startupRecovery.ts', count: 2, kind: 'external',

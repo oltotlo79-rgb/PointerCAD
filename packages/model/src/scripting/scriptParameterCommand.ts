@@ -5,19 +5,19 @@ import { synchronizeConfigurations } from '../part/configurations.js';
 import {hasDocumentMath} from '../part/evaluateDocumentMath.js';
 import { parseDisplayInput, normalizeInchQuotes } from '../units/length.js';
 import { ScriptCommandError, type ScriptCommandChange, type ScriptCommandContext } from './scriptCommandContext.js';
-import { plainTextValue } from '../failureText.js';
+import { plainText } from '../failureText.js';
 import type { ScriptCommand } from './scriptTypes.js';
 
 export function applyScriptParameterCommand(context: ScriptCommandContext,
   command: Extract<ScriptCommand, { readonly kind: 'parameter.set' }>): ScriptCommandChange {
   const { name, source: entered, unit: requestedUnit } = command.fields;
-  if (checkNewParameterName(name) !== null) throw new ScriptCommandError('式から参照できる名前を付けてください。');
+  if (checkNewParameterName(name) !== null) throw new ScriptCommandError('parameterName');
   const previous = context.document.parameters.find((parameter) => parameter.name === name);
   const unit = requestedUnit ?? previous?.unit ?? 'mm';
   const source = unit === 'mm' ? parseDisplayInput(normalizeInchQuotes(entered), context.lengthUnit) : entered;
   const analysis = analyzeParameters(context.document.parameters, []);
   const evaluated = evaluateExpression(source, { exactVariables: analysis.exactVariables, nonLengthVariables: analysis.nonLengthVariables });
-  if (!evaluated.ok) throw new ScriptCommandError(evaluated.error.message);
+  if (!evaluated.ok) throw new ScriptCommandError(plainText(evaluated.error.message));
   const parameter = { ...previous,name, unit, value: evaluated.value, description: previous?.description ?? '' };
   const parameters = previous === undefined ? [...context.document.parameters, parameter]
     : context.document.parameters.map((value) => value.name === name ? parameter : value);
@@ -26,10 +26,8 @@ export function applyScriptParameterCommand(context: ScriptCommandContext,
   // transaction's Worker-backed recomputer before any change is published.
   if(hasDocumentMath(updated))return {document:updated,reference:null,featureIds:[]};
   const next = applyParameters(updated);
-  if (next.analysis.circular.length > 0) throw new ScriptCommandError('パラメータの参照が循環しています。');
+  if (next.analysis.circular.length > 0) throw new ScriptCommandError('parameterCycle');
   const failure = next.analysis.failures[0] ?? next.failures[0];
-  // スクリプトの誤りは文で運ぶ(スクリプトの文を鍵へ移すのは別の行)。数式を持つ文書は上で戻るので、ここへ来るのは式の計算部の文
-  // (plainText)だけ(0b-3h2)。
-  if (failure !== undefined) throw new ScriptCommandError(plainTextValue(failure.text) ?? 'パラメータを評価できませんでした。');
+  if (failure !== undefined) throw new ScriptCommandError(failure.text);
   return { document: next.document, reference: null, featureIds: [] };
 }

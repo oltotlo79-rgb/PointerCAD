@@ -14,7 +14,7 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
 
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../../part/createPartDocument.js';
-import type { PartDocument, PrimitiveFeature, SolidOrigin } from '../../../part/types.js';
+import type { BooleanFeature, PartDocument, PrimitiveFeature, SolidOrigin } from '../../../part/types.js';
 import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import type { FrameSectionBounds } from '../../frame/frameMembers.js';
 import { buildProfileSection, type ProfileLoops } from '../../standard/profileExtrusion.js';
@@ -363,6 +363,8 @@ export interface FootBaseDimensions {
   readonly thickness: number;
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
+  /** 全ての取付け穴の板上面からの座ぐり。確認済みの行だけが持つ。 */
+  readonly counterbore?: { readonly diameter: number; readonly depth: number };
   /**
    * 長方形でない外形の頂点(外形の左下を原点に、反時計回り。統括の決定 2026-11-18 09:0x の 2 の (1))。辺が縦・横の多角形(L の形)か、
    * 45° の斜めの辺(角の斜め切り)を持つ多角形だけで、頂点の外接の長方形は幅 × 奥行と同じ。省略は幅 × 奥行の長方形。
@@ -428,23 +430,54 @@ export function footBaseProfile(dims: FootBaseDimensions): (ProfileLoops & { rea
     areaMm2: polygonArea(outline) - dims.holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0) };
 }
 
-/** 板の押し出し・穴の減算・円柱の和の直後に、その最後のソリッドに円柱を足す。 */
-function joinCylinder(document: PartDocument, base: SolidOrigin, diameter: number, height: number): PartDocument {
+/** 直前の結果に、指定した原点の円柱を足すか引く。 */
+function applyCylinder(document: PartDocument, operation: BooleanFeature['operation'],
+  base: SolidOrigin, diameter: number, height: number): PartDocument {
   const target = document.solids[document.solids.length - 1].id;
   const created = createPrimitiveFeature(document, 'cylinder', base);
   const cylinder: PrimitiveFeature = { ...created, shape: { kind: 'cylinder', radius: expressionValueFromNumber(diameter / 2),
     height: expressionValueFromNumber(height) } };
-  return appendBoolean(appendSolid(document, cylinder), 'union', target, cylinder.id).document;
+  return appendBoolean(appendSolid(document, cylinder), operation, target, cylinder.id).document;
+}
+
+function joinCylinder(document: PartDocument, base: SolidOrigin, diameter: number, height: number): PartDocument {
+  return applyCylinder(document, 'union', base, diameter, height);
+}
+
+function footBaseCounterboreVolume(dims: FootBaseDimensions): number | null {
+  const bore = dims.counterbore;
+  if (bore === undefined) return 0;
+  if (!positive([bore.diameter, bore.depth]) || bore.depth >= dims.thickness || dims.holes.length === 0 ||
+      (dims.bosses?.length ?? 0) !== 0) return null;
+  const outline = footBaseOutline(dims);
+  const valid = dims.holes.every(([x, y, size], index) =>
+    size < bore.diameter && circleInsideOutline(outline, x, y, bore.diameter) &&
+    dims.holes.slice(index + 1).every(([nextX, nextY]) => Math.hypot(x - nextX, y - nextY) > bore.diameter));
+  return valid
+    ? dims.holes.reduce((volume, [, , size]) => volume + Math.PI * (bore.diameter ** 2 - size ** 2) / 4 * bore.depth, 0) : null;
+}
+
+export function footBaseVolume(dims: FootBaseDimensions): number | null {
+  const profile = footBaseProfile(dims);
+  const recessed = footBaseCounterboreVolume(dims);
+  return profile === null || recessed === null ? null : profile.areaMm2 * dims.thickness + footBaseBossVolume(dims) - recessed;
 }
 
 /** フットベース・アジャスターベースの板の形(厚さ t を Z へ押し出し、穴を引く)。 */
 export function buildFootBasePart(dims: FootBaseDimensions): PartDocument | null {
   const profile = footBaseProfile(dims);
-  if (profile === null || !bossesValid(dims)) return null;
+  if (profile === null || !bossesValid(dims) || footBaseCounterboreVolume(dims) === null) return null;
   let document = buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
   for (const boss of dims.bosses ?? []) {
     const base = origin(boss.x - dims.width / 2, boss.y - dims.depth / 2, boss.bottom);
     document = joinCylinder(document, base, boss.diameter, boss.top - boss.bottom);
+  }
+  const bore = dims.counterbore;
+  if (bore !== undefined) {
+    for (const [x, y] of dims.holes) {
+      const base = origin(x - dims.width / 2, y - dims.depth / 2, dims.thickness - bore.depth);
+      document = applyCylinder(document, 'subtract', base, bore.diameter, bore.depth);
+    }
   }
   return document;
 }

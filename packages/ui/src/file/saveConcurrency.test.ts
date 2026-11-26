@@ -1,3 +1,4 @@
+import { messageText } from '../i18n/failureMessage.js';
 import { createAssemblyDocument, createEmptyPartDocument } from '@pointercad/model';
 import { encodeSaveDocument, readArchive, readDocumentBundle, readPcadFile, type AutoSaver } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,7 +6,7 @@ import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { createBrowserFileGateway, type FileGateway } from './fileGateway.js';
 import { hasUnsavedChanges, savePart, type PartFileDeps } from './partFile.js';
-import { SAVE_RECOVERY_COPY_MARKER } from './saveFailure.js';
+import { SaveRecoveryCopyError } from './saveFailure.js';
 import { cancelDocumentSaves, queueDocumentSave, type DocumentSaveControl } from './documentSaveQueue.js';
 import { PcadSaveWorkerError } from './pcadSaveWorker.js';
 import { copySaveSnapshot } from './pcadSaveSnapshot.js';
@@ -114,6 +115,44 @@ describe('保存の完了を開始した文書へ結び付ける（レビュー 
     useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
     await savePart(deps, false); expect(useAppStore.getState().fileName).toBe('retry.pcad');
   });
+  it('旧版の部品保存を理由付きで断り、修正して再度保存できる', async () => {
+    const discard = vi.fn(() => Promise.resolve()), write = vi.fn(() => Promise.resolve('retry.pcad'));
+    const document = { ...useAppStore.getState().document, name: '旧部品', schemaVersion: 17, patternSlotHighWater: {} };
+    useAppStore.setState({ document, autoSaver: saver(discard),
+      fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write } });
+    await savePart(deps, false);
+    const message = useAppStore.getState().fileMessage;
+    if (message === null) throw new Error('Missing save rejection');
+    expect(messageText(message)).toBe('点配置の番号の記録を保存するには保存形式の版18以降が必要です。対象文書「旧部品」の保存形式は版17です。');
+    expect(useAppStore.getState().document).toBe(document);
+    expect(useAppStore.getState().savedDocument).toBeNull();
+    expect(discard).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    useAppStore.getState().applyDocument({ ...document, schemaVersion: 18 });
+    await savePart(deps, false);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('参照先の無い設計メモでは内部の原文と場所を1回だけ記録する', async () => {
+    const raw = '設計メモまたはフォルダの対象が見つからないため保存できません。';
+    const discard = vi.fn(() => Promise.resolve()), write = vi.fn(() => Promise.resolve('retry.pcad'));
+    const document = { ...useAppStore.getState().document,
+      featureNotes: [{ target: { kind: 'sketch' as const, id: 'missing' }, text: '設計メモ' }] };
+    useAppStore.setState({ document, autoSaver: saver(discard),
+      fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write } });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await savePart(deps, false);
+      expect(useAppStore.getState().fileMessage).toEqual({ key: 'assembly.error.internal', failed: true });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith('PointerCAD save encoding', expect.objectContaining({
+        message: raw, diagnostic: { code: 'internal', field: 'historyTarget', location: 'document.featureNotes[0].target' },
+      }));
+      expect(discard).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
   it('保存の不正な返信は内部の誤りを表示し、以前の文書と控えを保つ', async () => {
     const discard = vi.fn(() => Promise.resolve()), write = vi.fn(() => Promise.resolve('retry.pcad'));
     const document = useAppStore.getState().document;
@@ -247,7 +286,7 @@ describe('保存の完了を開始した文書へ結び付ける（レビュー 
   it('復元失敗の控えが残ったときは通常の失敗より詳しい案内を出す', async () => {
     const delayed = delayedGateway();
     const pending = savePart(deps, false); await delayed.started.promise;
-    delayed.completed.reject(new Error(`${SAVE_RECOVERY_COPY_MARKER} retained`)); await pending;
+    delayed.completed.reject(new SaveRecoveryCopyError([])); await pending;
     expect(useAppStore.getState().fileMessage).toEqual({ key: 'file.saveRecoveryCopyRetained', failed: true });
     expect(useAppStore.getState().savedDocument).toBeNull();
   });

@@ -1,6 +1,16 @@
 import { useAppStore } from '../store/useAppStore.js';
 
 type StoreState = ReturnType<typeof useAppStore.getState>;
+type PlotKind = 'functionCurve' | 'functionSurface';
+
+function plotFeature(state: StoreState, kind: PlotKind, id: string) {
+  if (kind === 'functionSurface') return state.document.solids.find(item => item.id === id && item.kind === kind);
+  for (const sketch of state.document.sketches) {
+    const feature = sketch.features.find(item => item.id === id && item.kind === kind);
+    if (feature !== undefined) return feature;
+  }
+  return undefined;
+}
 type Phase = 'armed' | 'pointerdown' | 'click' | 'target' | 'published' | 'requested' | 'completed' | 'contextlost';
 type End = 'collected' | 'cancelled' | 'pagehide' | 'document-changed' | 'completed';
 
@@ -16,19 +26,20 @@ interface ObservationPoint {
   readonly undoDepth?: number;
 }
 
-export interface SurfaceCommitObservation {
+export interface FunctionPlotCommitObservation {
   readonly points: readonly ObservationPoint[];
   readonly end: End;
 }
 
-interface Arm {
+export interface FunctionPlotCommitArm {
   readonly button: HTMLButtonElement;
-  readonly accept: (collect: () => SurfaceCommitObservation) => void;
+  readonly accept: (collect: (finish?: boolean) => FunctionPlotCommitObservation) => void;
 }
 
 declare global {
   interface HTMLElementEventMap {
-    'pcad:test-surface-commit': CustomEvent<Arm>;
+    'pcad:test-surface-commit': CustomEvent<FunctionPlotCommitArm>;
+    'pcad:test-curve-commit': CustomEvent<FunctionPlotCommitArm>;
   }
 }
 
@@ -39,25 +50,29 @@ interface ActiveObservation {
 
 const activeObservations = new WeakMap<HTMLDialogElement, ActiveObservation>();
 
-export function recordFunctionSurfaceCommitTarget(dialog: HTMLDialogElement | null, featureId: string): void {
+export function recordFunctionPlotCommitTarget(dialog: HTMLDialogElement | null, featureId: string): void {
   if (dialog !== null) activeObservations.get(dialog)?.markTarget(featureId);
 }
 
-export function listenForFunctionSurfaceCommit(dialog: HTMLDialogElement | null): () => void {
+export function listenForFunctionPlotCommit(dialog: HTMLDialogElement | null): () => void {
   if (dialog === null) return () => undefined;
-  const arm = (event: CustomEvent<Arm>): void => {
+  const arm = (event: CustomEvent<FunctionPlotCommitArm>): void => {
     const { button, accept } = event.detail;
     if (!dialog.open || !dialog.contains(button) || button.disabled || activeObservations.has(dialog)) return;
-    accept(beginObservation(dialog, button));
+    const kind = event.type === 'pcad:test-curve-commit' ? 'functionCurve' : 'functionSurface';
+    accept(beginObservation(dialog, button, kind));
   };
   dialog.addEventListener('pcad:test-surface-commit', arm);
+  dialog.addEventListener('pcad:test-curve-commit', arm);
   return () => {
     dialog.removeEventListener('pcad:test-surface-commit', arm);
+    dialog.removeEventListener('pcad:test-curve-commit', arm);
     activeObservations.get(dialog)?.dialogClosed();
   };
 }
 
-function beginObservation(dialog: HTMLDialogElement, button: HTMLButtonElement): () => SurfaceCommitObservation {
+function beginObservation(dialog: HTMLDialogElement, button: HTMLButtonElement, kind: PlotKind):
+  (finish?: boolean) => FunctionPlotCommitObservation {
   const initial = useAppStore.getState();
   const started = performance.now();
   const points: ObservationPoint[] = [];
@@ -86,8 +101,9 @@ function beginObservation(dialog: HTMLDialogElement, button: HTMLButtonElement):
       stop('document-changed');
       return;
     }
-    if (featureId === undefined || state.document === initial.document ||
-      !state.document.solids.some(item => item.id === featureId && item.kind === 'functionSurface')) return;
+    if (featureId === undefined || state.document === initial.document) return;
+    const feature = plotFeature(state, kind, featureId);
+    if (feature === undefined || feature === plotFeature(initial, kind, featureId)) return;
     add('published', state, { featureId, undoDepth: state.undoStack.past.length - initial.undoStack.past.length });
     if (observedGeneration === undefined && state.requestedGeneration > initial.requestedGeneration) {
       observedGeneration = state.requestedGeneration;
@@ -100,7 +116,7 @@ function beginObservation(dialog: HTMLDialogElement, button: HTMLButtonElement):
   };
   const unsubscribe = useAppStore.subscribe(readStore);
   const markTarget = (id: string): void => {
-    if (featureId !== undefined || initial.document.solids.some(item => item.id === id)) return;
+    if (featureId !== undefined || (kind === 'functionSurface' && plotFeature(initial, kind, id) !== undefined)) return;
     featureId = id;
     add('target', useAppStore.getState(), { featureId });
   };
@@ -118,9 +134,9 @@ function beginObservation(dialog: HTMLDialogElement, button: HTMLButtonElement):
   window.addEventListener('pagehide', () => stop('pagehide'), options);
   add('armed', initial);
 
-  return () => {
+  return (finish = true) => {
     const reason = end ?? 'collected';
-    stop(reason);
-    return { points, end: reason };
+    if (finish) stop(reason);
+    return { points: [...points], end: reason };
   };
 }

@@ -2,7 +2,7 @@ import { OFFLINE_MAX_MANIFEST_BYTES, readOfflineAssetManifest } from '@pointerca
 import type { OfflineAssetManifest } from '@pointercad/ui/offline-protocol';
 import { offlineAssetRequestUrl, readBoundedOfflineBody } from './offlineNetwork.js';
 import { OFFLINE_CACHE_PREFIX, OFFLINE_READY_FORMAT } from './offlinePreparation.js';
-import { verifyOfflineAssetResponse } from './offlineTransfer.js';
+import { verifyAndConsumeOfflineAsset, verifyOfflineAssetResponse } from './offlineTransfer.js';
 
 /** CacheStorage.match is read-only; opening an absent cache would silently create it. */
 export interface OfflineReadStoragePort {
@@ -70,13 +70,15 @@ export async function inspectPreparedOfflineNavigation(baseUrl: URL, cacheName: 
         || navigation.href === offlineAssetRequestUrl(baseUrl, asset.url).href);
       if (response === undefined) throw new OfflineEditionError('asset');
       try {
-        const verified = await verifyOfflineAssetResponse(baseUrl, asset, response, signal, () => undefined);
         if (servesNavigation) {
+          const verified = await verifyOfflineAssetResponse(baseUrl, asset, response, signal, () => undefined);
           void navigationResponse?.body?.cancel().catch(() => undefined);
           navigationResponse = verified;
+        } else {
+          await verifyAndConsumeOfflineAsset(baseUrl, asset, response, signal);
         }
       } finally {
-        // Verification reads a clone. A selected page keeps the unopened branch for serving.
+        // An asset rejected before reading can still have a body to release.
         if (navigationResponse !== response) void response.body?.cancel().catch(() => undefined);
       }
     }

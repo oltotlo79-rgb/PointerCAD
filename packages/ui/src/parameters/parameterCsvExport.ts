@@ -1,5 +1,6 @@
 import { serializeParameterCsv, type PartDocument } from '@pointercad/model';
-import { saveFileAsThrough } from '../file/fileGateway.js';
+import { saveFileAsThrough, type ExportSaveStage } from '../file/fileGateway.js';
+import { parameterCsvSaveFailure, parameterOperationFailure } from './parameterFailureMessage.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeDocumentKind } from '../store/documentKind.js';
@@ -36,14 +37,16 @@ export async function exportParameterCsv(attempt: CsvExportAttempt): Promise<voi
   attempt.busy(true);
   attempt.issues([]);
   attempt.status('');
+  let stage: ExportSaveStage | 'save' | undefined;
   try {
     if (document.parameters.length === 0) { attempt.issues([t('parameter.csv.emptyExport')]); return; }
     const bytes = serializeParameterCsv(document.parameters);
+    stage = 'save';
     const saved = await saveFileAsThrough(useAppStore.getState().fileGateway, 'parameters.csv', 'csv', bytes,
-      { signal: controller.signal, isCurrent: current });
+      { signal: controller.signal, isCurrent: current, onStage: (value) => { stage = value; } });
     if (current()) attempt.status(t(saved ? 'parameter.csv.exported' : 'parameter.csv.exportCancelled'));
   } catch (error) {
-    if (current()) attempt.issues([error instanceof Error ? error.message : t('parameter.csv.mathCheckFailed')]);
+    if (current()) attempt.issues([stage === undefined ? parameterOperationFailure(error) : parameterCsvSaveFailure(error, stage)]);
   } finally {
     unsubscribe();
     controller.signal.removeEventListener('abort', cancelled);

@@ -4,7 +4,7 @@ import {
 } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
-import { strengthExpressionField } from './strengthFields.js';
+import { strengthExpressionFieldForPanel } from './strengthFields.js';
 import { StrengthSelect } from './StrengthSelect.js';
 import { strengthUsesCustomValues, type StrengthEdit, type StrengthSession } from './strengthSession.js';
 
@@ -25,7 +25,7 @@ export function StrengthMaterialFields({ session, parameters, edit }: {
     {preset === undefined ? null : <>
       <p>{strengthMaterialLabel(preset)}</p>
       {preset.thicknessMm === null ? null : <ExpressionField
-        {...strengthExpressionField(session, parameters, 'productThickness', 'length', 'strength.productThickness', session.productThicknessSource)}
+        {...strengthExpressionFieldForPanel(session, parameters, 'productThickness', 'length', 'strength.productThickness', session.productThicknessSource)}
         lengthUnit={session.lengthUnit} focused={session.focusedField === 'productThickness'}
         onFocus={() => edit({ kind: 'focus', field: 'productThickness' })}
         onChange={source => edit({ kind: 'product-thickness', source })} />}

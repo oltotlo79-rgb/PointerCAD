@@ -1,4 +1,4 @@
-import type { KernelApi, RuntimePhaseJournalSnapshot } from '@pointercad/kernel';
+import type { InterferenceResult, KernelApi, RuntimePhaseJournalSnapshot } from '@pointercad/kernel';
 import type { AnalysisBoundarySource } from '../geometry/analysisMesh.js';
 
 /** bridge data exchanged through the model's kernel bridge. Types only; no Worker lifetime. */
@@ -301,6 +301,7 @@ export interface AssemblyInterferencePairFailure {
     | 'unionFailed' | 'meshFailed' | 'invalidInput' | 'buildFailed' | 'invalidResult' | 'measurementFailed'
     | 'occtException' | 'cleanupFailed';
   readonly message: string;
+  readonly diagnostic?: InterferenceResult['failures'][number]['diagnostic'];
   readonly missingKeys?: readonly string[];
   readonly cleanupMessages?: readonly string[];
 }

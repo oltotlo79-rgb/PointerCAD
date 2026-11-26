@@ -89,10 +89,8 @@ export default defineConfig({
   workers: FIRST_SHARD_ALONE ? 1 : 2,
   // 上限つきの測定(描画・応答)と起動の確かめの project は、下で 0 に戻す(やり直しで通すと測定の意味が変わる)。
   retries: CI_RETRIES,
-  // webServer(build → preview)の起動と待ちの後、検査の開始の前に、preview が配る dist の全ファイルを 1 回受け取って温める
-  // (2026-11-20、統括の案 (a)。作り直した直後のファイルの最初の読みが、起動の待ちの内側に入って遅れるのを避ける)。
-  // 待ち・期待値・やり直しは変えない。preview を使わない組み立て(Electron だけ)では何もしない。
-  // 専用の測定と手動撮影は、配信資産を事前に読まずに始める。
+  // Preview の初回画面に必要な資産だけを、起動待ちの後に受け取る。
+  // PCAD_E2E_PREVIEW_WARMUP=0 でも同じ配布物を作り、予熱の有無を比較できる。
   ...(selectedMeasurement === null && manualCapture === undefined ? { globalSetup: './globalWarmPreview.ts' } : {}),
   use: {
     ...devices['Desktop Chrome'],

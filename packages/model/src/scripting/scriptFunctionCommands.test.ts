@@ -36,7 +36,7 @@ describe('関数の非同期計算を自動作図の文書順序と中止へつ�
     const result = await prepareScriptCommands([document, commands, new Map(), 'run', 'mm', sources], seen, () => false);
     expect(result.ok).toBe(true);
     if (!result.ok)
-      throw new Error(result.error.message);
+      throw new Error(JSON.stringify(result.error));
     const prepared = seen.mock.calls[0][0];
     expect(prepared.parameters[0]).toMatchObject({ name: '係数', value: { value: 2 } });
     expect(prepared.sketches.at(-1)).toMatchObject({ id: 'run:1', name: '関数' });

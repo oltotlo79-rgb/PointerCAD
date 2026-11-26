@@ -55,6 +55,7 @@ const EDITABLE_MESSAGES: Readonly<Record<EditableMessage, Parameters<typeof t>[0
   busy: 'assembly.steel.editable.busy', cancelled: 'assembly.steel.editable.cancelled',
   failed: 'assembly.steel.editable.failed', notSteelStock: 'assembly.steel.editable.notSteelStock',
   unavailable: 'assembly.steel.editable.unavailable',
+  internal: 'assembly.error.internal',
 };
 
 function categoryFrom(value: string): StandardPartCategory | null {

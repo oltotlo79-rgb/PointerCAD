@@ -1,3 +1,4 @@
+import { pcadVersionError } from '../writeDiagnostic.js';
 import type { AssemblyDocument, FrameJointRecord } from '@pointercad/model';
 import { checkRecord, fieldProblem, indexPath, isRecord, isUnknownArray, joinPath, readArray, readLiteral, readString, type Checked } from '../guards.js';
 
@@ -24,7 +25,8 @@ export function hasFrameJointsField(document: unknown): boolean {
 /** 記録を使った文書は、保存形式の版 23 以上でしか保存しない(古い読み手が記録を捨てないよう、保存の境界で断る)。 */
 export function assertFrameJointsVersion(document: AssemblyDocument): void {
   if (document.schemaVersion >= FRAME_JOINTS_SCHEMA_VERSION || (document.frameJoints?.length ?? 0) === 0) return;
-  throw new RangeError('フレームの接続の記録を保存するには保存形式の版23が必要です。');
+  throw pcadVersionError('frameJoints', document,
+      'フレームの接続の記録を保存するには保存形式の版23が必要です。');
 }
 
 /** 空でない文字列の並び。 */

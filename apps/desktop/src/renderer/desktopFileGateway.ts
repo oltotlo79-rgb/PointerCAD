@@ -1,3 +1,4 @@
+import { unwrapSaveRecoveryCopyReceipt } from '@pointercad/ui/save-errors';
 import { MAX_COMPRESSED_INPUT_BYTES, validArchiveReadRange } from '@pointercad/ui/file-contracts';
 import { t, type FileGateway, type PickedFile, type PickedNativeSource } from '@pointercad/ui';
 import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
@@ -138,7 +139,7 @@ async function savePcadInChunks(api: DesktopFileApi, suggestedName: string, part
       if (accepted !== true) throw new Error(t('file.saveFailed'));
       index += 1;
     }
-    return await api.commitPcadSave(transferId);
+    return unwrapSaveRecoveryCopyReceipt(await api.commitPcadSave(transferId));
   } catch (error) {
     await api.abortPcadSave(transferId).catch(() => undefined);
     throw error;
@@ -540,8 +541,8 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
 
     async saveFileAs(fileName, kind, bytes, control): Promise<boolean> {
       const result: unknown = await controlledDesktopExport(api, control,
-        (requestId) => requestId === undefined ? api.saveFileAs(fileName, kind, bytes)
-          : api.saveFileAs(fileName, kind, bytes, requestId));
+        (requestId) => (requestId === undefined ? api.saveFileAs(fileName, kind, bytes)
+          : api.saveFileAs(fileName, kind, bytes, requestId)).then(unwrapSaveRecoveryCopyReceipt));
       if (result === true) {
         return true;
       }

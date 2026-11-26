@@ -14,7 +14,7 @@ import { FunctionCurvePreview } from './FunctionCurvePreview.js';
 import { FunctionSurfacePreview } from './FunctionSurfacePreview.js';
 import { prepareFunctionPlot } from './prepareFunctionPlot.js';
 import { applyFunctionPreset, FUNCTION_PRESETS } from './functionPresets.js';
-import { listenForFunctionSurfaceCommit, recordFunctionSurfaceCommitTarget } from './functionSurfaceCommitObservation.js';
+import { listenForFunctionPlotCommit, recordFunctionPlotCommitTarget } from './functionSurfaceCommitObservation.js';
 import './functionPlot.css';
 
 type EditorTarget = { readonly kind: 'scalar'; readonly key: FunctionScalarField }
@@ -60,7 +60,7 @@ function useFunctionPlotLifetime({ owner, close, dialog, running, mounted }: {
     const element = dialog.current, restoreFocus = rememberDialogOpener(element);
     element?.showModal();
     const stopListening = import.meta.env.VITE_PCAD_E2E === '1'
-      ? listenForFunctionSurfaceCommit(element) : undefined;
+      ? listenForFunctionPlotCommit(element) : undefined;
     const unsubscribe = useAppStore.subscribe(state => {
       if (state.document !== owner.document || state.documentVersion !== owner.documentVersion) { running.current?.abort(); close(); }
     });
@@ -259,8 +259,8 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             : <button className="pcad-button" key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
           <button className="pcad-button pcad-button--primary" title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
             if (!displayed || preview === null || preview.draft !== draft || !isCurrent()) return;
-            if (import.meta.env.VITE_PCAD_E2E === '1' && preview.kind === 'surface') {
-              recordFunctionSurfaceCommitTarget(dialog.current, preview.feature.id);
+            if (import.meta.env.VITE_PCAD_E2E === '1') {
+              recordFunctionPlotCommitTarget(dialog.current, preview.feature.id);
             }
             useAppStore.getState().applyDocument(preview.document); close();
           }}>{t(surface ? 'functionPlot.surfaceApply' : 'functionPlot.apply')}</button>

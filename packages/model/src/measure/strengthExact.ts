@@ -1,6 +1,9 @@
 /** Input values first pass the quantity/unit boundary; intermediates retain exact decimal strings. */
 import { evaluateExpressionExact, type ExactExpressionValue } from '@pointercad/expression';
 
+import { plainText } from '../failureText.js';
+import { strengthInputFailure, type StrengthInputFailure } from './strengthInputFailure.js';
+
 export type StrengthResultName = 'secondMoment' | 'sectionModulus' | 'innerDiameter' | 'moment' | 'stress'
   | 'deflection' | 'equivalentStress' | 'allowableStress' | 'actualSafetyFactor' | 'reserveFactor'
   | 'polarMoment' | 'polarModulus' | 'shearStress' | 'twist';
@@ -11,7 +14,7 @@ export type StrengthCalculation =
   | { readonly kind: 'shaft' }
   | { readonly kind: 'bolt' };
 export type ExactStrengthOutcome = { readonly ok: true; readonly values: ReadonlyMap<string, ExactExpressionValue> }
-  | { readonly ok: false; readonly field: string; readonly message: string };
+  | StrengthInputFailure;
 
 const sectionSteps: Record<BeamSectionKind, readonly Formula[]> = {
   rectangle: [['secondMoment', 'width*height^3/12'], ['sectionModulus', 'width*height^2/6']],
@@ -54,9 +57,9 @@ export function calculateExactStrength(calculation: StrengthCalculation, canonic
   const values = new Map<string, ExactExpressionValue>();
   for (const [name, source] of strengthFormulas(calculation)) {
     const result = evaluateExpressionExact(source, { exactVariables });
-    if (!result.ok) return { ok: false, field: name, message: result.error.message };
+    if (!result.ok) return { ok: false, field: name, message: result.error.message, text: plainText(result.error.message) };
     if (!Number.isFinite(result.value.value) || result.value.value <= 0) {
-      return { ok: false, field: name, message: '入力の範囲を確認してください。正の有限値を計算できません。' };
+      return strengthInputFailure(name, '入力の範囲を確認してください。正の有限値を計算できません。', 'strength.error.calculatedRange');
     }
     exactVariables.set(name, result.value.exact);
     values.set(name, result.value);

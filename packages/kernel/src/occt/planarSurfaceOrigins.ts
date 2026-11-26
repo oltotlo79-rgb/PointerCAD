@@ -18,6 +18,7 @@ import type { OpenCascadeInstance, TopoDS_Edge, TopoDS_Shape } from 'opencascade
 
 import type { CurveSpec } from '../types.js';
 import type { CurrentOriginIndex, FaceOrigin, OriginBinding } from '../subShapeOrigin.js';
+import { sketchInputError } from './kernelStepError.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
@@ -83,16 +84,16 @@ export function makeTrackedPlanarFace(oc: OpenCascadeInstance, keep: Allocations
   const insertedEdges: TopoDS_Edge[] = [];
   for (const curve of profile) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
-    if (!wireMaker.IsDone()) throw new Error(DISCONNECTED_MESSAGE);
+    if (!wireMaker.IsDone()) throw sketchInputError({ code: 'notConnected' }, DISCONNECTED_MESSAGE);
     insertedEdges.push(keep(wireMaker.Edge()));
   }
   const wire = keep(wireMaker.Wire());
-  if (!wire.Closed_1()) throw new Error(OPEN_MESSAGE);
+  if (!wire.Closed_1()) throw sketchInputError({ code: 'faceOpen' }, OPEN_MESSAGE);
   // Second argument true = planar only (same as makePlanarFace).
   const faceMaker = keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
-  if (!faceMaker.IsDone()) throw new Error(NOT_PLANAR_MESSAGE);
+  if (!faceMaker.IsDone()) throw sketchInputError({ code: 'faceNotPlanar' }, NOT_PLANAR_MESSAGE);
   const face = keep(faceMaker.Face());
-  if (!oc.BRepAlgo.IsValid_1(face)) throw new Error(SELF_INTERSECTING_MESSAGE);
+  if (!oc.BRepAlgo.IsValid_1(face)) throw sketchInputError({ code: 'faceSelfIntersection' }, SELF_INTERSECTING_MESSAGE);
   return { face, insertedEdges };
 }
 

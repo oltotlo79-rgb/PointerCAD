@@ -1,3 +1,4 @@
+import { PcadWriteError } from './writeDiagnostic.js';
 import type { ArchiveReadSource } from './archiveReadSource.js';
 import { fileFailure as fail } from './codedFailure.js';
 import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTreeFailure, crossLevelCamTreeFailure } from '@pointercad/model';
@@ -1308,9 +1309,20 @@ function appendParts(
   savedAt: string,
 ): void {
   for (const [ref, document] of sortedEntries(parts)) {
-    const text = serializeDocument(document, { savedAt });
     const name = `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`;
+    const text = serializeEmbeddedPart(document, savedAt, name);
     entries.set(name, assemblyEnvelopeEntry(name, text));
+  }
+}
+
+function serializeEmbeddedPart(document: PartDocument, savedAt: string, entryName: string): string {
+  try {
+    return serializeDocument(document, { savedAt });
+  } catch (error) {
+    if (!(error instanceof PcadWriteError) || error.diagnostic.code !== 'internal') throw error;
+    const { diagnostic } = error;
+    const location = diagnostic.location === undefined ? entryName : `${entryName}:${diagnostic.location}`;
+    throw new PcadWriteError({ ...diagnostic, location }, error.message);
   }
 }
 

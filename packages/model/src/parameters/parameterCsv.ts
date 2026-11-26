@@ -1,5 +1,8 @@
 import { collectMathCoefficients, decodeMathExpressionStorage, type StoredMathExpression } from '@pointercad/expression';
 
+import { MathInputProblem } from '@pointercad/expression/math/contracts';
+import type { FailureText } from '../failureText.js';
+import { ParameterInputError } from './parameterInputError.js';
 import { isParameterMathId } from './parameterMathIdentity.js';
 import { PARAMETER_UNITS, type Parameter, type ParameterUnit } from './types.js';
 
@@ -50,14 +53,15 @@ export interface ParameterCsvDiagnostic {
   readonly recordNumber: number;
   readonly column: string;
   readonly reason: string;
+  readonly text?: FailureText;
 }
 
 export type ParameterCsvParseResult =
   | { readonly ok: true; readonly records: readonly ParameterCsvRecord[] }
   | { readonly ok: false; readonly diagnostics: readonly ParameterCsvDiagnostic[] };
 
-function error(recordNumber: number, column: string, reason: string): ParameterCsvDiagnostic {
-  return { recordNumber, column, reason };
+function error(recordNumber: number, column: string, reason: string, key: string): ParameterCsvDiagnostic {
+  return { recordNumber, column, reason, text: { key, parameters: {} } };
 }
 
 /** Strict RFC-style fields; quoted line breaks remain data and only CRLF/LF outside quotes end records. */
@@ -74,7 +78,7 @@ function readRows(source: string): { rows: string[][]; diagnostics: ParameterCsv
     rows.push(row);
     row = [];
     if (rows.length > PARAMETER_CSV_MAX_ROWS + 1) {
-      diagnostics.push(error(rows.length, '*', 'CSVは1000行までです。'));
+      diagnostics.push(error(rows.length, '*', 'CSVは1000行までです。', 'parameter.csv.rowLimit'));
     }
   };
   for (let i = 0; i < source.length; i += 1) {
@@ -98,37 +102,41 @@ function readRows(source: string): { rows: string[][]; diagnostics: ParameterCsv
       continue;
     }
     if (state === 'afterQuote') {
-      diagnostics.push(error(rows.length + 1, '*', '閉じた引用符の後に文字があります。'));
+      diagnostics.push(error(rows.length + 1, '*', '閉じた引用符の後に文字があります。', 'parameter.csv.afterQuote'));
     } else if (ch === '"') {
       if (state === 'start') state = 'quoted';
-      else diagnostics.push(error(rows.length + 1, '*', '引用符は欄の先頭で使ってください。'));
+      else diagnostics.push(error(rows.length + 1, '*', '引用符は欄の先頭で使ってください。', 'parameter.csv.quotePosition'));
     } else {
       state = 'plain';
       cell += ch;
     }
   }
-  if (state === 'quoted') diagnostics.push(error(rows.length + 1, '*', '引用符が閉じられていません。'));
+  if (state === 'quoted') diagnostics.push(error(rows.length + 1, '*', '引用符が閉じられていません。', 'parameter.csv.unclosedQuote'));
   if (diagnostics.length === 0 && !endedOnNewline) finishRow();
   return { rows, diagnostics };
 }
 
 export function parseParameterCsv(bytes: Uint8Array): ParameterCsvParseResult {
   if (bytes.byteLength > PARAMETER_CSV_MAX_BYTES) return {
-    ok: false, diagnostics: [error(0, '*', 'CSVは1MiBまでです。')],
+    ok: false, diagnostics: [error(0, '*', 'CSVは1MiBまでです。', 'parameter.csv.byteLimit')],
   };
   let source: string;
-  try { source = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
-  catch { return { ok: false, diagnostics: [error(0, '*', 'UTF-8として読めません。')] }; }
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  try { source = decoder.decode(bytes); }
+  catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause;
+    return { ok: false, diagnostics: [error(0, '*', 'UTF-8として読めません。', 'parameter.csv.invalidUtf8')] };
+  }
   if (source.startsWith('\uFEFF')) source = source.slice(1);
   const parsed = readRows(source);
   if (parsed.diagnostics.length > 0) return { ok: false, diagnostics: parsed.diagnostics };
   const [header, ...body] = parsed.rows;
-  if (header === undefined) return { ok: false, diagnostics: [error(1, '*', '見出しがありません。')] };
+  if (header === undefined) return { ok: false, diagnostics: [error(1, '*', '見出しがありません。', 'parameter.csv.missingHeader')] };
   const required = BASE_HEADER.every((name, i) => header[i] === name);
   const optional = header.slice(BASE_HEADER.length);
   if (!required || optional.length > 3 || new Set(optional).size !== optional.length
     || optional.some(name => name !== 'mathDefinition' && name !== 'mathId' && name !== 'textEncoding')) return { ok: false,
-    diagnostics: [error(1, '*', '先頭行はname,expression,unit,descriptionで始めてください。')] };
+    diagnostics: [error(1, '*', '先頭行はname,expression,unit,descriptionで始めてください。', 'parameter.csv.invalidHeader')] };
   const mathColumn = header.indexOf('mathDefinition');
   const idColumn = header.indexOf('mathId');
   const encodingColumn = header.indexOf('textEncoding');
@@ -136,14 +144,14 @@ export function parseParameterCsv(bytes: Uint8Array): ParameterCsvParseResult {
   const records: ParameterCsvRecord[] = [];
   const ids = new Set<string>();
   if (body.length === 0 || (body.length === 1 && body[0]?.every(cell => cell === ''))) {
-    diagnostics.push(error(2, '*', '取り込む行がありません。'));
+    diagnostics.push(error(2, '*', '取り込む行がありません。', 'parameter.csv.empty'));
   }
   for (let i = 0; i < body.length; i += 1) {
     const cells = body[i];
     const recordNumber = i + 2;
     if (cells === undefined) continue;
     if (cells.length !== header.length) {
-      diagnostics.push(error(recordNumber, '*', '列の数が見出しと違います。'));
+      diagnostics.push(error(recordNumber, '*', '列の数が見出しと違います。', 'parameter.csv.columnCount'));
       continue;
     }
     // Only our explicit format decodes the prefix. Ordinary CSV remains literal,
@@ -155,7 +163,7 @@ export function parseParameterCsv(bytes: Uint8Array): ParameterCsvParseResult {
           const value = cells[column] ?? '';
           return !value.startsWith(TEXT_PREFIX) && needsTextEncoding(value);
         })) {
-        diagnostics.push(error(recordNumber, 'textEncoding', '文字列の保存形式が不正です。'));
+        diagnostics.push(error(recordNumber, 'textEncoding', '文字列の保存形式が不正です。', 'parameter.csv.invalidTextEncoding'));
         continue;
       }
       for (const column of [0, 1, 3]) {
@@ -166,21 +174,24 @@ export function parseParameterCsv(bytes: Uint8Array): ParameterCsvParseResult {
     const [name = '', expression = '', rawUnit = '', description = ''] = fields;
     const rawMath = mathColumn < 0 ? '' : cells[mathColumn] ?? '';
     const rawId = idColumn < 0 ? '' : cells[idColumn] ?? '';
-    if (name === '') diagnostics.push(error(recordNumber, 'name', '名前が空です。'));
-    if (expression === '') diagnostics.push(error(recordNumber, 'expression', '式が空です。'));
-    if (!isParameterUnit(rawUnit)) diagnostics.push(error(recordNumber, 'unit', '単位はmm、degree、noneのいずれかです。'));
-    if (rawId !== '' && !isParameterMathId(rawId)) diagnostics.push(error(recordNumber, 'mathId', '数学参照IDが不正です。'));
-    if (rawId !== '' && ids.has(rawId)) diagnostics.push(error(recordNumber, 'mathId', '数学参照IDが重複しています。'));
+    if (name === '') diagnostics.push(error(recordNumber, 'name', '名前が空です。', 'parameter.csv.emptyName'));
+    if (expression === '') diagnostics.push(error(recordNumber, 'expression', '式が空です。', 'parameter.csv.emptyExpression'));
+    if (!isParameterUnit(rawUnit)) diagnostics.push(error(recordNumber, 'unit', '単位はmm、degree、noneのいずれかです。', 'parameter.csv.unit'));
+    if (rawId !== '' && !isParameterMathId(rawId)) diagnostics.push(error(recordNumber, 'mathId', '数学参照IDが不正です。', 'parameter.csv.invalidMathId'));
+    if (rawId !== '' && ids.has(rawId)) diagnostics.push(error(recordNumber, 'mathId', '数学参照IDが重複しています。', 'parameter.csv.duplicateIdInCsv'));
     if (rawId !== '') ids.add(rawId);
-    if (rawMath !== '' && rawId === '') diagnostics.push(error(recordNumber, 'mathId', '数学定義には参照IDが必要です。'));
+    if (rawMath !== '' && rawId === '') diagnostics.push(error(recordNumber, 'mathId', '数学定義には参照IDが必要です。', 'parameter.csv.mathIdRequired'));
     let mathDefinition: StoredMathExpression | undefined;
     if (rawMath !== '') {
       try { mathDefinition = decodeMathExpressionStorage(JSON.parse(rawMath) as unknown, expression); }
-      catch { diagnostics.push(error(recordNumber, 'mathDefinition', '数学定義と原式が一致しないか、形式が不正です。')); }
+      catch (cause) {
+        if (!(cause instanceof SyntaxError || cause instanceof MathInputProblem)) throw cause;
+        diagnostics.push(error(recordNumber, 'mathDefinition', '数学定義と原式が一致しないか、形式が不正です。', 'parameter.csv.mathDefinitionInCsv'));
+      }
     }
     if (mathDefinition !== undefined && collectMathCoefficients(mathDefinition.expression).some(reference =>
       !ids.has(reference.id) && !body.some(row => row?.[idColumn] === reference.id))) {
-      diagnostics.push(error(recordNumber, 'mathDefinition', '参照先の数学IDがCSV内にありません。'));
+      diagnostics.push(error(recordNumber, 'mathDefinition', '参照先の数学IDがCSV内にありません。', 'parameter.csv.missingReferencedId'));
     }
     if (name !== '' && expression !== '' && isParameterUnit(rawUnit)) {
       records.push({ recordNumber, name, expression, unit: rawUnit, description,
@@ -196,22 +207,27 @@ function quote(cell: string): string {
 
 /** Keeps original expressions and descriptions; evaluated numbers are never serialized. */
 export function serializeParameterCsv(parameters: readonly Parameter[]): Uint8Array {
-  if (parameters.length === 0) throw new Error('書き出すパラメータがありません。');
-  if (parameters.length > PARAMETER_CSV_MAX_ROWS) throw new Error('CSVは1000行までです。');
+  if (parameters.length === 0) throw new ParameterInputError('書き出すパラメータがありません。', 'parameter.csv.emptyExport');
+  if (parameters.length > PARAMETER_CSV_MAX_ROWS) throw new ParameterInputError('CSVは1000行までです。', 'parameter.csv.rowLimit');
   const ids = new Set<string>();
   for (const parameter of parameters) {
     if (parameter.value.mathDefinition !== undefined) {
-      if (parameter.mathId === undefined) throw new Error('数学定義には参照IDが必要です。');
-      decodeMathExpressionStorage(parameter.value.mathDefinition, parameter.value.source);
+      if (parameter.mathId === undefined) throw new ParameterInputError('数学定義には参照IDが必要です。', 'parameter.csv.mathIdRequired');
+      try {
+        decodeMathExpressionStorage(parameter.value.mathDefinition, parameter.value.source);
+      } catch (cause) {
+        if (!(cause instanceof MathInputProblem)) throw cause;
+        throw new ParameterInputError(cause.message, 'parameter.csv.invalidMathDefinition');
+      }
     }
     if (parameter.mathId !== undefined) {
-      if (!isParameterMathId(parameter.mathId) || ids.has(parameter.mathId)) throw new Error('数学参照IDが不正または重複しています。');
+      if (!isParameterMathId(parameter.mathId) || ids.has(parameter.mathId)) throw new ParameterInputError('数学参照IDが不正または重複しています。', 'parameter.csv.invalidOrDuplicateId');
       ids.add(parameter.mathId);
     }
   }
   for (const parameter of parameters) {
     if (parameter.value.mathDefinition !== undefined && collectMathCoefficients(parameter.value.mathDefinition.expression)
-      .some(reference => !ids.has(reference.id))) throw new Error('数学定義が表にない参照IDを使っています。');
+      .some(reference => !ids.has(reference.id))) throw new ParameterInputError('数学定義が表にない参照IDを使っています。', 'parameter.csv.missingExportReference');
   }
   const withMath = parameters.some(parameter => parameter.mathId !== undefined || parameter.value.mathDefinition !== undefined);
   const rows: string[][] = [[...(withMath ? MATH_HEADER : BASE_HEADER), 'textEncoding']];
@@ -224,6 +240,6 @@ export function serializeParameterCsv(parameters: readonly Parameter[]): Uint8Ar
   // numeric literals stay readable. No reliance on apostrophe removal. BOM identifies UTF-8.
   const bytes = new TextEncoder().encode(String.fromCharCode(0xfeff)
     + rows.map(row => row.map(quote).join(',')).join('\r\n') + '\r\n');
-  if (bytes.byteLength > PARAMETER_CSV_MAX_BYTES) throw new Error('CSVは1MiBまでです。');
+  if (bytes.byteLength > PARAMETER_CSV_MAX_BYTES) throw new ParameterInputError('CSVは1MiBまでです。', 'parameter.csv.byteLimit');
   return bytes;
 }

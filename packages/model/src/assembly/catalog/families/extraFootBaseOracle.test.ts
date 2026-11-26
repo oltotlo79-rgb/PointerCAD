@@ -205,9 +205,10 @@ describe('資料 1 の長方形の板の 39 回目の 2 本の読みで揃った
   });
 
   it('族の行はボス付きの板の後に並び、形ができて名前は呼び、体積は板の面積 × 厚さ、質量は行の値(無い行は持たない)', () => {
-    const start = FOOT_BASE_RECORDS.length + BOSS_FOOT_RECORDS.length;
+    // 150・245 頁の座ぐりを持つ 5 行は、従来の板の対応する行の直後に並ぶ。
+    const start = FOOT_BASE_RECORDS.length + 5 + BOSS_FOOT_RECORDS.length;
     const tail = FOOT_BASE_FAMILY.rows.slice(start, start + EXTRA_FOOT_BASE_RECORDS.length);
-    expect(tail.map((row) => row.key)).toEqual(EXTRA_FOOT_BASE_RECORDS.map((record) => record.key));
+    expect(tail.map((row) => row.key)).toEqual(FIXTURE.map((record) => record.key));
     for (const record of EXTRA_FOOT_BASE_RECORDS) {
       const row = tail.find((candidate) => candidate.key === record.key);
       if (row === undefined) throw new Error(`族に ${record.key} が無い`);

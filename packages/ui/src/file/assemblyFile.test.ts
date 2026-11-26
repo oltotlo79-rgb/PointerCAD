@@ -1,3 +1,4 @@
+import { messageText } from '../i18n/failureMessage.js';
 import { writeAssemblyDocument } from '@pointercad/io';
 import { startRefreshPartSource } from '../assembly/replaceActions.js';
 import { createPartDocumentBundle } from '@pointercad/model';
@@ -65,6 +66,21 @@ async function fixture() {
 }
 
 describe('アセンブリの文書ファイル', () => {
+  it('抱き込んだ部品自身が要求する版と名前を通常の組立保存の失敗に出す', async () => {
+    const g = gateway();
+    const child = { ...createEmptyPartDocument(), name: '旧い子部品', schemaVersion: 17, patternSlotHighWater: {} };
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, child, 'old.pcad', '');
+    const parent = createAssemblyDocument('親組立');
+    const document = addComponent(parent, createComponentFor(parent, { kind: 'part', partRef: embedded.partRef }));
+    useAppStore.getState().openAssembly(document, embedded.library);
+    await saveAssembly(deps, true);
+    const message = useAppStore.getState().fileMessage;
+    if (message === null) throw new Error('Missing embedded save rejection');
+    expect(messageText(message)).toBe('点配置の番号の記録を保存するには保存形式の版18以降が必要です。対象文書「旧い子部品」の保存形式は版17です。');
+    expect(useAppStore.getState().assembly).toBe(document);
+    expect(useAppStore.getState().assemblyLibrary).toBe(embedded.library);
+    expect(g.savePcad).not.toHaveBeenCalled();
+  });
   it('削除した下絵を組立へ同梱せず、部品のUndo後には元画像を同梱する', async () => {
     for (const restore of [false, true]) {
       resetTestStore();

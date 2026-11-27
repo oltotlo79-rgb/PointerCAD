@@ -25,3 +25,11 @@ export function readDedicatedPlaywrightTests(report: unknown): readonly { projec
 export function checkDedicatedPerformanceEvidence(kind: string, evidence: unknown,
   sourceInputs: { web: Record<string, string>; desktop: Record<string, string> } | null | undefined):
   { status: 'pending' | 'pass' | 'fail'; summary: string; problems?: string[]; w21Ratios?: readonly DedicatedW21Ratio[]; ratioOnly?: boolean };
+/** Check the byte observations recorded under the same exclusive W21 Electron run. */
+export function checkDesktopBuildObservation(value: unknown, binding: {
+  readonly runId: string;
+  readonly manifestSha256: string;
+  readonly report: string;
+  readonly reportSha256: string;
+  readonly startedAt: string;
+}, rows: readonly { readonly result: { readonly startTime: string; readonly duration: number } }[]): void;

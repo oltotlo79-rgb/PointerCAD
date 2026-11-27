@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
 /**
  * パラメータ表(名前を付けた数値)のパネル(要件 FR-207・
@@ -430,7 +431,7 @@ function parameterFieldRenderers(
     });
     return result.ok
       ? `= ${fieldValueText(unit, result.value, lengthUnit)}`
-      : result.error.message;
+      : expressionErrorMessage(result.error);
   };
 
   /** 名前・式・説明のどれか 1 欄。見出し・入力・下の 1 行の作りは `pcad-field` と同じ。 */

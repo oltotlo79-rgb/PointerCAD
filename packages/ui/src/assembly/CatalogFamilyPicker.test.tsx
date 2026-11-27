@@ -5,7 +5,9 @@
  */
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createAssemblyDocument, PRODUCT_CATALOG_REGISTRY, type StandardPartSource } from '@pointercad/model';
+import { readPcadaFile, writePcadaFile } from '@pointercad/io';
+import { buildStandardPartFromSource, createAssemblyDocument, PRODUCT_CATALOG_REGISTRY, resolveAssembly,
+  type StandardPartSource, type Vec3 } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as ImportedReactTypes from 'react';
 
@@ -102,6 +104,70 @@ function submit(nodes: Element[]): StandardPartSource | null {
   const source = components.at(-1)?.source;
   return source?.kind === 'standardPart' ? source : null;
 }
+const FRAME_AND_FOOT_PLACEMENTS = [
+  ['t-slot-frame-s6', ['s6-20x20-tb', 's6-20x40-tl', 's6-25x25']],
+  ['t-slot-foot-base', ['foot-59x25x12-h2-d9-stainless-130g-cb14x8.5', 'foot-78x38x16-h2-d14-steel-cb20x12.5',
+    'foot-78x38x16-h2-d14-stainless-cb20x12.5', 'foot-79x75x16-h4-d9-steel-723g-cb14x8.5',
+    'foot-79x75x16-h4-d9-stainless-729g-cb14x8.5']],
+] as const;
+
+type PlacementFamily = NonNullable<ReturnType<typeof PRODUCT_CATALOG_REGISTRY.loaded>>;
+
+function selectFrameItem(family: PlacementFamily, key: string): Element[] {
+  let nodes = change(select(render(), 'catalog.frame.kindGuide'), family.id);
+  const row = family.rows.find((candidate) => candidate.key === key);
+  if (row === undefined) throw new Error(key);
+  const material = nodes.find((item) => item.type === 'select' && item.props.title === t('catalog.mechanical.materialGuide'));
+  if (material !== undefined && row.materialLabel !== undefined) nodes = change(material, row.materialLabel);
+  nodes = change(select(nodes, 'catalog.mechanical.sizeGuide'), key);
+  expect(select(nodes, 'catalog.mechanical.sizeGuide').props.value).toBe(key);
+  return nodes;
+}
+
+function placeFrameItem(family: PlacementFamily, key: string, at: Vec3): void {
+  const nodes = selectFrameItem(family, key);
+  const control = one(nodes, (element) => element.type === PlacePointButton);
+  const build = control.props.placement as React.ComponentProps<typeof PlacePointButton>['placement'];
+  const placement = build?.();
+  if (placement?.ok !== true) throw new Error(key);
+  useAppStore.getState().toggleComponentPick('placementPoint', [], placement.value);
+  expect(useAppStore.getState().answerComponentPickPoint(at)).toBe(true);
+  const placed = useAppStore.getState().assembly?.components.at(-1);
+  expect(placed?.source).toMatchObject({ catalog: 'catalogItem', options: { family: family.id, item: key },
+    catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision });
+  expect(placed?.placement.position.map((axis) => axis.value)).toEqual(at);
+}
+
+it('places the three adopted frame sections and five counterbored foot rows and reopens the same assembly', async () => {
+  await PRODUCT_CATALOG_REGISTRY.ensure(FRAME_AND_FOOT_PLACEMENTS.map(([id]) => id));
+  change(select(render(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+  let x = 20;
+  for (const [id, keys] of FRAME_AND_FOOT_PLACEMENTS) {
+    const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+    if (family === undefined) throw new Error(id);
+    for (const key of keys) {
+      placeFrameItem(family, key, [x, -40, 0]);
+      x += 20;
+    }
+  }
+  const document = useAppStore.getState().assembly;
+  if (document === null) throw new Error('Expected an assembly');
+  expect(document.components).toHaveLength(8);
+  useAppStore.getState().undoAssembly();
+  expect(useAppStore.getState().assembly?.components).toEqual(document.components.slice(0, -1));
+  useAppStore.getState().redoAssembly();
+  expect(useAppStore.getState().assembly?.components).toEqual(document.components);
+  const options = { savedAt: '2026-11-27T00:00:00.000Z' };
+  const bytes = await writePcadaFile(document, options);
+  const restored = await readPcadaFile(bytes);
+  if (!restored.ok) throw new Error('Expected saved assembly');
+  expect(restored.document.components).toEqual(document.components);
+  expect(await writePcadaFile(restored.document, options)).toEqual(bytes);
+  const rebuilt = resolveAssembly(restored.document, { standardPart: buildStandardPartFromSource });
+  expect(rebuilt.errors).toEqual([]);
+  expect(rebuilt.parts.size).toBe(8);
+});
+
 const mechanical = (): Element[] => change(select(render(), 'assembly.guide.standardCategory'), MECHANICAL_PICKER_CATEGORY);
 const loadAll = (): Promise<void> => PRODUCT_CATALOG_REGISTRY.ensure(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id));
 /**

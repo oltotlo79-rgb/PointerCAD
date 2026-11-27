@@ -1,4 +1,5 @@
 import type { ExpressionError } from '@pointercad/expression';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 
 const HINT_MESSAGES: Record<NonNullable<ExpressionError['hint']>['key'], MessageKey> = {
@@ -6,8 +7,14 @@ const HINT_MESSAGES: Record<NonNullable<ExpressionError['hint']>['key'], Message
   supportedFunctions: 'expression.hint.supportedFunctions',
 };
 
+export function expressionErrorMessage(error: ExpressionError): string {
+  if (error.diagnostic === undefined) return error.message;
+  const key: MessageKey = error.diagnostic.key;
+  return failureMessage({ key, parameters: error.diagnostic.parameters });
+}
+
 export function expressionErrorText(error: ExpressionError): string {
-  const parts = [error.message];
+  const parts = [expressionErrorMessage(error)];
   const hint = error.hint;
   if (hint !== undefined) {
     const message = t(HINT_MESSAGES[hint.key]);

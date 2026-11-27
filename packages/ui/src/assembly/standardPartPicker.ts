@@ -34,6 +34,17 @@ export function steelShapeLabelKey(catalog: SteelSectionCatalog, materialGrade?:
   return pipe ?? STEEL_SHAPE_LABEL_KEYS[catalog];
 }
 
+export const STEEL_CONDITION_LABELS = {
+  'hotRolled-heatTreatmentUnspecified': 'assembly.steel.hotRolled',
+  'brightBar-heatTreatmentUnspecified': 'assembly.steel.brightBar',
+  'blackPipe-plainEnds': 'assembly.steel.blackPipe',
+  'whitePipe-zincCoated': 'assembly.steel.whitePipe',
+  'rectTube-asManufactured': 'assembly.steel.rectTubeAsManufactured',
+  'structuralPipe-plainEnds': 'assembly.steel.structuralPipePlainEnds',
+  'lightGauge-coldFormed': 'assembly.steel.lightGaugeColdFormed',
+  'stainlessPipe-solutionTreated-plainEnds': 'assembly.steel.stainlessPipeSolutionTreated',
+} as const;
+
 export type StandardPartCategory =
   | 'hexBolt'
   | 'hexNut'
@@ -132,14 +143,14 @@ function choicesFromRows(
 }
 
 const CHOICES: Readonly<Record<StandardPartCategory, readonly StandardPartChoice[]>> = {
-  hexBolt: choicesFromRows('hexBolt', HEX_BOLT_TABLE, false),
+  hexBolt: choicesFromRows('hexBolt', HEX_BOLT_TABLE, true),
   hexNut: choicesFromRows('hexNut', HEX_NUT_TABLE, false),
   plainWasher: choicesFromRows('plainWasher', PLAIN_WASHER_TABLE, false),
   springWasher: choicesFromRows('springWasher', SPRING_WASHER_TABLE, false),
   socketHeadCapScrew: choicesFromRows(
-    'socketHeadCapScrew', SOCKET_HEAD_CAP_SCREW_TABLE.filter((row) => row.available), false,
+    'socketHeadCapScrew', SOCKET_HEAD_CAP_SCREW_TABLE.filter((row) => row.available), true,
   ),
-  panHeadScrew: choicesFromRows('panHeadScrew', PAN_HEAD_SCREW_TABLE, false),
+  panHeadScrew: choicesFromRows('panHeadScrew', PAN_HEAD_SCREW_TABLE, true),
   deepGrooveBallBearing: choicesFromRows('deepGrooveBallBearing', ALL_DEEP_GROOVE_BALL_BEARINGS, false),
   structuralSection: [
     ...choicesFromRows('equalAngle', EQUAL_ANGLE_TABLE, true),
@@ -310,16 +321,13 @@ export function commitStandardPartChoice(
     return { ok: false, reason: 'invalidLength' };
   }
   const length = choice.requiresLength ? evaluateExpression(lengthSource) : null;
-  if (length !== null && (!length.ok || length.value.value <= 0)) {
+  if (length !== null && (!length.ok || !Number.isFinite(length.value.value) || length.value.value <= 0)) {
     return { ok: false, reason: 'invalidLength' };
   }
   const normalizedLength = length?.ok === true ? length.value.source : '30';
   const options: Record<string, string> = choice.steelProduct === undefined
     ? {} : { ...steelProductOptions(choice.steelProduct) };
-  if (choice.requiresLength || choice.catalog === 'hexBolt'
-    || choice.catalog === 'socketHeadCapScrew' || choice.catalog === 'panHeadScrew') {
-    options.length = normalizedLength;
-  }
+  if (choice.requiresLength) options.length = normalizedLength;
   if (standardPartUsesDimensionSeries(category)) options.dimensionSeries = dimensionSeries;
   if (standardPartUsesThreadSeries(category)) options.threadSeries = threadSeries;
   const materialId = choice.steelProduct === undefined ? null : STEEL_GRADE_DENSITY_MATERIALS[choice.steelProduct.materialGrade];

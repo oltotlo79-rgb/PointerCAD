@@ -1,7 +1,7 @@
 import type { DrawingDocument } from '@pointercad/drawing';
 import type { AssemblyDocument } from '../assembly/types.js';
 import {
-  compareDefinitionEntries, DocumentComparisonLimit,
+  compareDefinitionEntries, DocumentComparisonDuplicateIdentifier, DocumentComparisonLimit,
   type DefinitionGroup, type DocumentDefinitionComparison, type DocumentDefinitionEntry, type DocumentRelationship,
 } from './compareDocuments.js';
 
@@ -65,7 +65,7 @@ function recordEntries(document: object, fields: Readonly<Record<string, Definit
 }
 
 function ensureUnique(entries: readonly DocumentDefinitionEntry[]): void {
-  if (new Set(entries.map(entry => entry.key)).size !== entries.length) throw new Error('比較対象の識別子が重複しています。');
+  if (new Set(entries.map(entry => entry.key)).size !== entries.length) throw new DocumentComparisonDuplicateIdentifier();
 }
 
 function budgetOf(options: CompareLimits): { tick: () => void } {

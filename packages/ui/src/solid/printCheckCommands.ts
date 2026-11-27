@@ -16,6 +16,7 @@
  * (NFR-UX-3「押したら必ず何かが起きる」)。
  */
 
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import {
   type LengthUnit,
   type PartDocument,
@@ -73,8 +74,8 @@ export function evaluatePrintCheckDraft(draft: PrintCheckDraft, units: FieldUnit
   const angle = evaluatePendingExpression(draft.overhangAngleSource, units, units.pendingVariables);
   const minThicknessMm = thickness.ok ? thickness.value.value : null;
   const overhangAngleDeg = angle.ok ? angle.value.value : null;
-  const thicknessMessage = thickness.ok ? thicknessError(thickness.value.value) : thickness.error.message;
-  const angleMessage = angle.ok ? angleError(angle.value.value) : angle.error.message;
+  const thicknessMessage = thickness.ok ? thicknessError(thickness.value.value) : expressionErrorMessage(thickness.error);
+  const angleMessage = angle.ok ? angleError(angle.value.value) : expressionErrorMessage(angle.error);
   return {
     criteria: minThicknessMm !== null && overhangAngleDeg !== null && thicknessMessage === null && angleMessage === null
       ? { minThicknessMm, overhangAngleDeg } : null,

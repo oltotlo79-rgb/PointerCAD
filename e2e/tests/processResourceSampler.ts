@@ -715,6 +715,8 @@ function Invoke-FrameDiscovery([long]$startedAt){
   $executionClock=[System.Diagnostics.Stopwatch]::StartNew()
   try{
     $found=[SamplerNative]::Discover([int]$rootProcessId,[bool]$includeRoot,[int]$samplerProcessId)
+    # End the Stopwatch inside the discovery UTC interval, before recording its end.
+    $executionClock.Stop()
     $completedAt=[SamplerNative]::EpochMilliseconds()
     $executionMs=$executionClock.Elapsed.TotalMilliseconds
     $adoptionClock=[System.Diagnostics.Stopwatch]::StartNew()

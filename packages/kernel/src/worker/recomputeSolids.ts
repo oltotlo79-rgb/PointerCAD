@@ -29,7 +29,7 @@ import { makeSheetMetalFlanges } from '../occt/makeSheetMetalFlange.js';
 import { makeSheetMetalBody } from '../occt/makeSheetMetalBody.js';
 import { joinSheetMetalShapes } from '../occt/sheetMetalJoin.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
-import { makeSpring } from '../occt/makeSpring.js';
+import { makeSpring, springInputCode } from '../occt/makeSpring.js';
 import type { SurfaceResult } from '../occt/makeSurface.js';
 import { makeBlendSurface } from '../occt/makeBlendSurface.js';
 import { BlendSurfaceError } from '../occt/blendBoundary.js';
@@ -70,6 +70,7 @@ import type {
   SolidStepFailure,
   SolidStepRequest,
   SolidStepSpec,
+  SpringStepSpec,
   SubShapeQuery,
   SurfaceStepSpec,
   TessellationOptions,
@@ -331,7 +332,7 @@ function toFailureMessage(error: unknown): string {
 /** 符号を持つ計算部の誤り(面による切断・面の厚み付け・つなぎ面・加工のもとが無い/立体が残らない)の符号。無ければ空。 */
 function failureCode(error: unknown, stepId: string, step?: SolidStepSpec): Pick<SolidStepFailure, 'code' | 'parameters'> {
   if (isSolidGeometryFailure(error)) {
-    if (error.code === 'geometry-internal') {
+    if (error.code === 'geometry-internal' || error.code === 'geometry-spring-internal') {
       console.error('PointerCAD solid geometry', stepId, 'cause' in error ? error.cause : error);
     }
     return { code: error.code, ...(error.parameters === undefined ? {} : { parameters: error.parameters }) };
@@ -367,6 +368,23 @@ function failureCode(error: unknown, stepId: string, step?: SolidStepSpec): Pick
  */
 import { yieldToMessages } from './yieldToMessages.js';
 
+function createSpringSolid(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctShapeHandle {
+  try {
+    return makeSpring(oc, spec);
+  } catch (error) {
+    const code = error instanceof Error
+      ? springInputCode(error) ?? (error.name === 'AbortError' ? 'geometry-spring-interrupted' : 'geometry-spring-internal')
+      : 'geometry-spring-internal';
+    throw new SolidGeometryFailure(code, toFailureMessage(error), undefined, { cause: error });
+  }
+}
+
+function patternInputError(legacyMessage: string, pattern: boolean,
+  code: 'geometry-pattern-missing-input' | 'geometry-pattern-upstream-failed' | 'geometry-pattern-mesh-input',
+  parameters?: Readonly<Record<string, string>>): Error {
+  return pattern ? new SolidGeometryFailure(code, legacyMessage, parameters) : new Error(legacyMessage);
+}
+
 /**
  * 段の入力をキャッシュから引く。無ければ理由をつけて断る。
  * 同じ再計算の中で作れなかった段が入力なら、その段の名前を出す(下流も理由つきで失敗させる)。
@@ -384,16 +402,18 @@ function findStepInput(
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
   key: string,
+  pattern = false,
 ): CachedSolid {
   const found = cache.get(key);
   if (found !== undefined) {
     if (found.mesh.bodyKind === 'mesh') {
-      throw new Error(MESH_NOT_MACHINABLE_MESSAGE);
+      throw patternInputError(MESH_NOT_MACHINABLE_MESSAGE, pattern, 'geometry-pattern-mesh-input');
     }
     return found;
   }
   const failedLabel = failedLabels.get(key);
-  throw new Error(failedLabel === undefined ? MISSING_INPUT_MESSAGE : upstreamFailedMessage(failedLabel));
+  if (failedLabel === undefined) throw patternInputError(MISSING_INPUT_MESSAGE, pattern, 'geometry-pattern-missing-input');
+  throw patternInputError(upstreamFailedMessage(failedLabel), pattern, 'geometry-pattern-upstream-failed', { label: failedLabel });
 }
 
 /** Classify raw exceptions only while the requested geometry producer is running. */
@@ -439,8 +459,9 @@ function createBooleanSolid(
   failedLabels: ReadonlyMap<string, string>,
   featureId?: string,
 ): BooleanResult {
-  const target = findStepInput(cache, failedLabels, spec.targetKey);
-  const tool = findStepInput(cache, failedLabels, spec.toolKey);
+  const pattern = spec.transforms !== undefined;
+  const target = findStepInput(cache, failedLabels, spec.targetKey, pattern);
+  const tool = findStepInput(cache, failedLabels, spec.toolKey, pattern);
   if (spec.transforms !== undefined) {
     const shape = spec.patternTool === 'rib' ? tool.ribTool : tool.shape;
     const transforms = spec.transforms;
@@ -861,7 +882,7 @@ function createStepSolid(
       return noMarks(combined, combined.volume);
     }
     case 'hole': {
-      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const target = findStepInput(cache, failedLabels, spec.targetKey, spec.transforms.length > 0);
       // 入口の形(ざぐり・皿もみ、FR-422)。省かれていれば makeHole が真っ直ぐな穴にする。
       const drilled = makeHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, {
         entry: spec.entry, origins: target.mesh.origins, featureId,
@@ -869,7 +890,7 @@ function createStepSolid(
       return noMarks(drilled, drilled.volume);
     }
     case 'thread': {
-      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const target = findStepInput(cache, failedLabels, spec.targetKey, spec.transforms.length > 0);
       // 入口の形(ざぐり・皿もみ、FR-422)は段の欄のまま `makeThreadHole` が読む
       // (段の型が作り手の依頼の上位互換なので詰め替えない)。省かれていれば真っ直ぐな下穴。
       const { handle, marks } = makeThreadHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, target.mesh.origins, featureId);
@@ -887,7 +908,7 @@ function createStepSolid(
           ? { featureId, origins: target.mesh.origins } : undefined));
     }
     case 'spring':
-      return noMarks(makeSpring(oc, spec));
+      return noMarks(createSpringSolid(oc, spec));
     case 'primitive':
       // 基本形状(FR-429)。中心・向き・寸法だけで決まるが、基準点を立体の頂点に
       // したときだけ対象の形から頂点を引く(消費はしない)。

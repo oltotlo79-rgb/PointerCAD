@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, mathScalarExpression, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import {
   createMathBackend,
@@ -238,8 +237,10 @@ describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき�
     expect(result.ok).toBe(false);
     if (result.ok) return;
     const c = result.failures.find(failure => failure.ownerId === 'C');
-    expect(plainTextValue(c?.text)).toContain('決まっていない名前');
-    expect(plainTextValue(c?.text)).toContain('Z');
+    expect(c?.text).toEqual({
+      key: 'expression.error.unknownVariable',
+      parameters: { detail: 'Z', location: { key: 'expression.error.position', parameters: { position: '1' } } },
+    });
   });
 });
 

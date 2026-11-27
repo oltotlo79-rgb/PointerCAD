@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { currentReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
 import { referenceRepairPreviewChangesDisplay } from './viewportRepairPreview.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
@@ -139,7 +140,7 @@ function SectionOffsetField(): React.JSX.Element | null {
       >
         {evaluated.ok
           ? (refusal ?? `= ${formatDisplayLength(evaluated.value.value, lengthUnit)}`)
-          : evaluated.error.message}
+          : expressionErrorMessage(evaluated.error)}
       </span>
       <div className="pcad-popover__actions">
         <button
@@ -215,7 +216,7 @@ function CanvasScaleField(): React.JSX.Element | null {
     }
     return evaluated.ok
       ? `= ${formatDisplayLength(evaluated.value.value, lengthUnit)}`
-      : evaluated.error.message;
+      : expressionErrorMessage(evaluated.error);
   })();
   return (
     <div className="pcad-popover pcad-canvas-scale">

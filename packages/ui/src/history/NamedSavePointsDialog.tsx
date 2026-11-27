@@ -1,3 +1,5 @@
+import { messageText } from '../i18n/failureMessage.js';
+import { drawingSaveInputFailure } from '../file/saveWriteFailure.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { rememberDialogOpener } from '../shell/dialogFocus.js';
@@ -38,7 +40,9 @@ export interface NamedSavePointsLabels {
 function failureMessage(error: unknown, errors: NamedSavePointsLabels['errors']): { text: string; error: true; detail?: string } {
   if (!(error instanceof SavePointError)) return { text: errors.unavailable, error: true };
   if (error.detail !== null) console.debug('[pcad:save-point]', JSON.stringify({ reason: error.reason, detail: error.detail }));
-  return { text: errors[error.reason], error: true, ...(error.detail === null ? {} : { detail: error.detail }) };
+  const drawingInput = drawingSaveInputFailure(error.cause);
+  return { text: drawingInput === undefined ? errors[error.reason] : messageText(drawingInput),
+    error: true, ...(error.detail === null ? {} : { detail: error.detail }) };
 }
 
 export function NamedSavePointsDialog({ onClose, labels, actions: suppliedActions }: {

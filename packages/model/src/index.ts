@@ -19,7 +19,7 @@ export {
 export { functionCurveRequest } from './functionGeometry/functionCurveRequest.js';
 export { createFunctionSurface, type FunctionSurfaceFeature } from './functionGeometry/functionSurfaceFeature.js';
 export { functionSurfaceRequest } from './functionGeometry/functionSurfaceRequest.js';
-export { allocatePatternPointSlots, isPatternPointSlot, patternSlotHighWater, retainPatternSlotHighWater, readPatternSlotHighWater } from './part/patternPointSlots.js';
+export { allocatePatternPointSlots, isPatternPointSlot, isPatternPointSlotError, patternSlotHighWater, retainPatternSlotHighWater, readPatternSlotHighWater } from './part/patternPointSlots.js';
 export type { PatternPointSlot } from './part/patternPointSlots.js';
 export type { FunctionRequestContext } from './functionGeometry/functionRequestInputs.js';
 export { mapFunctionDefinition } from './functionGeometry/mapFunctionDefinition.js';

@@ -4,11 +4,11 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import { expect, type ElectronApplication, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
+import { desktopExecutable } from '../../scripts/lib/w21DesktopBuild.mjs';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
 import { waitForStartupReady } from './startupHealth.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const requireDesktop = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 const requireTest = createRequire(import.meta.url);
 const requirePlaywright = createRequire(requireTest.resolve('@playwright/test/package.json'));
 const requireCore = createRequire(requirePlaywright.resolve('playwright/package.json'));
@@ -158,8 +158,7 @@ export async function diskFile(path: string): Promise<Buffer> {
  */
 export async function launchDesktop(playwright: PlaywrightWorkerArgs['playwright'], info: TestInfo,
   options: { readonly waitForStartup?: boolean; readonly occtTransportEphemeralPort?: boolean } = {}) {
-  const executable: unknown = requireDesktop('electron');
-  if (typeof executable !== 'string') throw new Error('Electron実行ファイルなし');
+  const executable = desktopExecutable();
   const directory = info.outputPath('native');
   await mkdir(directory, { recursive: true });
   await sweepStaleElectronProfiles();

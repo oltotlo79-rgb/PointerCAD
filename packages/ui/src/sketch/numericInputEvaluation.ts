@@ -1,6 +1,6 @@
 /** 入力欄の式・単位・許容範囲を評価する。道具の段階遷移や文書更新は担当しない。 */
 import { type ExpressionError, type ExpressionValue } from '@pointercad/expression';
-import type { LengthUnit } from '@pointercad/model';
+import type { FailureText, LengthUnit } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { applyDisplayUnit, usesDisplayInputUnit } from './numericFieldUnits.js';
 import { evaluateNumericMath, evaluatePendingExpression, pendingVariablesFor } from './numericMathValues.js';
@@ -14,6 +14,7 @@ export interface NumericFieldResult {
 
 export interface NumericInputEvaluation {
   readonly carriedError?: ExpressionError;
+  readonly carriedErrorText?: FailureText;
   readonly results: readonly NumericFieldResult[];
   /** すべての欄が妥当なら true。false のときは決定させない(NFR-UX-5)。 */
   readonly canCommit: boolean;
@@ -151,8 +152,12 @@ export function evaluateNumericInput(
     const result = evaluateNumericField(field, variables, display);
     const error = result.ok ? rangeErrorFor(field, result.value) : result.error;
     if (error !== null) {
+      const label = t(field.labelKey);
       return { results, canCommit: false, firstErrorIndex: Math.max(0, firstErrorIndex),
-        carriedError: { ...error, message: `前の入力「${t(field.labelKey)}」: ${error.message}` } };
+        carriedError: { ...error, message: `前の入力「${label}」: ${error.message}` },
+        carriedErrorText: { key: 'numericInput.error.previousInput',
+          parameters: { label, reason: error.diagnostic ?? { key: 'partError.plainText',
+            parameters: { text: error.message } } } } };
     }
   }
   return { results, canCommit: firstErrorIndex === -1, firstErrorIndex };

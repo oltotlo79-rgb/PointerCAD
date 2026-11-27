@@ -143,6 +143,31 @@ it('扉の部品・折戸のスライダ・通し穴付きベース板を開き�
   }
 });
 
+it('40角の通常キャップとロック式を旧来の呼び・鍵・並びのまま開き直せる', async () => {
+  await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-cap']);
+  const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-frame-cap');
+  if (family === undefined) throw new Error('端のキャップの族が無い');
+  const entries = [
+    ['s10-40x40-4.7g', '端のキャップ 溝幅 10 40×40（質量 4.7 g）'],
+    ['s10-40x40-lock', '端のキャップ 溝幅 10 40×40（ロック式）'],
+  ] as const;
+  const sources = entries.map(([key, size]) => {
+    const row = family.rows.find((candidate) => candidate.key === key);
+    if (row === undefined) throw new Error(`キャップが無い: ${key}`);
+    const source = createCatalogItemSource(family, row);
+    expect(source.size).toBe(size);
+    return { ...source, size };
+  });
+  const document = assemblyOf(sources, '既存の40角キャップ');
+  for (const reopened of await reopenBoth(document)) {
+    expect(reopened.components.map((component) => component.source)).toEqual(sources);
+    for (const source of sources) {
+      expect(standardPartRejection(source)).toBeNull();
+      expect(buildStandardPartFromSource(source)?.name).toBe(source.size);
+    }
+  }
+});
+
 // 2026-11-18: 出どころの表記から発行元の名前と URL を外した移行で、鋼材 19 品目（SS400 の平鋼 5・丸鋼 5・等辺山形鋼 3・溝形鋼 3・H 形鋼 3）の
 // 出どころの欄が変わった（平鋼・丸鋼は productStandard から会社名を外し、山形・溝形・H 形は evidence の鍵（会社名の物）を一般名の
 // rolledSections・wideFlange に替えた）。この 2 欄だけの変更である事を、旧値へ戻して旧 SHA-256 と一致させて確かめた。利用者の決定 14:3x。

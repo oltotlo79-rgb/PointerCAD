@@ -5,7 +5,6 @@ import type { FileGateway } from './fileGateway.js';
 import type { SaveEncodingControl } from '@pointercad/io';
 import type { MessageKey } from '../i18n/t.js';
 import { documentSaveFailure } from './saveWriteFailure.js';
-import { PcadSaveWorkerError } from './pcadSaveWorker.js';
 
 const pending = new WeakMap<FileGateway, Promise<void>>();
 const generations = new WeakMap<FileGateway, number>();
@@ -23,13 +22,8 @@ export function cancelDocumentSaves(gateway: FileGateway): void {
   running.get(gateway)?.abort();
 }
 
-/** The drawing-template reader reports encoding failures alongside its own save status. */
-export function reportSaveEncodingFailure(error: unknown, isCurrent: () => boolean): void {
-  if (error instanceof PcadSaveWorkerError) reportDocumentSaveFailure(error, isCurrent);
-}
-
-export function reportDocumentSaveFailure(error: unknown, isCurrent: () => boolean): void {
-  if (isCurrent()) useAppStore.getState().setFileMessage(documentSaveFailure(error));
+export function reportDocumentSaveFailure(error: unknown, isCurrent: () => boolean, kind?: 'drawing'): void {
+  if (isCurrent()) useAppStore.getState().setFileMessage(documentSaveFailure(error, kind));
 }
 
 /** 同じ窓の保存を依頼順に完了させる。別の文書へ切り替わった依頼は実行しない。 */

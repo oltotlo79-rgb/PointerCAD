@@ -205,7 +205,10 @@ describe('関数作図の式での不定積分の扱い(MC-20)', () => {
   it('関数の式の確認は実計算部を使わず、不定積分を「使えないこと」と「代わりの書き方」の理由付きで断る', async () => {
     // Its own X is bound by the integral, so the formula is a family F+C that does not follow the axis X.
     for (const source of ['integrate(X^2,X)', 'X+integrate(t^2,t)']) {
-      expect((await confirm(source)).result.evaluation).toEqual({ status: 'invalid', reason: 'unsupported', detail: INDEFINITE_IN_FUNCTION });
+      expect((await confirm(source)).result.evaluation).toEqual({
+        status: 'invalid', reason: 'unsupported', detail: INDEFINITE_IN_FUNCTION,
+        diagnostic: { key: 'math.input.functionIndefiniteIntegral', parameters: {} },
+      });
     }
     // The suggested form, the antiderivative written out with a chosen constant, is an ordinary function formula.
     expect((await confirm('X^3/3+1')).result.evaluation).toMatchObject({ status: 'value', kind: 'function' });

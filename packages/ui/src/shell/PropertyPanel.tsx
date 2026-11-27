@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { MathInputProblem } from '@pointercad/expression/math/contracts';
 import { PlanarHoleBasisInfo, currentPlanarHoleBasis } from '../sketch/PlanarHoleBasisInfo.js';
 import { SectionViewSection } from '../solid/SectionViewSection.js';
@@ -1107,7 +1108,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       <span className="pcad-field__unit">{t(fieldUnitLabelKey(item.unit, units.lengthUnit))}</span>
       <p className="pcad-field__message" title={evaluated.ok ? String(evaluated.value.value) : undefined}>
         {evaluated.ok ? `= ${fieldValueText(item.unit, shownValue(evaluated.value), units.lengthUnit)}`
-          : pending ? t('mathGeometry.status.pending') : evaluated.error.message}
+          : pending ? t('mathGeometry.status.pending') : expressionErrorMessage(evaluated.error)}
       </p>
     </div>
     );

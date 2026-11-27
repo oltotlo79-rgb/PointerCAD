@@ -1,4 +1,4 @@
-import { checkDedicatedPerformanceEvidence, loadDedicatedPerformanceEvidence, readDedicatedPlaywrightTests } from '../../../../scripts/release/dedicatedPerformanceEvidence.mjs';
+import { checkDedicatedPerformanceEvidence, checkDesktopBuildObservation, loadDedicatedPerformanceEvidence, readDedicatedPlaywrightTests } from '../../../../scripts/release/dedicatedPerformanceEvidence.mjs';
 import {
   DEDICATED_EVIDENCE_EXIT, DEDICATED_EVIDENCE_PLAN_FORMAT, DedicatedEvidenceUsageError, runBuildDedicatedEvidenceIndex,
 } from '../../../../scripts/performance-evidence/build-dedicated-evidence-index.mjs';
@@ -990,6 +990,17 @@ function syntheticRawWork(lateReply: boolean) {
 // product input (default 'a' × 64); manifestSha256 binds the runs to a QA input manifest written by the tool (default: the
 // population's own manifest record); checkout is the launch folder (default '/synthetic/q1'); resolvePath gives the path
 // loadDedicatedPerformanceEvidence resolves a record to, for the records naming another record's file (default unchanged).
+const legacyBuildConfiguration = `import { defineConfig } from '@playwright/test';
+export default defineConfig({
+  webServer: {
+    command: 'pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview --port 4173 --strictPort --host 127.0.0.1',
+    url: 'http://127.0.0.1:4173',
+    env: { VITE_PCAD_E2E: '1' },
+    reuseExistingServer: false,
+  },
+});
+`;
+
 function syntheticDedicatedPopulation(options: { readonly warmMs?: number; readonly productHash?: string; readonly manifestSha256?: string;
   readonly checkout?: string; readonly resolvePath?: (path: string) => string } = {}) {
   const warmMs = options.warmMs ?? 80, checkout = options.checkout ?? '/synthetic/q1', resolvePath = options.resolvePath ?? ((path: string) => path);
@@ -1000,7 +1011,7 @@ function syntheticDedicatedPopulation(options: { readonly warmMs?: number; reado
     records[id] = { path: `fixture/${id}.json`, sha256: hash(bytes), bytes }; return id;
   };
   const productHash = options.productHash ?? 'a'.repeat(64), currentInputs: Record<string, string> = { 'pnpm-lock.yaml': productHash, 'src/product.ts': productHash };
-  put('config', 'pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview\nreuseExistingServer: false', true);
+  put('config', legacyBuildConfiguration, true);
   put('electronHelper', "join(root, 'apps/desktop/dist/main/main.cjs')", true);
   put('flow', "await app?.close(); const cold = await run('cold'), warm = await run('warm'); await compareInSecondWorker(page, info, mode, app); value.toBeCloseTo(expected, 6);", true);
   put('spec', 'W21 actual app:// OCCT online/offline', true);
@@ -1056,6 +1067,44 @@ function syntheticDedicatedPopulation(options: { readonly warmMs?: number; reado
   }));
   return { evidence: { records, manifest: 'manifest', currentInputs, w21, w22 }, sourceInputs };
 }
+
+describe('W21 actual desktop output identity', () => {
+  const binding = {
+    runId: '20261127-063000-root-w21-e2e',
+    manifestSha256: 'a'.repeat(64),
+    report: '/scratchpad/w21/playwright.json',
+    reportSha256: 'b'.repeat(64),
+    startedAt: '2026-11-27T06:30:00+09:00',
+  };
+  const rows = [{ result: { startTime: '2026-11-26T21:30:02.000Z', duration: 750 } }];
+  const outputs = { 'main/main.cjs': 'c'.repeat(64), 'preload/preload.cjs': 'd'.repeat(64),
+    'renderer/index.html': 'e'.repeat(64), 'renderer/assets/input.js': 'f'.repeat(64) };
+  const ready = { format: 'pointercad-w21-desktop-build/1', runId: binding.runId, manifestSha256: binding.manifestSha256,
+    report: binding.report, checkedAt: '2026-11-26T21:30:01.000Z', electron: { bytes: 300, sha256: '0'.repeat(64) }, outputs };
+  const observed = { ...ready, checkedAt: '2026-11-26T21:30:03.000Z' };
+  const observation = { ready, observed, reportSha256: binding.reportSha256 };
+
+  it('accepts the same fresh main, preload, renderer and Electron executable before and after all measurement', () => {
+    expect(() => checkDesktopBuildObservation(observation, binding, rows)).not.toThrow();
+  });
+
+  it('refuses a stale run, wrong source or report, changed output or binary, and missing entry', () => {
+    const otherSource = { manifestSha256: '1'.repeat(64) };
+    const stale = { checkedAt: '2026-11-26T21:29:59.000Z' };
+    const wrongRun = { runId: 'previous' };
+    const missing = { outputs: { 'main/main.cjs': outputs['main/main.cjs'], 'renderer/index.html': outputs['renderer/index.html'] } };
+    for (const value of [
+      undefined,
+      { ...observation, ready: { ...ready, ...stale } },
+      { ...observation, ready: { ...ready, ...wrongRun }, observed: { ...observed, ...wrongRun } },
+      { ...observation, ready: { ...ready, ...otherSource }, observed: { ...observed, ...otherSource } },
+      { ...observation, reportSha256: '2'.repeat(64) },
+      { ...observation, observed: { ...observed, outputs: { ...outputs, 'renderer/assets/input.js': '3'.repeat(64) } } },
+      { ...observation, observed: { ...observed, electron: { ...observed.electron, sha256: '4'.repeat(64) } } },
+      { ...observation, ready: { ...ready, ...missing }, observed: { ...observed, ...missing } },
+    ]) expect(() => checkDesktopBuildObservation(value, binding, rows)).toThrow();
+  });
+});
 
 describe('synthetic complete dedicated original populations', () => {
   it('connects all thirty W21 pairs including actual-shape Electron launch and fresh build binding', () => {
@@ -1267,7 +1316,7 @@ describe('専用の測定の証拠の索引の道具（scripts/performance-evide
   const productBytes = crlf('export const product = 1;\n');
   const lockBytes = Buffer.from("lockfileVersion: '9.0'\n");
   const testSources: Record<string, Buffer> = {
-    'e2e/playwright.config.ts': crlf('command: pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview\nreuseExistingServer: false\n'),
+    'e2e/playwright.config.ts': crlf(legacyBuildConfiguration),
     'e2e/tests/electronAppFlow.ts': crlf("const main = join(root, 'apps/desktop/dist/main/main.cjs');\n"),
     'e2e/tests/occtCompileReuseFlow.ts': crlf("await app?.close();\nconst cold = await run('cold'), warm = await run('warm');\nawait compareInSecondWorker(page, info, mode, app);\nexpect(value).toBeCloseTo(expected, 6);\n"),
     'e2e/tests/electron-occt-compile-reuse.spec.ts': crlf('W21 actual app:// OCCT online/offline\n'),

@@ -53,7 +53,9 @@ function containsIndefiniteIntegral(expression:MathNode):boolean {
   const pending=[expression];let remaining=MATH_INPUT_LIMITS.nodes;
   while(pending.length>0) {
     const node=pending.pop();if(node===undefined)break;
-    if(--remaining<0)throw new MathInputProblem('budget','関数の式が大きすぎます。');
+    if(--remaining<0)throw new MathInputProblem('budget', '関数の式が大きすぎます。', {
+      key: 'math.input.syntaxNodeLimit', parameters: { limit: String(MATH_INPUT_LIMITS.nodes) },
+    });
     if(node.kind==='operation')pending.push(...node.operands);
     else if(node.kind==='binder') {
       if(node.operation==='integrate'&&node.bindings.some(binding=>binding.domain.kind==='unrestricted'))return true;
@@ -153,11 +155,13 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
       const plan = planMathCandidates(substituted, request.angleUnit, request.functionScope === undefined);
       const candidates = plan.candidates;
       if (candidates !== null && request.functionScope !== undefined) {
-        return reply({ status: 'invalid', reason: 'unsupported', detail: '±・∓の符号を選んでから関数の式に使ってください。' });
+        return reply({ status: 'invalid', reason: 'unsupported', detail: '±・∓の符号を選んでから関数の式に使ってください。',
+          diagnostic: { key: 'math.input.functionPlusMinus', parameters: {} } });
       }
       if (request.functionScope !== undefined && containsIndefiniteIntegral(substituted)) {
         return reply({ status: 'invalid', reason: 'unsupported',
-          detail: '不定積分は積分定数が定まらない関数の集まりのため、関数の式には使えません。原始関数を式で書き、積分定数を決めてください（例 integrate(X^2,X) の代わりに X^3/3+1）。' });
+          detail: '不定積分は積分定数が定まらない関数の集まりのため、関数の式には使えません。原始関数を式で書き、積分定数を決めてください（例 integrate(X^2,X) の代わりに X^3/3+1）。',
+          diagnostic: { key: 'math.input.functionIndefiniteIntegral', parameters: {} } });
       }
       const source = plan.rewritten ? plan.expression : expression;
       const evaluate = (candidate: MathNode): MathEvaluation => {

@@ -402,7 +402,12 @@ describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-
           expect(family.nominalMassG?.(row, {}), row.key).toBe(record.massG);
         } else {
           expect(row.densityMaterialId, row.key).toBe(record?.material);
-          expect(record?.materialText, row.key).toBeUndefined();
+          if (family === FOOT_BASE_FAMILY && row.key === 'base-75x75x10-boss25-aluminum') {
+            expect([record?.materialText, row.materialLabel, row.densityMaterialId, family.nominalMassG?.(row, {})], row.key)
+              .toEqual(['アルミダイカスト', 'アルミダイカスト', 'aluminum', 120]);
+          } else {
+            expect(record?.materialText, row.key).toBeUndefined();
+          }
         }
       }
     }

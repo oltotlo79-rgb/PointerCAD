@@ -3,7 +3,9 @@ import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import { readDrawingTemplateFile } from '@pointercad/io';
 import type { DrawingSheet } from '@pointercad/drawing';
 import { openFileThrough, saveFileAsThrough } from '../file/fileGateway.js';
-import { queueDocumentSave, reportSaveEncodingFailure } from '../file/documentSaveQueue.js';
+import { queueDocumentSave } from '../file/documentSaveQueue.js';
+import { documentSaveFailure, drawingSaveInputFailure } from '../file/saveWriteFailure.js';
+import { messageText } from '../i18n/failureMessage.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -101,8 +103,11 @@ export async function saveCurrentDrawingTemplate(name: string): Promise<boolean>
       saved = await saveFileAsThrough(state.fileGateway, `${safeName}.pcadt`, 'pcadt', bytes);
       if (stillCurrent()) state.setDrawingMessage(t(saved ? 'drawing.template.saved' : 'drawing.template.cancelled'));
     } catch (error) {
-      if (stillCurrent()) state.setDrawingMessage(t('drawing.template.saveFailed'));
-      reportSaveEncodingFailure(error, stillCurrent);
+      if (!stillCurrent()) return;
+      const failure = documentSaveFailure(error, 'drawing');
+      const inputFailure = drawingSaveInputFailure(error);
+      state.setDrawingMessage(inputFailure === undefined ? t('drawing.template.saveFailed') : messageText(inputFailure));
+      if (failure.key !== 'file.saveFailed') state.setFileMessage(failure);
     }
   });
   return saved;

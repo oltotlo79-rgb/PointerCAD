@@ -189,6 +189,10 @@ describe('資料 1 の長方形の板の 39 回目の 2 本の読みで揃った
       expect([record.width, record.depth, record.thickness, row.plate.includes('長方形')], record.key).toEqual([width, depth, thickness, true]);
       const holes = holesOf(row.holes, width, depth, row.threads);
       expect(record.holes, record.key).toEqual(holes);
+      const familyRow = FOOT_BASE_FAMILY.rows.find((candidate) => candidate.key === record.key);
+      const diameters = new Set(holes.map(([, , diameter]) => diameter));
+      expect(familyRow?.dims.holeCount, record.key).toBe(holes.length);
+      expect(familyRow?.dims.holeDiameter, record.key).toBe(diameters.size === 1 ? holes[0]?.[2] : undefined);
       const [materialText = '', massText = ''] = row.material.split(';');
       const material = /SUS|ステン/u.test(materialText) ? 'stainless' : 'steel';
       const mass = /([0-9]+(?:\.[0-9]+)?)(k?)g/u.exec(massText);

@@ -1608,6 +1608,26 @@ function planChamfer(
   };
 }
 
+interface PlacementInputFailure {
+  readonly ok: false;
+  readonly message: string;
+  readonly text: FailureText;
+}
+
+function placementInputFailure(key: string, message: string, parameters: FailureText['parameters'] = {}): PlacementInputFailure {
+  return { ok: false, message, text: { key, parameters } };
+}
+
+const SPRING_LENGTH_MESSAGES = {
+  length: 'ばねの全長は 0 より大きい数にしてください。',
+  pitch: 'ピッチは 0 より大きい数にしてください。',
+  turns: '巻数は 0 より大きく 200 以下にしてください。',
+};
+
+function springLengthFailure(field: SpringDerived): PlacementInputFailure {
+  return placementInputFailure(`partError.spring.${field}`, SPRING_LENGTH_MESSAGES[field]);
+}
+
 /**
  * 全長・ピッチ・巻数のうち derived が指すものを、他の2つから計算する(FR-414)。
  *
@@ -1621,35 +1641,35 @@ export function resolveSpringLength(
   derived: SpringDerived,
 ):
   | { readonly ok: true; readonly length: number; readonly pitch: number; readonly turns: number }
-  | { readonly ok: false; readonly message: string } {
+  | PlacementInputFailure {
   switch (derived) {
     case 'length': {
       const { pitch, turns } = values;
       if (!isPositiveFinite(pitch)) {
-        return { ok: false, message: 'ピッチは 0 より大きい数にしてください。' };
+        return springLengthFailure('pitch');
       }
       if (!isPositiveFinite(turns)) {
-        return { ok: false, message: '巻数は 0 より大きく 200 以下にしてください。' };
+        return springLengthFailure('turns');
       }
       return { ok: true, length: pitch * turns, pitch, turns };
     }
     case 'pitch': {
       const { length, turns } = values;
       if (!isPositiveFinite(length)) {
-        return { ok: false, message: 'ばねの全長は 0 より大きい数にしてください。' };
+        return springLengthFailure('length');
       }
       if (!isPositiveFinite(turns)) {
-        return { ok: false, message: '巻数は 0 より大きく 200 以下にしてください。' };
+        return springLengthFailure('turns');
       }
       return { ok: true, length, pitch: length / turns, turns };
     }
     case 'turns': {
       const { length, pitch } = values;
       if (!isPositiveFinite(length)) {
-        return { ok: false, message: 'ばねの全長は 0 より大きい数にしてください。' };
+        return springLengthFailure('length');
       }
       if (!isPositiveFinite(pitch)) {
-        return { ok: false, message: 'ピッチは 0 より大きい数にしてください。' };
+        return springLengthFailure('pitch');
       }
       return { ok: true, length, pitch, turns: length / pitch };
     }
@@ -1759,7 +1779,7 @@ function planSpring(
     feature.derived,
   );
   if (!resolvedLength.ok) {
-    return fail(feature.id, 'invalidValue', resolvedLength.message);
+    return failWith(feature.id, 'invalidValue', resolvedLength.text);
   }
   if (resolvedLength.turns > MAX_SPRING_TURNS) {
     return failWith(feature.id, 'invalidValue', { key: 'partError.spring.turns', parameters: {} });
@@ -1792,15 +1812,19 @@ const POINT_PATTERN_EMPTY_MESSAGE =
 const POINT_PATTERN_MISSING_MESSAGE =
   '並べる点が見つかりません。スケッチで点を作ってからやり直してください。';
 
+const PATTERN_DIRECTION_MISSING_MESSAGE =
+  '並べる向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+
 /** パターンの並べ方の個数(FR-411、FR-412)。2 以上 MAX_PATTERN_COUNT 以下の整数。 */
 type PatternCountOutcome =
   | { readonly ok: true; readonly count: number }
-  | { readonly ok: false; readonly message: string };
+  | PlacementInputFailure;
 
 function resolvePatternCount(count: ExpressionValue): PatternCountOutcome {
   const value = count.value;
   if (!Number.isFinite(value) || !Number.isInteger(value) || value < 2 || value > MAX_PATTERN_COUNT) {
-    return { ok: false, message: '並べる個数は 2 以上 100 以下の整数にしてください。' };
+    return placementInputFailure('partError.pattern.count', '並べる個数は 2 以上 100 以下の整数にしてください。',
+      { min: '2', max: String(MAX_PATTERN_COUNT) });
   }
   return { ok: true, count: value };
 }
@@ -1830,7 +1854,7 @@ export function resolvePatternTransforms(
 ):
   | { readonly ok: true; readonly transforms: readonly RigidTransform[]; readonly placementRoles?: readonly HolePlacementRole[];
       readonly pointPlacementReferences?: readonly { readonly slotId: string; readonly reference: PointReference }[] }
-  | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
+  | (PlacementInputFailure & { readonly code: PartErrorCode }) {
   if (placement.kind === 'points') {
     /*
       点の集まりへ複製(FR-425)。
@@ -1846,7 +1870,7 @@ export function resolvePatternTransforms(
       2 か所になるためである(`SolidPlanContext` の注釈と同じ理由)。
     */
     if (placement.points.length === 0) {
-      return { ok: false, code: 'missingProfile', message: POINT_PATTERN_EMPTY_MESSAGE };
+      return { ...placementInputFailure('partError.pattern.pointsEmpty', POINT_PATTERN_EMPTY_MESSAGE), code: 'missingProfile' };
     }
     const positions: Vec3[] = [];
     const placementRoles: HolePlacementRole[] = [];
@@ -1854,7 +1878,7 @@ export function resolvePatternTransforms(
       const source = pointWithIdentity(slot.reference);
       const resolved = source?.position ?? point(slot.reference);
       if (resolved === null) {
-        return { ok: false, code: 'missingProfile', message: POINT_PATTERN_MISSING_MESSAGE };
+        return { ...placementInputFailure('partError.pattern.pointMissing', POINT_PATTERN_MISSING_MESSAGE), code: 'missingProfile' };
       }
       positions.push(resolved);
       if (source?.state === 'identified') placementRoles.push({ kind: 'point-slot', slotId: slot.slotId, source: source.identity });
@@ -1876,7 +1900,7 @@ export function resolvePatternTransforms(
   }
   const countOutcome = resolvePatternCount(placement.count);
   if (!countOutcome.ok) {
-    return { ok: false, code: 'invalidValue', message: countOutcome.message };
+    return { ...countOutcome, code: 'invalidValue' };
   }
   const n = countOutcome.count;
 
@@ -1884,25 +1908,22 @@ export function resolvePatternTransforms(
     const spacing = placement.spacing.value;
     if (!isPositiveFinite(spacing)) {
       return {
-        ok: false,
+        ...placementInputFailure('partError.pattern.spacing', '並べる間隔は 0 より大きい数にしてください。'),
         code: 'invalidValue',
-        message: '並べる間隔は 0 より大きい数にしてください。',
       };
     }
     // 両側へ並べるときに n が偶数だと、もとの穴の位置に工具が来ない(「注意」)。
     if (placement.symmetric && n % 2 === 0) {
       return {
-        ok: false,
+        ...placementInputFailure('machiningError.patternSymmetricNeedsOdd', '両側へ並べるときは、個数を奇数にしてください。'),
         code: 'invalidValue',
-        message: '両側へ並べるときは、個数を奇数にしてください。',
       };
     }
     const frame = resolveRevolveAxis(placement.direction, sketches, axisFrames);
     if (frame === null) {
       return {
-        ok: false,
+        ...placementInputFailure('partError.pattern.directionMissing', PATTERN_DIRECTION_MISSING_MESSAGE),
         code: 'missingProfile',
-        message: '並べる向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
       };
     }
     const transforms: RigidTransform[] = [];
@@ -1934,9 +1955,9 @@ export function resolvePatternTransforms(
     const angleDegrees = placement.angle.value;
     if (!Number.isFinite(angleDegrees) || angleDegrees <= 0 || angleDegrees > MAX_REVOLVE_DEGREES) {
       return {
-        ok: false,
+        ...placementInputFailure('partError.pattern.angle', '並べる角度は 0 より大きく 360 以下にしてください。',
+          { max: String(MAX_REVOLVE_DEGREES) }),
         code: 'invalidValue',
-        message: '並べる角度は 0 より大きく 360 以下にしてください。',
       };
     }
     stepAngle = degreesToRadians(angleDegrees) / (n - 1);
@@ -1944,9 +1965,8 @@ export function resolvePatternTransforms(
   const frame = resolveRevolveAxis(placement.axis, sketches, axisFrames);
   if (frame === null) {
     return {
-      ok: false,
+      ...placementInputFailure('partError.pattern.directionMissing', PATTERN_DIRECTION_MISSING_MESSAGE),
       code: 'missingProfile',
-      message: '並べる向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
     };
   }
   const transforms: RigidTransform[] = [];
@@ -2009,7 +2029,7 @@ function planPattern(
     context.pointWithIdentity,
   );
   if (!transformsOutcome.ok) {
-    return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
+    return failWith(feature.id, transformsOutcome.code, transformsOutcome.text);
   }
   if (source.kind !== 'hole' && source.kind !== 'threadHole') {
     const toolKey = source.kind === 'boolean' ? bodyKeys.get(source.toolFeatureId) : sourceTarget.targetKey;

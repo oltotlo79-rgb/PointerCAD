@@ -3,6 +3,8 @@ import { isRecord } from './mathRecord.js';
 /** The Worker can send only a known key with its declared argument names. */
 const DIAGNOSTIC_FIELDS = {
   'assembly.error.internal': [],
+  'math.input.functionIndefiniteIntegral': [],
+  'math.input.functionPlusMinus': [],
   'math.input.argumentLimit': ['limit'],
   'math.input.axisScope': ['name'],
   'math.input.bars': ['position'],
@@ -18,6 +20,9 @@ const DIAGNOSTIC_FIELDS = {
   'math.input.coefficientReference': ['name'],
   'math.input.coefficientScopeLimit': ['limit'],
   'math.input.coefficientString': ['position'],
+  'math.input.compositionDefinition': [],
+  'math.input.compositionCoefficient': [],
+  'math.input.compositionNonFinite': [],
   'math.input.complementArguments': ['position'],
   'math.input.controlCharacter': [],
   'math.input.cubeRootArguments': ['position', 'name'],

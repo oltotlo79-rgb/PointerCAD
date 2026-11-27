@@ -26,7 +26,7 @@ export function standardPartPlacement(category: StandardPartCategory, choiceKey:
   if (!committed.ok) return { ok: false, reason: committed.reason };
   return { ok: true, value: { kind: 'standardPart', category, choiceKey, lengthSource, dimensionSeries, threadSeries,
     accessory: pickedAccessory(standardAccessoryOptionsFor(category, choiceKey, lengthSource, dimensionSeries, threadSeries)),
-    recent: standardPlacedTarget(category, choiceKey, dimensionSeries, steel, lengthSource) } };
+    recent: standardPlacedTarget(category, choiceKey, dimensionSeries, steel, lengthSource, threadSeries) } };
 }
 
 /** 族の行(アルミフレーム・形材・族の機械要素)の置く物。 */

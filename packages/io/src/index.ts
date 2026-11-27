@@ -7,7 +7,8 @@
 export { encodeOwnedSaveDocumentParts, encodeSaveDocument, encodeSaveDocumentParts, type OwnedSaveEncodingControl,
   type SaveDocumentInput, type SaveDocumentEncoder,
   type SaveDocumentPartsEncoder, type SaveEncodingControl, type SaveEncodingStage } from './pcad/saveDocumentEncoding.js';
-export { PcadWriteError, isPcadWriteDiagnostic, type PcadWriteDiagnostic, type PcadVersionField } from './pcad/writeDiagnostic.js';
+export { PcadWriteError, isPcadWriteDiagnostic, pcadWriteDiagnosticOf, pcadWriteErrorFromDiagnostic,
+  type PcadDrawingWriteCode, type PcadWriteDiagnostic, type PcadVersionField } from './pcad/writeDiagnostic.js';
 export { concatZipParts } from './pcad/zipSteps.js';
 export {
   IO_LIMITS,

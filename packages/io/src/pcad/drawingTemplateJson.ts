@@ -1,3 +1,4 @@
+import { pcadWriteErrorFromDiagnostic } from './writeDiagnostic.js';
 import { createDrawingTemplate, validateDrawingTemplate, type DrawingTemplate } from '@pointercad/model';
 import { cleanSheet, isLayer, isSheet, parseDrawing } from './drawingJson.js';
 import { hasOnlyFiniteJsonNumbers, preserveDrawingJsonFields } from './drawingJsonCompatibility.js';
@@ -17,7 +18,9 @@ function failure(code: Extract<ParseDrawingTemplateResult, { readonly ok: false 
 
 export function serializeDrawingTemplate(template: DrawingTemplate, savedAt: string): string {
   const checked = validateDrawingTemplate(template);
-  if (!checked.ok || !hasOnlyFiniteJsonNumbers(template)) throw new Error('図面ひな形の設定に誤りがあるため保存できません。');
+  const message = '図面ひな形の設定に誤りがあるため保存できません。';
+  if (!hasOnlyFiniteJsonNumbers(template)) throw pcadWriteErrorFromDiagnostic({ code: 'drawingNonFinite' }, message);
+  if (!checked.ok) throw pcadWriteErrorFromDiagnostic({ code: 'drawingTemplateInvalid' }, message);
   const clean: DrawingTemplate = { name: template.name, sheet: preserveDrawingJsonFields(template.sheet, cleanSheet(template.sheet)),
     layers: template.layers.map((layer) => ({ ...layer })) };
   return `${JSON.stringify({ schema: PCAD_SCHEMA_VERSION, kind: PCAD_DRAWING_TEMPLATE_KIND, app: PCAD_APP_NAME, savedAt, template: clean }, null, 2)}\n`;

@@ -3,7 +3,7 @@ import type { PartDocument } from '@pointercad/model';
 import { MathExpressionDialog } from '../math/MathExpressionDialog.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
-import { acceptNumericMath } from './numericMathValues.js';
+import { acceptNumericMath, numericMathAcceptanceMessage } from './numericMathValues.js';
 import { fieldExpression, fieldUnitLabelKey, type NumericInputState, type DisplayUnitOptions } from './numericInput.js';
 
 export interface NumericMathTarget {
@@ -27,7 +27,14 @@ export function NumericMathDialog({ target, onClose }: {
     initialValue={initialValue} unitLabel={unitLabel} isCurrent={isCurrent} onClose={onClose}
     onApply={(value, prepared, signal, _client, coefficients) => {
       if (!isCurrent() || signal.aborted) return Promise.resolve({ ok: false, message: t('math.operation.cancelled') });
-      const accepted = acceptNumericMath(value, prepared, coefficients);
+      let accepted;
+      try {
+        accepted = acceptNumericMath(value, prepared, coefficients);
+      } catch (error) {
+        const message = numericMathAcceptanceMessage(error);
+        if (message === undefined) throw error;
+        return Promise.resolve({ ok: false, message });
+      }
       const fields = target.input.fields.map((entry, index) => index === target.index
         ? { ...entry, source: accepted.source, typed: false, mathValue: accepted } : entry);
       useAppStore.getState().updateNumericInput({ ...target.input, fields, focusedIndex: target.index });

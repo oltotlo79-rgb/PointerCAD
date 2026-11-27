@@ -45,6 +45,7 @@
   "file.saveFeature.thicken": "厚み付け",
   "file.saveFeature.sheetConvert": "板金への変換",
   "file.saveFeature.surfaceOffset": "面全体のオフセット",
+  "file.saveDrawingNonFinite": "図面の設定や寸法に扱えない数値があるため保存できません。値と式を確認してください。",
   "file.saveEncodingFailed": "保存の準備に失敗しました。変更と復元用の控えは残っています。もう一度保存してください。",
   "file.recovery.pending": "復元用の保存を待っています。",
   "file.recovery.preparing": "復元用の内容を準備しています。",

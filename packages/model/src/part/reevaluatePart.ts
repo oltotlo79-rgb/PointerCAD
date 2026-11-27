@@ -716,7 +716,7 @@ function reevaluateValue(
   }
   const result = evaluateExpression(value.source, { ...options, variables });
   if (!result.ok) {
-    onFailure(plainText(result.error.message));
+    onFailure(result.error.diagnostic ?? plainText(result.error.message));
     return value;
   }
   const next = result.value;

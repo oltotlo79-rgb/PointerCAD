@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { useId, useState } from 'react';
 import { type ExpressionResult, type ExpressionValue } from '@pointercad/expression';
 import { appearanceOf, isSameAppearanceTarget, MATERIAL_PRESETS, WOOD_SPECIES, type AppearanceSpec } from '@pointercad/model';
@@ -150,7 +151,7 @@ function appearanceFieldRenderers({
         /></span>
         <span className="pcad-field__unit">{t(fieldUnitLabelKey('mm', 'mm'))}</span>
         <p id={`${inputId}-spacing-message`} className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
-          {evaluated.ok ? `= ${fieldValueText('mm', evaluated.value, units.lengthUnit)}` : evaluated.error.message}
+          {evaluated.ok ? `= ${fieldValueText('mm', evaluated.value, units.lengthUnit)}` : expressionErrorMessage(evaluated.error)}
         </p>
       </div>
     );

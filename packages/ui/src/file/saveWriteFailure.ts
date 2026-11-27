@@ -1,8 +1,8 @@
-import { PcadWriteError, type PcadVersionField } from '@pointercad/io';
+import { pcadWriteDiagnosticOf, type PcadDrawingWriteCode, type PcadWriteDiagnostic, type PcadVersionField } from '@pointercad/io';
 import { messageText } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { FileMessage } from '../store/fileSlice.js';
-import { saveEncodingFailureKey, saveFailureMessageKey } from './saveFailure.js';
+import { hasSaveRecoveryCopy, saveEncodingFailureKey, saveFailureMessageKey } from './saveFailure.js';
 import { PcadSaveWorkerError } from './pcadSaveWorker.js';
 
 const FEATURE_KEYS = {
@@ -29,8 +29,22 @@ const FEATURE_KEYS = {
   surfaceOffset: 'file.saveFeature.surfaceOffset',
 } as const satisfies Record<PcadVersionField, MessageKey>;
 
-function writeFailure(error: PcadWriteError): FileMessage {
-  const diagnostic = error.diagnostic;
+const DRAWING_INPUT_KEYS = {
+  drawingNonFinite: 'file.saveDrawingNonFinite',
+  drawingTemplateInvalid: 'drawing.template.invalid',
+} as const satisfies Record<PcadDrawingWriteCode, MessageKey>;
+
+function writeCause(error: unknown): unknown {
+  return error instanceof PcadSaveWorkerError ? error.cause : error;
+}
+
+export function drawingSaveInputFailure(error: unknown): FileMessage | undefined {
+  const code = pcadWriteDiagnosticOf(writeCause(error))?.code;
+  if (code === 'drawingNonFinite' || code === 'drawingTemplateInvalid') return { key: DRAWING_INPUT_KEYS[code], failed: true };
+  return undefined;
+}
+
+function writeFailure(diagnostic: Extract<PcadWriteDiagnostic, { code: 'internal' | 'requiresVersion' }>, error: unknown): FileMessage {
   if (diagnostic.code === 'internal') {
     if (import.meta.env.DEV) console.error('PointerCAD save encoding', error);
     return { key: 'assembly.error.internal', failed: true };
@@ -45,10 +59,15 @@ function writeFailure(error: PcadWriteError): FileMessage {
 }
 
 /** Report one message for either preparation or writing. The Worker can also carry the old message-only reply. */
-export function documentSaveFailure(error: unknown): FileMessage {
-  if (error instanceof PcadWriteError) return writeFailure(error);
+export function documentSaveFailure(error: unknown, kind?: 'drawing'): FileMessage {
+  const cause = writeCause(error);
+  const diagnostic = pcadWriteDiagnosticOf(cause);
+  if (diagnostic?.code === 'internal' || diagnostic?.code === 'requiresVersion') return writeFailure(diagnostic, cause);
+  const drawingInput = drawingSaveInputFailure(error);
+  if (drawingInput !== undefined) return drawingInput;
+  if (kind === 'drawing' && !hasSaveRecoveryCopy(error) && !(error instanceof PcadSaveWorkerError && error.internal)
+    && import.meta.env.DEV) console.error('PointerCAD drawing save', error);
   if (!(error instanceof PcadSaveWorkerError)) return { key: saveFailureMessageKey(error), failed: true };
-  if (error.cause instanceof PcadWriteError) return writeFailure(error.cause);
   const key = saveEncodingFailureKey(error);
   return { key, failed: true, ...(error.internal ? {} : { detail: error.message }) };
 }

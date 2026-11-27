@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from './expressionErrorText.js';
 import { evaluateExpression, normalizeExpressionSource } from '@pointercad/expression';
 import type { CoordinateInput } from '@pointercad/model';
 
@@ -44,7 +45,9 @@ function readTableRow(fields: readonly string[], row: number, context: CommandLi
   if (fields.some((field) => /[@＠<＜=＝]/u.test(field))) return { row, reason: t('constraint.error.invalidValue') };
   const parsed = parseCommandLine(fields.join(','), context);
   if (parsed.kind === 'coordinate' && parsed.value.mode === 'absolute') return { row, coordinate: parsed.value };
-  return { row, reason: parsed.kind === 'error' ? parsed.message : t('constraint.error.invalidValue') };
+  if (parsed.kind !== 'error') return { row, reason: t('constraint.error.invalidValue') };
+  const reason = parsed.expressionError === undefined ? parsed.message : expressionErrorMessage(parsed.expressionError);
+  return { row, reason };
 }
 
 /** 元の行番号で順に読む。返した座標は仮の値で、呼び出し元が全行を受け取ってから一括確定する。 */

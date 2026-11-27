@@ -201,6 +201,11 @@ describe('actual structural picker selection and store commits', () => {
     expect(values).toHaveLength(48);
     expect(values).toContain('steel:SGP:steelPipe:100A');
     expect(values).toContain('steel:SGP:steelPipe:100A:whitePipe-zincCoated');
+    const sameSize = elements(select(nodes, 'assembly.guide.standardSize').props.children as ReactNode)
+      .filter((item) => item.type === 'option' && String(item.props.value).startsWith('steel:SGP:steelPipe:100A'));
+    expect(sameSize.map(optionText)).toEqual([
+      `100A / ${t('assembly.steel.blackPipe')}`, `100A / ${t('assembly.steel.whitePipe')}`,
+    ]);
     nodes = change(select(nodes, 'assembly.guide.standardSize'), 'steel:SGP:steelPipe:100A');
     expect(nodes.some((item) => item.type === 'p' && item.props.children === t('assembly.steel.blackPipe'))).toBe(true);
     expect(submit(nodes).options).toMatchObject({ steelProduct: 'SGP:steelPipe:100A', condition: 'blackPipe-plainEnds' });

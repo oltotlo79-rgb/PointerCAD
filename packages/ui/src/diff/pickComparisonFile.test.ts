@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { writePcadFile } from '@pointercad/io';
+import { t } from '../i18n/t.js';
 import type { FileGateway, PickedTypedFile } from '../file/fileGateway.js';
 import { pickComparisonFile, type DefinitionDiffExecutor } from './pickComparisonFile.js';
 import { executeDefinitionDiffWork } from './definitionDiffWork.js';
@@ -30,11 +31,25 @@ describe('比較用の選択は保存先を変更せず、失敗・取消では�
   it('壊れたZIPと別形式を成功とせず、既存候補の置換を要求しない', async () => {
     const broken = gateway({ kind: 'pcad', fileName: 'broken.pcad', bytes: new Uint8Array([1, 2, 3]) });
     const result = await pickComparisonFile(broken.fileGateway, new AbortController().signal, execute);
-    expect(result.status).toBe('failed'); expect('file' in result).toBe(false);
+    expect(result).toEqual({ status: 'failed', message: t('file.error.corrupted') }); expect('file' in result).toBe(false);
     const other = gateway({ kind: 'stl', fileName: 'a.stl', bytes: new Uint8Array() });
     const called = vi.fn(execute);
     expect((await pickComparisonFile(other.fileGateway, new AbortController().signal, called)).status).toBe('failed');
     expect(called).not.toHaveBeenCalled();
+  });
+  it('アーカイブの診断と上限の値を既存の読込文言で表示する', async () => {
+    const picked = gateway({ kind: 'pcad', fileName: 'a.pcad', bytes: new Uint8Array() });
+    const missing: DefinitionDiffExecutor = () => Promise.resolve({ ok: true, reply: {
+      kind: 'failed', failure: { code: 'documentRead', reason: 'invalidField', diagnostic: 'partAttachmentMissing' },
+    } });
+    expect(await pickComparisonFile(picked.fileGateway, new AbortController().signal, missing))
+      .toEqual({ status: 'failed', message: t('file.error.partAttachmentMissing') });
+    const deep: DefinitionDiffExecutor = () => Promise.resolve({ ok: true, reply: {
+      kind: 'failed', failure: { code: 'documentRead', reason: 'subAssemblyDepth' },
+    } });
+    const failure = await pickComparisonFile(picked.fileGateway, new AbortController().signal, deep);
+    expect(failure.status).toBe('failed');
+    if (failure.status === 'failed') expect(failure.message).not.toContain('{max}');
   });
   it('選択の取消と選択窓が遅れて戻る場合にWorkerも保存も起動しない', async () => {
     const empty = gateway(null), called = vi.fn(execute);

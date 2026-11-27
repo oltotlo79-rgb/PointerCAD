@@ -13,6 +13,14 @@ import { convertMathNotation } from './mathNotationConversion.js';
 import { CANDIDATE_MATH_BY_ID, CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import type { MathNameContext } from './mathSymbolScope.js';
 
+function requireMatchingMathSource(definition: StoredMathExpression, value: ExpressionValue): void {
+  if (definition.source !== value.source) {
+    throw new MathInputProblem('syntax', '合成元の原式が数学定義と一致しません。', {
+      key: 'math.input.compositionDefinition', parameters: {},
+    });
+  }
+}
+
 export interface MathCompositionCoefficient { readonly id: string; readonly label: string; readonly kind: 'length' | 'angle' | 'scalar' }
 const environments = new WeakMap<ExpressionValue, readonly MathCompositionCoefficient[]>();
 /** Metadata is transient and never makes a cached value eligible for numeric adoption. */
@@ -23,7 +31,7 @@ export function bindMathCompositionNames(value: ExpressionValue, coefficients: r
 export function scalarMathInRadians(value: ExpressionValue): MathNode {
   const definition = value.mathDefinition;
   if (definition !== undefined) {
-    if (definition.source !== value.source) throw new MathInputProblem('syntax', '合成元の原式が数学定義と一致しません。');
+    requireMatchingMathSource(definition, value);
     return mathInRadians(definition.expression, definition.angleUnit);
   }
   const coefficients = new Map((environments.get(value) ?? []).map(coefficient => [coefficient.label, coefficient]));
@@ -42,7 +50,9 @@ export function composeMathValues(a: ExpressionValue, b: ExpressionValue, operat
       collectMathCoefficients(value.mathDefinition.expression).map(reference => ({ id: reference.id, label: reference.label, kind: 'length' as const })));
     for (const coefficient of names) {
       const previous = coefficients.get(coefficient.label);
-      if (previous !== undefined && previous.id !== coefficient.id) throw new MathInputProblem('syntax', '合成する式の係数参照が一致しません。');
+      if (previous !== undefined && previous.id !== coefficient.id) throw new MathInputProblem('syntax', '合成する式の係数参照が一致しません。', {
+        key: 'math.input.compositionCoefficient', parameters: {},
+      });
       coefficients.set(coefficient.label, coefficient);
     }
   }
@@ -53,7 +63,7 @@ export function composeMathValues(a: ExpressionValue, b: ExpressionValue, operat
   const expressionOf = (value: ExpressionValue): MathNode => {
     const definition = value.mathDefinition;
     if (definition !== undefined) {
-      if (definition.source !== value.source) throw new MathInputProblem('syntax', '合成元の原式が数学定義と一致しません。');
+      requireMatchingMathSource(definition, value);
       return unit === definition.angleUnit ? definition.expression : mathInRadians(definition.expression, definition.angleUnit);
     }
     return legacyMathToDefinition(parse(value.source), { resolveVariable: name => {
@@ -83,7 +93,9 @@ export function composeMathValues(a: ExpressionValue, b: ExpressionValue, operat
     angleUnit: unit, expression: converted.expression };
   const left = new ExpressionDecimal(a.value), right = new ExpressionDecimal(b.value);
   const number = operator === '+' ? left.add(right) : operator === '-' ? left.sub(right) : operator === '*' ? left.mul(right) : left.div(right);
-  if (!number.isFinite() || !Number.isFinite(number.toNumber())) throw new MathInputProblem('domain', '合成した数式が有限の数値になりません。');
+  if (!number.isFinite() || !Number.isFinite(number.toNumber())) throw new MathInputProblem('domain', '合成した数式が有限の数値になりません。', {
+    key: 'math.input.compositionNonFinite', parameters: {},
+  });
   const value: ExpressionValue = { source: definition.source, value: number.toNumber(),
     display: number.toSignificantDigits(DISPLAY_SIGNIFICANT_DIGITS).toString(), mathDefinition: definition };
   bindMathCompositionNames(value, table);

@@ -236,6 +236,8 @@ describe('parseCommandLine: 絶対座標', () => {
       kind: 'error',
       message: '0 で割ることはできません。',
       suggestions: [],
+      expressionError: { code: 'divisionByZero', message: '0 で割ることはできません。', position: 1,
+        diagnostic: { key: 'expression.error.divisionByZero', parameters: {} } },
     });
   });
 });

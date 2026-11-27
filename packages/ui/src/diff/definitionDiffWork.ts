@@ -1,19 +1,29 @@
 import { sha256Hex } from '../sha256.js';
 import {
   attachmentsDigestOf, compareAssemblyDocuments, compareDocuments, compareDrawingDocuments, drawingSourceContentHash,
-  drawingSourceInputHash, partLibraryOfBundle, type AssemblyLibraryDigest, type DocumentDefinitionComparison,
+  drawingSourceInputHash, partLibraryOfBundle, DocumentComparisonLimit,
+  type AssemblyLibraryDigest, type DocumentDefinitionComparison,
   type DocumentRelationship, type PartLibrary,
 } from '@pointercad/model';
-import { IO_LIMITS, readDocumentBundle, readDrawingBundle, readPcadFile } from '@pointercad/io';
-import { isDefinitionDiffRequest, type DefinitionDiffReply, DEFINITION_DIFF_MAX_FILE_BYTES,
-  type DefinitionDiffDocumentKind } from './definitionDiffProtocol.js';
+import { IO_LIMITS, readDocumentBundle, readDrawingBundle, readPcadFile, type ReadPcadFileError } from '@pointercad/io';
+import { isDefinitionDiffRequestShape, type DefinitionDiffReply, DEFINITION_DIFF_MAX_FILE_BYTES,
+  type DefinitionDiffDocumentKind, type DefinitionDiffFailure } from './definitionDiffProtocol.js';
 
 const limits = { ...IO_LIMITS, archiveCompressedBytes: DEFINITION_DIFF_MAX_FILE_BYTES,
   archiveEntryExpandedBytes: 32 * 1024 * 1024, archiveTotalExpandedBytes: 64 * 1024 * 1024 };
+class DefinitionDiffReadError extends Error {
+  constructor(readonly failure: DefinitionDiffFailure) { super(failure.code); }
+}
+
+function documentReadError(error: ReadPcadFileError): DefinitionDiffReadError {
+  return new DefinitionDiffReadError({ code: 'documentRead', reason: error.code,
+    ...(error.diagnostic === undefined ? {} : { diagnostic: error.diagnostic }) });
+}
+
 function read(bytes: Uint8Array) {
   const file = readPcadFile(bytes, { limits });
-  if (!file.ok) throw new Error(file.error.message);
-  if (file.kind !== 'part') throw new Error('比較には部品の.pcadを選んでください。');
+  if (!file.ok) throw documentReadError(file.error);
+  if (file.kind !== 'part') throw new DefinitionDiffReadError({ code: 'partRequired' });
   return file;
 }
 async function textDigest(text: string): Promise<string> {
@@ -33,13 +43,13 @@ async function libraryDigestOf(library: PartLibrary): Promise<AssemblyLibraryDig
 }
 async function readAssembly(bytes: Uint8Array) {
   const result = await readDocumentBundle(bytes, 'assembly', { limits });
-  if (!result.ok) throw new Error(result.error.message);
-  if (result.bundle.kind !== 'assembly') throw new Error('比較にはアセンブリの.pcadaを選んでください。');
+  if (!result.ok) throw documentReadError(result.error);
+  if (result.bundle.kind !== 'assembly') throw new Error('Expected an assembly comparison bundle');
   return { document: result.bundle.document, library: await libraryDigestOf(partLibraryOfBundle(result.bundle)) };
 }
 async function readDrawing(bytes: Uint8Array) {
   const result = await readDrawingBundle(bytes, { limits });
-  if (!result.ok) throw new Error(result.error.message);
+  if (!result.ok) throw documentReadError(result.error);
   return { document: result.document, sourceHash: await drawingSourceInputHash(result.source) };
 }
 async function compare(kind: DefinitionDiffDocumentKind, before: Uint8Array, after: Uint8Array,
@@ -61,11 +71,21 @@ async function compare(kind: DefinitionDiffDocumentKind, before: Uint8Array, aft
 }
 /** ファイル選択の上書き先、現在の文書、保存の口を持たない独立した読込み。 */
 export async function executeDefinitionDiffWork(value: unknown): Promise<DefinitionDiffReply> {
-  if (!isDefinitionDiffRequest(value)) return { kind: 'failed', message: '比較の入力が不正か、ファイルが上限の32MiBを超えています。' };
+  if (!isDefinitionDiffRequestShape(value)) return { kind: 'failed', failure: { code: 'invalidRequest' } };
+  const inputFiles = value.kind === 'inspect' ? [value.bytes] : [value.before, value.after];
+  if (inputFiles.some(bytes => bytes.byteLength > DEFINITION_DIFF_MAX_FILE_BYTES)) {
+    return { kind: 'failed', failure: { code: 'fileLimit' } };
+  }
   try {
     if (value.kind === 'inspect') return { kind: 'inspected', name: read(value.bytes).document.name };
     return { kind: 'compared', result: await compare(value.documentKind ?? 'part', value.before, value.after, value.relationship) };
   } catch (error) {
-    return { kind: 'failed', message: error instanceof Error ? error.message.slice(0, 4_096) : '文書を比較できませんでした。' };
+    if (error instanceof DefinitionDiffReadError) return { kind: 'failed', failure: error.failure };
+    if (error instanceof DocumentComparisonLimit) return { kind: 'failed', failure: { code: error.code } };
+    if (error instanceof Error && 'code' in error && error.code === 'document-comparison-duplicate-identifier') {
+      return { kind: 'failed', failure: { code: 'duplicateIdentifier' } };
+    }
+    if (import.meta.env.DEV) console.error('PointerCAD document definition comparison', error);
+    return { kind: 'failed', failure: { code: 'internal' } };
   }
 }

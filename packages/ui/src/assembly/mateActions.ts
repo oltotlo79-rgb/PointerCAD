@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { findComponent, type JointKind, type MateKind, type MateTarget, type OriginElement } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -23,7 +24,9 @@ export function mateDraftCheck(state: MateState): MateCommandOutcome | null {
 
 export function mateFailureText(outcome: MateCommandOutcome | null): string | null {
   if (outcome === null || outcome.ok) return null;
-  return outcome.message ?? outcome.error?.message ?? t(outcome.reason === 'targets' ? 'assembly.mate.needTwo'
+  if (outcome.message !== undefined) return outcome.message;
+  if (outcome.error !== undefined) return expressionErrorMessage(outcome.error);
+  return t(outcome.reason === 'targets' ? 'assembly.mate.needTwo'
     : outcome.reason === 'sameComponent' ? 'assembly.mate.differentComponents'
       : outcome.reason === 'stale' ? 'assembly.mate.targetMissing' : 'assembly.mate.invalidTargets');
 }
@@ -146,7 +149,9 @@ export function jointDraftCheck(state: MateState, kind: JointKind): JointCommand
 
 export function jointFailureText(outcome: JointCommandOutcome | null): string | null {
   if (outcome === null || outcome.ok) return null;
-  return outcome.message ?? outcome.error?.message ?? t(outcome.reason === 'targets' ? 'assembly.mate.needTwo'
+  if (outcome.message !== undefined) return outcome.message;
+  if (outcome.error !== undefined) return expressionErrorMessage(outcome.error);
+  return t(outcome.reason === 'targets' ? 'assembly.mate.needTwo'
     : outcome.reason === 'sameComponent' ? 'assembly.mate.differentComponents'
       : outcome.reason === 'stale' ? 'assembly.mate.targetMissing'
         : outcome.reason === 'range' ? 'assembly.joint.invalidRange' : 'assembly.joint.invalidTargets');

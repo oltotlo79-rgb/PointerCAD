@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { evaluateExpression, type EvaluateOptions, type ExpressionValue } from '@pointercad/expression';
 import { DEFAULT_TOOL_DEFAULTS, TOOL_DEFAULT_KEYS, evaluateSheetField, type ToolDefaults } from '@pointercad/model';
 import type { CoordinateMode } from '../sketch/numericInputTools.js';
@@ -64,7 +65,7 @@ export function numericToolDefaultError(entry: NumericDefaultEntry, source: stri
   let value: ExpressionValue;
   if (entry.sheetKey === undefined && entry.drawingKey === undefined) {
     const evaluated = evaluateExpression(source, options);
-    if (!evaluated.ok) return evaluated.error.message;
+    if (!evaluated.ok) return expressionErrorMessage(evaluated.error);
     value = evaluated.value;
   } else {
     const evaluated = evaluateSheetField(source, dimension, 'mm', options);

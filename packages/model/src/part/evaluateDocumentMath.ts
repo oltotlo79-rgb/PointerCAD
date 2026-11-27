@@ -225,9 +225,9 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     if (definition === undefined) {
       const options = { variables, exactVariables, nonLengthVariables: nonLength };
       const exact = evaluateExpressionExact(value.source, options);
-      if (!exact.ok) return { ok: false, text: dependentFailureMessage(exact.error, value.source) ?? plainText(exact.error.message) };
+      if (!exact.ok) return { ok: false, text: dependentFailureMessage(exact.error, value.source) ?? exact.error.diagnostic ?? plainText(exact.error.message) };
       const result = evaluateExpression(value.source, options);
-      if (!result.ok) return { ok: false, text: dependentFailureMessage(result.error, value.source) ?? plainText(result.error.message) };
+      if (!result.ok) return { ok: false, text: dependentFailureMessage(result.error, value.source) ?? result.error.diagnostic ?? plainText(result.error.message) };
       // A measured double is never re-read as an exact rational, not even after legacy arithmetic.
       if (usesGeometryDerived(value)) return { ok: true, value: result.value, decimal: exact.value.exact };
       try {

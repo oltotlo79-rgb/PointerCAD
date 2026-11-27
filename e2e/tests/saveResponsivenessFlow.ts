@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import { spawn } from 'node:child_process';
 import { createHash, randomFillSync, randomUUID } from 'node:crypto';
-import { mkdir, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import process from 'node:process';
 import { inspect } from 'node:util';
@@ -10,10 +10,10 @@ import { isTemplateKind, readPcadFile, type ImportedMeshBytes } from '../../pack
 import { pcadEntries, zipPcadEntries } from '../../packages/io/src/pcad/pcadFile.js';
 import { IO_LIMITS } from '../../packages/io/src/limits.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../packages/model/src/index.js';
-import { processTreeMemoryTotals, linuxProcessMemoryReading, linuxProcessTreeDiscovery, type LinuxProcessStatReading } from '../../packages/test-utils/src/processMemorySamples.js';
+import { processTreeMemoryTotals } from '../../packages/test-utils/src/processMemorySamples.js';
 import { observeSaveResponse, reportDuration } from '../../packages/test-utils/src/releasePerformance.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
-import { windowsNativeSource } from './processResourceSampler.js';
+import { linuxFrame, windowsNativeSource, type LinuxProcSource, type RawFrame } from './processResourceSampler.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
@@ -163,7 +163,7 @@ function trackSaveWorkers(page: Page): SaveWorkerEntry[] {
 }
 
 /** 端末の処理の木の使用メモリー(全PIDの合計)の1回分。時刻は検査側の performance.now。 */
-interface ProcessTreeSample extends ReturnType<typeof processTreeMemoryTotals> { readonly at: number; readonly discovery?: ReturnType<typeof linuxProcessTreeDiscovery> }
+interface ProcessTreeSample extends ReturnType<typeof processTreeMemoryTotals> { readonly at: number; readonly linux?: RawFrame }
 
 interface ProcessTreeSampler {
   /** 指定の時刻より後の記録が指定の件数そろうまで待つ(処理の起動に時間がかかっても、前後の件数をそろえる)。 */
@@ -250,38 +250,35 @@ export function windowsSaveSamplerScript(): string {
   ].join('\r\n');
 }
 
-/** Linux: /proc から子孫の全プロセスの VmRSS と RssAnon を 100ms ごとに合計する。 */
+/** 一つの /proc 採取について、子孫の実測値と、同じ Playwright worker の作成時刻を照合する。 */
+export async function readLinuxSaveMemory(root: number, rootCreated: string | null,
+  source?: LinuxProcSource): Promise<Omit<ProcessTreeSample, 'at'>> {
+  const startedAt = source?.now() ?? Date.now();
+  try {
+    const linux = await linuxFrame(root, false, startedAt, source);
+    const generation = linux.rootCreated ?? null;
+    let discoveryError = linux.discoveryError;
+    if (discoveryError === null && (linux.linuxDiscoveryComplete !== true || generation === null)) {
+      discoveryError = 'Incomplete Linux save process discovery';
+    }
+    if (discoveryError === null && rootCreated !== null && generation !== rootCreated) {
+      discoveryError = 'Linux save worker identity changed';
+    }
+    const expectedPids = linux.processes.map(row => row.pid);
+    return { ...processTreeMemoryTotals({ expectedPids, readings: linux.processes, discoveryError }), linux };
+  } catch (error: unknown) {
+    return processTreeMemoryTotals({ expectedPids: [], readings: [], discoveryError: String(error) });
+  }
+}
+
+/** Linux: 毎回の /proc の子孫全体を同じ採取内で照合し、VmRSS と RssAnon を記録する。 */
 function startLinuxSampler(root: number, isStopped: () => boolean, onSample: (sample: Omit<ProcessTreeSample, 'at'>) => void): Promise<number> {
-  const failure = (error: unknown): { readonly errorCode: string | null; readonly error: string } => ({
-    errorCode: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : null,
-    error: error instanceof Error ? error.message : 'invalid-error status (expected Error)',
-  });
-  async function tree(): Promise<ReturnType<typeof linuxProcessTreeDiscovery>> {
-    const readings: LinuxProcessStatReading[] = [];
-    let names: string[];
-    try { names = await readdir('/proc'); }
-    catch (error) { const detail = failure(error); return linuxProcessTreeDiscovery(root, readings, `/proc: ${detail.errorCode ?? 'unknown errno'}: ${detail.error}`); }
-    for (const name of names) {
-      if (!/^\d+$/u.test(name)) continue;
-      const pid = Number(name);
-      try { readings.push({ pid, stat: await readFile(`/proc/${name}/stat`, 'utf8'), errorCode: null, error: null }); }
-      catch (error) { readings.push({ pid, stat: null, ...failure(error) }); }
-    }
-    return linuxProcessTreeDiscovery(root, readings);
-  }
-  async function sample(discovery: ReturnType<typeof linuxProcessTreeDiscovery>): Promise<Omit<ProcessTreeSample, 'at'>> {
-    const readings: ReturnType<typeof linuxProcessMemoryReading>[] = [];
-    for (const id of discovery.expectedPids) {
-      try { readings.push(linuxProcessMemoryReading(id, await readFile(`/proc/${String(id)}/status`, 'utf8'), null)); }
-      catch (error) { readings.push(linuxProcessMemoryReading(id, null, failure(error).error)); }
-    }
-    return { ...processTreeMemoryTotals({ expectedPids: discovery.expectedPids, readings, discoveryError: discovery.discoveryError }), discovery };
-  }
   return (async () => {
-    let discovery = await tree(), count = 0;
+    let rootCreated: string | null = null;
     while (!isStopped()) {
-      if (count > 0 && count % 20 === 0) discovery = await tree();
-      onSample(await sample(discovery)); count += 1;
+      const sample = await readLinuxSaveMemory(root, rootCreated);
+      rootCreated ??= sample.linux?.rootCreated ?? null;
+      onSample(sample);
       await new Promise(resolve => { setTimeout(resolve, SAMPLE_INTERVAL_MS); });
     }
     return 0;
@@ -303,7 +300,7 @@ async function startProcessTreeSampler(info: TestInfo): Promise<ProcessTreeSampl
     method = 'Windows: NtQuerySystemInformation のプロセス一覧で worker の子孫の木を作り(2秒ごと)、Get-Process の WorkingSet64・PrivateMemorySize64 を100msごとに合計';
   } else if (process.platform === 'linux') {
     finished = startLinuxSampler(process.pid, () => stopped, onSample);
-    method = 'Linux: /proc の stat で worker の子孫の木を作り(2秒ごと)、status の VmRSS・RssAnon を100msごとに合計';
+    method = 'Linux: /proc の stat で毎回 worker の子孫と同じ世代を確認し、status の VmRSS・RssAnon を100ms間隔で採取';
   } else throw new Error(`この環境の処理の使用メモリーは測れません: ${process.platform}`);
   const waitForSamples = async (after: number, count: number): Promise<void> => {
     await expect.poll(() => samples.filter(sample => sample.at > after && sample.processes > 0).length,

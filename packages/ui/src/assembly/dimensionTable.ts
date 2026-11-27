@@ -72,11 +72,14 @@ const DIMENSION_LABELS: ReadonlyMap<string, { readonly label: MessageKey; readon
   ['innerRadius', L('catalog.dimension.innerRadius')], ['tipRadius', L('catalog.dimension.tipRadius')],
   ['cornerRadius', L('catalog.dimension.cornerRadius')], ['largeRadius', L('catalog.dimension.largeRadius')],
   ['centerHole', L('catalog.dimension.centerHole')],
+  ['capLockBoltDiameter', L('catalog.dimension.capLockBoltDiameter')], ['capLockBoltLength', L('catalog.dimension.capLockBoltLength')],
   ['bossDiameter', L('catalog.dimension.bossDiameter')], ['bossHeight', L('catalog.dimension.bossHeight')],
+  ['footBaseBossBelowPlate', L('catalog.dimension.bossBelowPlate')], ['footBaseBossAbovePlate', L('catalog.dimension.bossAbovePlate')],
   ['bossCenterX', L('catalog.dimension.bossCenterX')], ['bossCenterY', L('catalog.dimension.bossCenterY')],
   ['adjusterThreadDiameter', L('catalog.dimension.adjusterThreadDiameter')],
   ['mountingThreadDiameter', L('catalog.dimension.mountingThreadDiameter')],
   ['mountingThreadFromEnd', L('catalog.dimension.mountingThreadFromEnd')],
+  ['mountingThreadFromSide', L('catalog.dimension.mountingThreadFromSide')],
   ['slotPitch', L('catalog.dimension.slotPitch')], ['slotOpening', L('catalog.dimension.slotOpening')],
   ['slotInnerWidth', L('catalog.dimension.slotInnerWidth')], ['slotDepth', L('catalog.dimension.slotDepth')],
   ['slotWidth', L('catalog.dimension.slotWidth')], ['holeDiameter', L('catalog.dimension.holeDiameter')],
@@ -175,14 +178,16 @@ function steelDims(dimensions: NonNullable<SteelProduct['dimensions']>): Readonl
     ['wallThickness', dimensions.wallThickness ?? null]]);
 }
 
-/** 今の 8 分類と鋼材の窓の寸法の図と表。線図は置く時と同じ保存の形から作る(長さは分類の既定。断面は長さで変わらない)。 */
+/** 今の 8 分類と鋼材の窓の寸法の図と表。ねじ部品の線図は今の長さで作る。鋼材は断面を見るので分類の既定の長さを使う。 */
 export function standardFigurePart(category: StandardPartCategory, choice: StandardPartChoice,
-  dimensionSeries: FastenerDimensionSeries, threadSeries: ThreadSeries): DimensionFigurePart {
+  dimensionSeries: FastenerDimensionSeries, threadSeries: ThreadSeries,
+  lengthSource = defaultLengthSource(category)): DimensionFigurePart {
+  const length = choice.requiresLength && category !== 'structuralSection' ? lengthSource : defaultLengthSource(category);
   const steel = choice.steelProduct;
   return {
-    key: `standard:${category}:${choice.key}:${dimensionSeries}:${threadSeries}`,
+    key: `standard:${category}:${choice.key}:${dimensionSeries}:${threadSeries}:${length}`,
     build: () => {
-      const committed = commitStandardPartChoice(category, choice.key, defaultLengthSource(category), dimensionSeries, threadSeries);
+      const committed = commitStandardPartChoice(category, choice.key, length, dimensionSeries, threadSeries);
       return committed.ok ? buildStandardPartFromSource(committed.value.source) : null;
     },
     rows: dimensionRows(steel === undefined ? legacyDims(choice) : steelDims(steel.dimensions ?? {})),

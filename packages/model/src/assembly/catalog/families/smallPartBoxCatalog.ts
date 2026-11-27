@@ -14,7 +14,7 @@
  */
 import { rectangleLongPartFamily } from '../longPartFamily.js';
 import type { CatalogFamily } from '../types.js';
-import { boxFamily } from './panelPartCatalog.js';
+import { boxFamily, type PanelPartRecord } from './panelPartCatalog.js';
 import {
   BRACKET_PART_BOX_RECORDS, CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, DRAWER_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS,
 } from './smallPartBoxRows.js';
@@ -34,12 +34,26 @@ export const CAP_ACCESSORY_BOX_FAMILY: CatalogFamily = boxFamily('cap-accessory-
 export const FOOT_PART_BOX_FAMILY: CatalogFamily = boxFamily('foot-part-box', 'catalog.frame.kind.footPartBox', 'footPartBox',
   FOOT_PART_BOX_RECORDS, EVIDENCE_TITLE);
 
+/** 樹脂パネルに平たい蝶番を留める板ナットのねじ位置。軸は幅の中央に並ぶ。 */
+const FLAT_HINGE_PLATE_THREADS = new Map<string, NonNullable<PanelPartRecord['mountingThread']>>([
+  ['flat-hinge-plate-nut-15x3x40-sus', { diameter: 5, centerSpacing: 25, fromEnd: 7.5, fromSide: 7.5 }],
+  ['flat-hinge-plate-nut-15x3x45-sus', { diameter: 5, centerSpacing: 30, fromEnd: 7.5, fromSide: 7.5 }],
+  ['flat-hinge-plate-nut-15x3x63-sus', { diameter: 6, centerSpacing: 43, fromEnd: 10, fromSide: 7.5 }],
+]);
+
+function doorPartWithMountingThread(record: PanelPartRecord): PanelPartRecord {
+  const mountingThread = record.key === 'flat-hinge-plate-nut-15x5x55-al' && record.mountingThread !== undefined
+    ? { ...record.mountingThread, fromSide: 7.5 }
+    : FLAT_HINGE_PLATE_THREADS.get(record.key);
+  return mountingThread === undefined ? record : { ...record, mountingThread };
+}
+
 /**
  * 扉の部品(取手・内に付ける取手・磁石のキャッチ・樹脂のキャッチ・ボールのキャッチのブラケット。統括の決定 2026-11-20 02:2x の判断 3)と、
  * 用途が資料の品名から読める板とブラケット(磁石のキャッチの板・樹脂のキャッチの板・磁気の近接センサのブラケットと板。統括の決定 2026-11-20 07:1x)。
  */
 export const DOOR_PART_BOX_FAMILY: CatalogFamily = boxFamily('door-part-box', 'catalog.frame.kind.doorPartBox', 'doorPartBox',
-  DOOR_PART_BOX_RECORDS, EVIDENCE_TITLE);
+  DOOR_PART_BOX_RECORDS.map(doorPartWithMountingThread), EVIDENCE_TITLE);
 
 /** 引出の部品(決まった長さのスライドレール。箱の奥行は縮めた時の長さで、伸び縮みは作らない。統括の決定 2026-11-20 07:1x)。 */
 export const DRAWER_PART_BOX_FAMILY: CatalogFamily = boxFamily('drawer-part-box', 'catalog.frame.kind.drawerPartBox', 'drawerPartBox',

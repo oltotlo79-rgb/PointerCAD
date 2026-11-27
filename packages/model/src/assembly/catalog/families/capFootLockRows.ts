@@ -7,5 +7,5 @@ import type { PanelPartRecord } from './panelPartCatalog.js';
 
 export const CAP_FOOT_LOCK_RECORDS: readonly PanelPartRecord[] = [
   { key: 'caster-lock-105x118x97.5-fe', size: 'キャスターの止め 105×118×97.5（外形を包む形・鉄・足を上げた時の高さ 82.5）', page: 98, kind: 'キャスターの止め', material: 'steel',
-    width: 105, depth: 118, height: 97.5, massG: 586, simplified: ['外形を包む形で、細部は作っていない'] },
+    width: 105, depth: 118, height: 97.5, heightMin: 82.5, massG: 586, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

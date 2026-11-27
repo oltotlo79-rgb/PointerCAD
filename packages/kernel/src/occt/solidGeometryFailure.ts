@@ -2,6 +2,11 @@
 export type SolidGeometryFailureCode =
   | 'geometry-open-solid' | 'geometry-union-count' | 'geometry-nothing-left'
   | 'geometry-profile-no-removal' | 'geometry-profile-no-inside' | 'geometry-profile-no-outside'
+  | 'geometry-pattern-missing-input' | 'geometry-pattern-upstream-failed' | 'geometry-pattern-mesh-input'
+  | 'geometry-spring-coil' | 'geometry-spring-wire' | 'geometry-spring-wire-size'
+  | 'geometry-spring-pitch' | 'geometry-spring-turns' | 'geometry-spring-pitch-size'
+  | 'geometry-spring-axis' | 'geometry-spring-build' | 'geometry-spring-not-solid'
+  | 'geometry-spring-internal' | 'geometry-spring-interrupted'
   | 'geometry-pattern-detached' | 'geometry-transform-not-finite' | 'geometry-transform-axis'
   | 'geometry-plane-not-finite' | 'geometry-mirror-normal' | 'geometry-scale-factor' | 'geometry-scale-choice'
   | 'geometry-placement-not-finite' | 'geometry-placement-rotation' | 'geometry-internal'

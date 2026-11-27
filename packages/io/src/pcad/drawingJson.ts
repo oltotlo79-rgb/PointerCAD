@@ -1,3 +1,4 @@
+import { pcadWriteErrorFromDiagnostic } from './writeDiagnostic.js';
 import { parseFailure as failure } from './codedFailure.js';
 /** 図面文書と `.pcadd` の `document.json` の相互変換。 */
 
@@ -321,7 +322,9 @@ export function serializeDrawing(
   if (document.schemaVersion < 24 && document.tables.some((table) => table.kind === 'parameter')) {
     throw new RangeError('係数の表を保存するには保存形式の版24が必要です。');
   }
-  if (!hasOnlyFiniteJsonNumbers(document)) throw new Error('図面に有限でない数値が含まれるため保存できません。');
+  if (!hasOnlyFiniteJsonNumbers(document)) {
+    throw pcadWriteErrorFromDiagnostic({ code: 'drawingNonFinite' }, '図面に有限でない数値が含まれるため保存できません。');
+  }
   const envelope: PcadDrawingEnvelope = {
     schema: document.schemaVersion,
     kind: options.kind ?? PCAD_DRAWING_KIND,

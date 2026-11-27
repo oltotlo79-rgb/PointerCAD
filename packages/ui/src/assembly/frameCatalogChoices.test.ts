@@ -2,10 +2,11 @@
  * 資料 1 のフレームの族(溝幅ごとの 3 族・形材の 5 族)と部品の 4 族の、選ぶ画面の行の文字と説明の 1 行。
  * 寸法の線図はまだ描かない(後の包み)ので、足した線図の種類 flatBar・roundBar は図なしの扱い(行の文字は呼び、説明は長さの欄の 1 行)になる事を確かめる。
  */
-import { PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
+import { buildStandardPartFromSource, createCatalogItemSource, PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
+import { familyFigurePart } from './dimensionTable.js';
 import { catalogFamilyEntries, catalogRowLabel, familyHintKey, familyKindKey, messageKeyOr } from './catalogFamilyChoices.js';
 
 const T_SLOT = ['t-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10'];
@@ -96,12 +97,23 @@ describe('資料 1 の部品の族(ナットの素材・ナット・丸ナット
     }
   });
 
-  it('端のキャップの行の印は、取付けの脚と穴を必ず持ち、角の丸みの記入が無い行は角の形も持つ', async () => {
+  it('checks the exact cap simplifications and the documented N4040 lock bolt only', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-cap']);
-    const rows = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-frame-cap')?.rows ?? [];
-    for (const row of rows) {
-      expect(row.simplified, row.key).toEqual((row.dims.cornerRadius ?? 0) > 0 ? ['取付けの脚と穴'] : ['取付けの脚と穴', '角の形']);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-frame-cap');
+    if (family === undefined) throw new Error('t-slot-frame-cap is not loaded');
+    const boltDimensions: (readonly [string, number | undefined, number | undefined])[] = [];
+    for (const row of family.rows) {
+      // SF201-1 PDF 148 gives 4-R2 for 50x50. PDF 244 gives the N4040 lock bolt M5x16.
+      const expected = ['取付けの脚と穴'];
+      if (row.key !== 's8-50x50') expected.push('角の形');
+      if (row.key === 's10-40x40-lock') expected.push('付属のロックボルト');
+      expect(row.simplified, row.key).toEqual(expected);
+      const { capLockBoltDiameter, capLockBoltLength } = row.dims;
+      if (capLockBoltDiameter !== undefined || capLockBoltLength !== undefined) {
+        boltDimensions.push([row.key, capLockBoltDiameter, capLockBoltLength]);
+      }
     }
+    expect(boltDimensions).toEqual([['s10-40x40-lock', 5, 16]]);
   });
 });
 
@@ -387,6 +399,43 @@ describe('資料 1 のブロック形のブラケットの族の選ぶ画面の�
     for (const row of family.rows) {
       const marks = row.simplified ?? [];
       expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
+    }
+  });
+});
+
+describe('アジャスター取付板の寸法表', () => {
+  it('従来の行を保存復元でき、均一径の５行だけに穴径を mm で出す', async () => {
+    const id = 't-slot-foot-base';
+    await PRODUCT_CATALOG_REGISTRY.ensure([id]);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+    if (family === undefined) throw new Error('アジャスターベースの族がない');
+    const cases = [
+      ['adjuster-166x125x9-h8-d7-steel', '166×125×9（取付け穴 8・φ7・鋼）', 8, 7],
+      ['adjuster-150x150x12-h10-d9-steel', '150×150×12（取付け穴 10・φ9・鋼）', 10, 9],
+      ['adjuster-150x150x12-h10-d9-stainless', '150×150×12（取付け穴 10・φ9・ステンレス）', 10, 9],
+      ['adjuster-165x165x12-h10-d9-steel', '165×165×12（取付け穴 10・φ9・鋼）', 10, 9],
+      ['adjuster-165x165x12-h10-d9-stainless', '165×165×12（取付け穴 10・φ9・ステンレス）', 10, 9],
+      ['adjuster-166x125x9-h5-d14-9-steel', '166×125×9（取付け穴 5・φ14・φ9・鋼）', 5, undefined],
+      ['adjuster-166x125x9-h5-d14-9-stainless', '166×125×9（取付け穴 5・φ14・φ9・ステンレス）', 5, undefined],
+    ] as const;
+    for (const [key, size, count, diameter] of cases) {
+      const row = family.rows.find((candidate) => candidate.key === key);
+      if (row === undefined) throw new Error(`アジャスター取付板の行がない: ${key}`);
+      const saved = {
+        kind: 'standardPart', catalog: 'catalogItem',
+        size: `アジャスターベース（キャスターも付けられる板） ${size}`,
+        options: { family: id, item: key },
+        catalogRevision: 't-slot-foot-base-2026-11-r1', generatorRevision: 'frame-part-1',
+      } as const;
+      expect(createCatalogItemSource(family, row), key).toEqual(saved);
+      const figure = familyFigurePart(family, row, {});
+      const restored = buildStandardPartFromSource(saved);
+      expect(restored?.name, key).toBe(saved.size);
+      expect(figure.build(), key).toEqual(restored);
+      expect(figure.rows.find((dimension) => dimension.key === 'holeCount'), key)
+        .toEqual({ key: 'holeCount', label: 'catalog.dimension.holeCount', value: count, unit: '' });
+      expect(figure.rows.find((dimension) => dimension.key === 'holeDiameter'), key)
+        .toEqual(diameter === undefined ? undefined : { key: 'holeDiameter', label: 'catalog.dimension.holeDiameter', value: diameter, unit: 'mm' });
     }
   });
 });

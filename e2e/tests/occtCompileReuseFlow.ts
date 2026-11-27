@@ -416,7 +416,19 @@ function readStartupEnvironment(page: Page) {
     const phases = ['paint', 'mark'].flatMap(type => window.performance.getEntriesByType(type))
       .filter(event => event.entryType === 'paint' || event.name.startsWith('pcad:startup:'))
       .map(event => ({ name: event.name, ms: event.startTime }));
-    return { online: window.navigator.onLine, timing: { timeOrigin: window.performance.timeOrigin, navigation, phases } };
+    // Read the existing renderer buffer once. Early app:// requests can precede
+    // Playwright's Electron page listener, and no extra requests are needed here.
+    const resources = window.performance.getEntriesByType('resource')
+      .filter((resource): resource is PerformanceResourceTiming => resource instanceof window.PerformanceResourceTiming)
+      .map(resource => ({
+        url: resource.name, initiatorType: resource.initiatorType, startTime: resource.startTime,
+        workerStart: resource.workerStart, responseStart: resource.responseStart, responseEnd: resource.responseEnd,
+        transferSize: resource.transferSize, encodedBodySize: resource.encodedBodySize,
+        decodedBodySize: resource.decodedBodySize,
+      }));
+    const resourceTiming = { capturedAtMs: window.performance.now(), resources };
+    return { online: window.navigator.onLine,
+      timing: { timeOrigin: window.performance.timeOrigin, navigation, phases, resourceTiming } };
   });
 }
 
@@ -460,6 +472,7 @@ async function measure(page: Page, context: BrowserContext, info: TestInfo, mode
   const token = await beginRecompute(page);
   await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
   await waitForRecompute(page, token);
+  const firstRecomputeReadyAtEpochMs = Date.now();
   await compareInSecondWorker(page, info, mode, app);
   await Promise.all(observation.pending);
   await sampler.stop();
@@ -500,7 +513,8 @@ async function measure(page: Page, context: BrowserContext, info: TestInfo, mode
     expect(caches.entries.some(entry => entry.sha256 === measured.sha256)).toBe(true);
   }
   await info.attach(`${mode}-occt-observation`, { body: JSON.stringify({ startedAtEpochMs: started, measuredThroughAtEpochMs,
-    preparation: { ...preparation, baselineReadyAtEpochMs, operationStartedAtEpochMs,
+    preparation: { ...preparation, baselineReadyAtEpochMs, operationStartedAtEpochMs, firstRecomputeReadyAtEpochMs,
+      operationThroughFirstRecomputeMs: firstRecomputeReadyAtEpochMs - operationStartedAtEpochMs,
       uiPreparationMs: preparation.uiReadyAtEpochMs - preparation.launchStartedAtEpochMs,
       baselineMs: baselineReadyAtEpochMs - started, operationThroughMeasurementStopMs: measuredThroughAtEpochMs - operationStartedAtEpochMs },
     measured, observation, resources, twoWorkerResources, frames: sampler.frames, caches,

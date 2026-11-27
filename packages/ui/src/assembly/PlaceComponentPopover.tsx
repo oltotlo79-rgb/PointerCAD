@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
@@ -85,7 +86,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
               />
               <span className="pcad-field__unit">{t('assembly.place.unit')}</span>
               <span className="pcad-field__message">
-                {error?.message ?? (value === null ? '' : `= ${value.display}`)}
+                {error === null ? (value === null ? '' : `= ${value.display}`) : expressionErrorMessage(error)}
               </span>
             </label>
           );

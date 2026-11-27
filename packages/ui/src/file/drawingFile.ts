@@ -149,7 +149,7 @@ export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<
         }
       }, name);
     } catch (error) {
-      reportDocumentSaveFailure(error, isCurrent);
+      reportDocumentSaveFailure(error, isCurrent, 'drawing');
     }
   });
 }

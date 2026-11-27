@@ -40,10 +40,21 @@ type ExpressionHint =
   | { readonly key: 'explicitMultiplication'; readonly numberText: string; readonly name: string }
   | { readonly key: 'supportedFunctions'; readonly names: readonly string[] };
 
+interface PositionText {
+  readonly key: 'expression.error.position';
+  readonly parameters: { readonly position: string };
+}
+
+interface ExpressionDiagnostic {
+  readonly key: `expression.error.${Exclude<ExpressionErrorCode, 'outOfRange'>}` | 'assembly.error.internal';
+  readonly parameters: Readonly<Record<string, string | PositionText>>;
+}
+
 export interface ExpressionError {
   readonly code: ExpressionErrorCode;
   /** 利用者へそのまま見せる理由。 */
   readonly message: string;
+  readonly diagnostic?: ExpressionDiagnostic;
   /** 式の何文字目か(0 始まり)。定まらないときは -1。 */
   readonly position: number;
   readonly suggestions?: readonly string[];
@@ -65,54 +76,85 @@ export function describePosition(position: number): string {
  * エラーを1つ作る。detail は文言へ差し込む語(文字・名前など)。要らない code では空文字を渡す。
  * wrongArgumentCount だけは語が2つ要るので wrongArgumentCountError を使う。
  */
+function attachExpressionDiagnostic(error: ExpressionError, diagnostic: ExpressionDiagnostic): ExpressionError {
+  // 公開エラーの列挙・コピー・保存は従来の欄だけ。翻訳は診断を直接読む。
+  Object.defineProperty(error, 'diagnostic', { value: diagnostic });
+  return error;
+}
+
+/** 解析・評価中に、同じ失敗へ補助情報を追加して診断を保つ。 */
+export function withExpressionErrorDetails(
+  error: ExpressionError,
+  details: Pick<ExpressionError, 'hint' | 'suggestions'>,
+): ExpressionError {
+  const enriched = { ...error, ...details };
+  return error.diagnostic === undefined ? enriched : attachExpressionDiagnostic(enriched, error.diagnostic);
+}
+
+function diagnosedExpressionError(
+  code: Exclude<ExpressionErrorCode, 'outOfRange'>,
+  message: string,
+  position: number,
+  parameters: ExpressionDiagnostic['parameters'] = {},
+): ExpressionError {
+  return attachExpressionDiagnostic({ code, message, position }, { key: `expression.error.${code}`, parameters });
+}
+
+export function internalExpressionError(cause: unknown, report?: (cause: unknown) => void): ExpressionError {
+  try {
+    report?.(cause);
+  } catch {
+    // A diagnostics sink must not turn the calculation failure into an exception.
+  }
+  return attachExpressionDiagnostic({ ...expressionError('notFinite', '') },
+    { key: 'assembly.error.internal', parameters: {} });
+}
+
 export function expressionError(
   code: ExpressionErrorCode,
   detail: string,
   position = -1,
 ): ExpressionError {
   const where = describePosition(position);
+  const location: string | PositionText = position < 0 ? '' : {
+    key: 'expression.error.position', parameters: { position: String(position + 1) },
+  };
   switch (code) {
     case 'empty':
-      return { code, message: '式が空です。', position };
+      return diagnosedExpressionError(code, '式が空です。', position);
     case 'tooLong':
-      return {
-        code,
-        message: `式が長すぎます(${String(EXPRESSION_MAX_LENGTH)} 文字まで)。`,
-        position,
-      };
+      return diagnosedExpressionError(code, `式が長すぎます(${String(EXPRESSION_MAX_LENGTH)} 文字まで)。`,
+        position, { limit: String(EXPRESSION_MAX_LENGTH) });
     case 'unexpectedCharacter':
-      return { code, message: `使えない文字があります: 「${detail}」${where}`, position };
+      return diagnosedExpressionError(code, `使えない文字があります: 「${detail}」${where}`, position, { detail, location });
     case 'unexpectedToken':
-      return { code, message: `ここには数値か ( が必要です: 「${detail}」${where}`, position };
+      return diagnosedExpressionError(code, `ここには数値か ( が必要です: 「${detail}」${where}`, position, { detail, location });
     case 'unexpectedEnd':
-      return { code, message: '式が途中で終わっています。', position };
+      return diagnosedExpressionError(code, '式が途中で終わっています。', position);
     case 'unclosedParenthesis':
-      return { code, message: '閉じ括弧 ) が足りません。', position };
+      return diagnosedExpressionError(code, '閉じ括弧 ) が足りません。', position);
     case 'unexpectedTrailing':
-      return { code, message: `式の後ろに余分なものがあります: 「${detail}」${where}`, position };
+      return diagnosedExpressionError(code, `式の後ろに余分なものがあります: 「${detail}」${where}`, position, { detail, location });
     case 'unknownFunction':
-      return { code, message: `知らない関数です: 「${detail}」${where}`, position };
+      return diagnosedExpressionError(code, `知らない関数です: 「${detail}」${where}`, position, { detail, location });
     case 'wrongArgumentCount':
       // 文言は wrongArgumentCountError が組み立てて detail へ渡す。
       return { code, message: detail, position };
     case 'unknownVariable':
-      return { code, message: `決まっていない名前です: 「${detail}」${where}`, position };
+      return diagnosedExpressionError(code, `決まっていない名前です: 「${detail}」${where}`, position, { detail, location });
     case 'divisionByZero':
-      return { code, message: '0 で割ることはできません。', position };
+      return diagnosedExpressionError(code, '0 で割ることはできません。', position);
     case 'negativeRoot':
-      return { code, message: `負の数の平方根は求められません: ${detail}`, position };
+      return diagnosedExpressionError(code, `負の数の平方根は求められません: ${detail}`, position, { detail });
     case 'rootDegreeZero':
-      return { code, message: '乗根の n に 0 は指定できません。', position };
+      return diagnosedExpressionError(code, '乗根の n に 0 は指定できません。', position);
     case 'exponentTooLarge':
-      return {
-        code,
-        message: `累乗の指数が大きすぎます(±${String(EXPRESSION_MAX_EXPONENT)} まで)。`,
-        position,
-      };
+      return diagnosedExpressionError(code, `累乗の指数が大きすぎます(±${String(EXPRESSION_MAX_EXPONENT)} まで)。`,
+        position, { limit: String(EXPRESSION_MAX_EXPONENT) });
     case 'notFinite':
-      return { code, message: '計算結果が数として表せません。', position };
+      return diagnosedExpressionError(code, '計算結果が数として表せません。', position);
     case 'unitMismatch':
-      return { code, message: `単位をそろえてください。${where}`, position };
+      return diagnosedExpressionError(code, `単位をそろえてください。${where}`, position, { location });
     case 'outOfRange':
       // 文言は呼び出し側(packages/ui)が組み立てて detail へ渡す(wrongArgumentCount と同じ形)。
       return { code, message: detail, position };
@@ -126,7 +168,8 @@ export function wrongArgumentCountError(
   position: number,
 ): ExpressionError {
   const message = `関数 ${name} には引数が ${String(expected)} 個必要です(${String(actual)} 個でした)。`;
-  return expressionError('wrongArgumentCount', message, position);
+  return diagnosedExpressionError('wrongArgumentCount', message, position,
+    { name, expected: String(expected), actual: String(actual) });
 }
 
 /**

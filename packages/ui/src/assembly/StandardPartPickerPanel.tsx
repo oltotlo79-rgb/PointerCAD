@@ -37,19 +37,9 @@ import {
   findStandardPartChoice, STANDARD_PART_CATEGORIES, standardPartChoices,
   standardPartUsesDimensionSeries, standardPartUsesThreadSeries, structuralPartChoices,
   STRUCTURAL_MATERIAL_CHOICES, type StructuralMaterialChoice, type StandardPartCategory,
-  steelPartDimensionGroups, steelPartChoiceAtDimension, steelShapeLabelKey,
+  STEEL_CONDITION_LABELS, steelPartDimensionGroups, steelPartChoiceAtDimension, steelShapeLabelKey,
 } from './standardPartPicker.js';
 
-const STEEL_CONDITION_LABELS = {
-  'hotRolled-heatTreatmentUnspecified': 'assembly.steel.hotRolled',
-  'brightBar-heatTreatmentUnspecified': 'assembly.steel.brightBar',
-  'blackPipe-plainEnds': 'assembly.steel.blackPipe',
-  'whitePipe-zincCoated': 'assembly.steel.whitePipe',
-  'rectTube-asManufactured': 'assembly.steel.rectTubeAsManufactured',
-  'structuralPipe-plainEnds': 'assembly.steel.structuralPipePlainEnds',
-  'lightGauge-coldFormed': 'assembly.steel.lightGaugeColdFormed',
-  'stainlessPipe-solutionTreated-plainEnds': 'assembly.steel.stainlessPipeSolutionTreated',
-} as const;
 type EditableMessage = Exclude<EditableSteelPlacementOutcome, 'placing' | 'invalidLength' | 'unknownChoice'>;
 const EDITABLE_MESSAGES: Readonly<Record<EditableMessage, Parameters<typeof t>[0]>> = {
   busy: 'assembly.steel.editable.busy', cancelled: 'assembly.steel.editable.cancelled',
@@ -416,6 +406,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const jumpTo = (target: PickerJumpTarget): void => {
     cancelPickerPlacementPoint();
     const next = pickerJumpState(target, { category, choiceKey, lengthSource, dimensionSeries });
+    if (target.kind === 'standard' && target.threadSeries !== undefined) setThreadSeries(target.threadSeries);
     setCategory(next.category); setChoiceKey(next.choiceKey); setLengthSource(next.lengthSource); setDimensionSeries(next.dimensionSeries);
     if (next.steel !== null) { setSteelMaterial(next.steel.material); if (next.steel.shape !== null) setSteelShape(next.steel.shape); }
     setJump({ count: jump.count + 1, family: next.family }); setError(null);
@@ -438,6 +429,8 @@ export function StandardPartPicker(): React.JSX.Element | null {
   if (choice === undefined) return null;
   const dimensionGroups = isSteel ? steelPartDimensionGroups(choices) : null;
   const dimensionGroup = dimensionGroups?.groups.find((group) => group.choices.some((item) => item.key === choice.key));
+  const repeatedSizes = new Set(choices.filter((item, index) =>
+    choices.findIndex((other) => other.size === item.size) !== index).map((item) => item.size));
   const sizeField = <label className="pcad-field">
     <span className="pcad-field__label">{t('assembly.standardPart.size')}</span>
     <select title={t('assembly.guide.standardSize')} className="pcad-field__input" value={choice.key}
@@ -448,7 +441,9 @@ export function StandardPartPicker(): React.JSX.Element | null {
       }}>
       {choices.map((item) => (
         <option key={item.key} value={item.key}>
-          {item.size}{item.verified ? '' : ` ${t('assembly.standardPart.unverifiedShort')}`}
+          {item.size}
+          {item.steelProduct !== undefined && repeatedSizes.has(item.size) ? ` / ${t(STEEL_CONDITION_LABELS[item.steelProduct.condition])}` : ''}
+          {item.verified ? '' : ` ${t('assembly.standardPart.unverifiedShort')}`}
         </option>
       ))}
     </select>
@@ -487,7 +482,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
     if (useAppStore.getState().placeStandardPart(
       category, choice.key, lengthSource, dimensionSeries, threadSeries,
       { accessory: pickedAccessory(standardAccessoryOptionsFor(category, choice.key, lengthSource, dimensionSeries, threadSeries)) },
-    )) { setError(null); rememberPlacedPart(standardPlacedTarget(category, choice.key, dimensionSeries, { material: steelMaterial, shape: activeShape ?? null }, lengthSource)); }
+    )) { setError(null); rememberPlacedPart(standardPlacedTarget(category, choice.key, dimensionSeries, { material: steelMaterial, shape: activeShape ?? null }, lengthSource, threadSeries)); }
   };
 
   return (
@@ -504,7 +499,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         dimensionGroups, dimensionGroup, sizeField, steel, bendEnabled, setBendEnabled, setBendPlacementError,
         editable, setEditable, setEditableMessage, bending, bendSources, setBendSources, bend, lengthSource, setLengthSource, error,
       })}
-      <DimensionFigure part={standardFigurePart(category, choice, dimensionSeries, threadSeries)} />
+      <DimensionFigure part={standardFigurePart(category, choice, dimensionSeries, threadSeries, lengthSource)} />
       <StandardAccessoryFields choice={{ category, key: choice.key, lengthSource, dimensionSeries, threadSeries }} />
       {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">{t('assembly.steel.unspecifiedHint')}</p> : null}
       {steel === undefined ? null : steelChoiceNotes(steel)}

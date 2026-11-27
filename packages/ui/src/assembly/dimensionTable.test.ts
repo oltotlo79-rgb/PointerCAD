@@ -53,6 +53,52 @@ describe('族の行の表', () => {
     expect(part.build()).not.toBeNull();
   });
 
+  it('ボス付きの板は実形状の上下の突出量と公称の材質・質量を示す', () => {
+    const family = loaded('t-slot-foot-base');
+    const row = family.rows.find((candidate) => candidate.key === 'base-75x75x10-boss25-aluminum');
+    if (row === undefined) throw new Error('ボス付きのベースの板が無い');
+    const part = familyFigurePart(family, row, {});
+    expect(part.rows.filter((item) => item.key.startsWith('footBaseBoss')).map((item) => [t(item.label), item.value, item.unit]))
+      .toEqual([['板の下面からのボスの出', 5, 'mm'], ['板の上面からのボスの出', 5, 'mm']]);
+    expect(family.nominalVolume(row, {})).toBeCloseTo(75 * 75 * 10 + Math.PI * 12.5 ** 2 * (5 + 5), 9);
+    expect([row.materialLabel, row.densityMaterialId, family.nominalMassG?.(row, {})]).toEqual(['アルミダイカスト', 'aluminum', 120]);
+  });
+
+  it('40角の付属ロックボルトをキャップの板や穴と区別して表示する', () => {
+    const family = loaded('t-slot-frame-cap');
+    const lock = family.rows.find((row) => row.key === 's10-40x40-lock');
+    const standard = family.rows.find((row) => row.key === 's10-40x40-4.7g');
+    if (lock === undefined || standard === undefined) throw new Error('40角のキャップが無い');
+    expect(lock.size).toBe('端のキャップ 溝幅 10 40×40（ロック式）');
+    const lockPart = familyFigurePart(family, lock, {});
+    expect(lockPart.rows.filter((item) => item.key === 'thickness' || item.key.startsWith('capLockBolt'))
+      .map((item) => [t(item.label), item.value, item.unit])).toEqual([
+      [t('catalog.dimension.thickness'), 3, 'mm'], ['付属のロックボルトの呼び径', 5, 'mm'], ['付属のロックボルトの長さ', 16, 'mm'],
+    ]);
+    const standardPart = familyFigurePart(family, standard, {});
+    expect(standard.size).toBe('端のキャップ 溝幅 10 40×40（質量 4.7 g）');
+    expect(standardPart.rows.some((item) => item.key.startsWith('capLockBolt'))).toBe(false);
+    expect(lockPart.rows.some((item) => item.key === 'holeDiameter')).toBe(false);
+  });
+
+  it.each([
+    ['flat-hinge-plate-nut-15x3x40-sus', 5, 25, 7.5],
+    ['flat-hinge-plate-nut-15x3x45-sus', 5, 30, 7.5],
+    ['flat-hinge-plate-nut-15x5x55-al', 6, 37, 9],
+    ['flat-hinge-plate-nut-15x3x63-sus', 6, 43, 10],
+  ] as const)('平たい蝶番の板ナットの取付け寸法を表示する (%s)', (key, diameter, pitch, fromEnd) => {
+    const family = loaded('door-part-box');
+    const row = family.rows.find((candidate) => candidate.key === key);
+    if (row === undefined) throw new Error('蝶番の板ナットが無い');
+    const part = familyFigurePart(family, row, {});
+    const fields = ['mountingThreadDiameter', 'holePitch', 'mountingThreadFromEnd', 'mountingThreadFromSide'];
+    expect(part.rows.filter((item) => fields.includes(item.key)).map((item) => [item.key, item.value, item.unit]))
+      .toEqual([['mountingThreadDiameter', diameter, 'mm'], ['holePitch', pitch, 'mm'],
+        ['mountingThreadFromEnd', fromEnd, 'mm'], ['mountingThreadFromSide', 7.5, 'mm']]);
+    expect(part.rows.some((item) => item.key === 'holeDiameter')).toBe(false);
+    expect(part.build()).not.toBeNull();
+  });
+
   it('板皿の寸法は台座の幅・奥行き、穴数、左下基準の軸中心、厚さを見出しと単位つきで出す', () => {
     const family = loaded('t-slot-adjuster');
     const dims = { padWidth: 80, padDepth: 64, holeCount: 4, shaftCenterX: 28, shaftCenterY: 39, padThickness: 6, threadLength: 30 };

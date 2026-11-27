@@ -4,8 +4,9 @@ import type { Node } from './ast.js';
 import {
   EXPRESSION_MAX_EXPONENT,
   expressionError,
+  internalExpressionError,
   ExpressionFailure,
-  wrongArgumentCountError,
+  withExpressionErrorDetails, wrongArgumentCountError,
 } from './errors.js';
 import { lengthUnitFactor } from './lengthUnits.js';
 import { parse } from './parse.js';
@@ -100,6 +101,8 @@ export interface EvaluateNodeOptions {
 
 /** exact な変数を使って式を評価する公開入口の選択肢。 */
 export interface ExactEvaluateOptions extends EvaluateNodeOptions {
+  /** Host-owned reporting for unexpected failures. */
+  readonly reportInternalError?: (cause: unknown) => void;
   /** 後方互換の倍精度変数表。exactVariables に同じ名前があればそちらを優先する。 */
   readonly variables?: ReadonlyMap<string, number>;
 }
@@ -213,7 +216,7 @@ function evaluateVariable(name: string, position: number, context: EvaluateConte
     const error = expressionError('unknownVariable', name, position);
     const names = new Set([...context.variables.keys(), ...context.exactVariables.keys()]);
     const suggestions = suggestNames(name, names);
-    throw new ExpressionFailure(suggestions.length === 0 ? error : { ...error, suggestions });
+    throw new ExpressionFailure(suggestions.length === 0 ? error : withExpressionErrorDetails(error, { suggestions }));
   }
   if (context.scale === null || context.nonLengthVariables.has(name)) {
     return value;
@@ -289,11 +292,10 @@ function evaluateUnit(node: UnitNode, context: EvaluateContext): UnitAwareValue 
 function unknownFunctionFailure(node: CallNode): ExpressionFailure {
   const names = [...FUNCTION_ARITY.keys()];
   const suggestions = suggestNames(node.name, names);
-  return new ExpressionFailure({
-    ...expressionError('unknownFunction', node.name, node.position),
+  return new ExpressionFailure(withExpressionErrorDetails(expressionError('unknownFunction', node.name, node.position), {
     ...(suggestions.length === 0 ? {} : { suggestions }),
     hint: { key: 'supportedFunctions', names },
-  });
+  }));
 }
 
 function evaluateCall(node: CallNode, context: EvaluateContext): Decimal {
@@ -414,6 +416,6 @@ export function evaluateExpressionExact(
     if (error instanceof ExpressionFailure) {
       return { ok: false, error: error.detail };
     }
-    return { ok: false, error: expressionError('notFinite', '') };
+    return { ok: false, error: internalExpressionError(error, options.reportInternalError) };
   }
 }

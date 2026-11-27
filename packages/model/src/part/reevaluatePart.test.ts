@@ -5,7 +5,6 @@ import { readFunctionPointChoice, type FunctionPointReference } from '../functio
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
-import { plainTextValue } from '../failureText.js';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { Parameter } from '../parameters/types.js';
@@ -561,7 +560,10 @@ describe('reevaluatePartDocument', () => {
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].ownerId).toBe('extrude-1');
     expect(result.failures[0].source).toBe('未知 + 1');
-    expect(plainTextValue(result.failures[0].text) ?? '').not.toBe('');
+    expect(result.failures[0].text).toEqual({
+      key: 'expression.error.unknownVariable',
+      parameters: { detail: '未知', location: { key: 'expression.error.position', parameters: { position: '1' } } },
+    });
   });
 
   it('ゼロ除算も値を据え置き、例外を投げない', () => {

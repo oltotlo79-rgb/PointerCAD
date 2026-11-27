@@ -39,6 +39,7 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { SpringStepSpec, Vec3Tuple } from '../types.js';
+import type { SolidGeometryFailureCode } from './solidGeometryFailure.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { helixStartFrame, makeHelixWire, type HelixSpec } from './makeHelix.js';
@@ -70,28 +71,44 @@ const SWEEP_FAILED_MESSAGE = 'ばねの形を作れませんでした。コイ�
 const NOT_SOLID_MESSAGE = 'ばねがソリッドになりませんでした。線径を小さくするか、ピッチを大きくしてください。';
 
 
+type SpringInputCode = Exclude<Extract<SolidGeometryFailureCode, `geometry-spring-${string}`>,
+  'geometry-spring-internal' | 'geometry-spring-interrupted'>;
+
+const springInputCodes = new WeakMap<Error, SpringInputCode>();
+
+function springError(code: SpringInputCode, message: string): Error {
+  const error = new Error(message);
+  springInputCodes.set(error, code);
+  return error;
+}
+
+/** The direct maker still throws an ordinary Error. The Worker reads its reason by identity. */
+export function springInputCode(error: Error): SpringInputCode | undefined {
+  return springInputCodes.get(error);
+}
+
 /** 値を確かめる。断るときは日本語の Error。 */
 function checkSpringSpec(spec: SpringStepSpec): void {
   if (!Number.isFinite(spec.coilDiameter) || spec.coilDiameter <= 0) {
-    throw new Error(COIL_DIAMETER_MESSAGE);
+    throw springError('geometry-spring-coil', COIL_DIAMETER_MESSAGE);
   }
   if (!Number.isFinite(spec.wireDiameter) || spec.wireDiameter <= 0) {
-    throw new Error(WIRE_DIAMETER_MESSAGE);
+    throw springError('geometry-spring-wire', WIRE_DIAMETER_MESSAGE);
   }
   if (spec.wireDiameter >= spec.coilDiameter) {
-    throw new Error(WIRE_TOO_LARGE_MESSAGE);
+    throw springError('geometry-spring-wire-size', WIRE_TOO_LARGE_MESSAGE);
   }
   if (!Number.isFinite(spec.pitch) || spec.pitch <= 0) {
-    throw new Error(PITCH_MESSAGE);
+    throw springError('geometry-spring-pitch', PITCH_MESSAGE);
   }
   if (!Number.isFinite(spec.turns) || spec.turns <= 0 || spec.turns > MAX_TURNS) {
-    throw new Error(TURNS_MESSAGE);
+    throw springError('geometry-spring-turns', TURNS_MESSAGE);
   }
   if (spec.pitch <= spec.wireDiameter) {
-    throw new Error(PITCH_TOO_SMALL_MESSAGE);
+    throw springError('geometry-spring-pitch-size', PITCH_TOO_SMALL_MESSAGE);
   }
   if (toUnit(spec.direction) === null) {
-    throw new Error(AXIS_MESSAGE);
+    throw springError('geometry-spring-axis', AXIS_MESSAGE);
   }
 }
 
@@ -127,12 +144,12 @@ export function makeSpringProfile(
   const circle = keep(new oc.gp_Circ_2(axes, wireDiameter / 2));
   const edgeMaker = keep(new oc.BRepBuilderAPI_MakeEdge_8(circle));
   if (!edgeMaker.IsDone()) {
-    throw new Error(SWEEP_FAILED_MESSAGE);
+    throw springError('geometry-spring-build', SWEEP_FAILED_MESSAGE);
   }
   const edge = keep(edgeMaker.Edge());
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_2(edge));
   if (!wireMaker.IsDone()) {
-    throw new Error(SWEEP_FAILED_MESSAGE);
+    throw springError('geometry-spring-build', SWEEP_FAILED_MESSAGE);
   }
   return keep(wireMaker.Wire());
 }
@@ -168,13 +185,13 @@ export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctS
     // 接線に垂直な向きへ置いている)。
     pipe.Add_1(profile, false, false);
     if (!pipe.IsReady()) {
-      throw new Error(SWEEP_FAILED_MESSAGE);
+      throw springError('geometry-spring-build', SWEEP_FAILED_MESSAGE);
     }
     pipe.Build(keep(new oc.Message_ProgressRange_1()));
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
     // (makeThread.ts と同じ扱い)。
     if (!pipe.IsDone()) {
-      throw new Error(SWEEP_FAILED_MESSAGE);
+      throw springError('geometry-spring-build', SWEEP_FAILED_MESSAGE);
     }
 
     let shape: TopoDS_Shape;
@@ -185,22 +202,22 @@ export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctS
       const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
       const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
       if (!solidMaker.IsDone()) {
-        throw new Error(SWEEP_FAILED_MESSAGE);
+        throw springError('geometry-spring-build', SWEEP_FAILED_MESSAGE);
       }
       shape = keep(solidMaker.Shape());
     }
 
     if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw springError('geometry-spring-not-solid', NOT_SOLID_MESSAGE);
     }
     if (!isValidShape(oc, shape)) {
-      throw new Error(NOT_SOLID_MESSAGE);
+      throw springError('geometry-spring-not-solid', NOT_SOLID_MESSAGE);
     }
 
     return { shape, delete: release };
   } catch (error) {
     release();
     // OCCT の C++ 例外は数値で飛んでくる(makeFillet.ts / makeThread.ts と同じ)。
-    throw error instanceof Error ? error : new Error(SWEEP_FAILED_MESSAGE);
+    throw error instanceof Error ? error : new Error(SWEEP_FAILED_MESSAGE, { cause: error });
   }
 }

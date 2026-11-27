@@ -47,9 +47,16 @@ export interface PanelPartRecord extends Pick<CatalogItemRow, 'listed' | 'listed
   readonly materialText?: string;
   readonly width: number;
   readonly depth: number;
+  /** 足の位置を変えたときの最小高さ。外形を包む最大高さは height に持つ。 */
+  readonly heightMin?: number;
   readonly height: number;
   /** 図面に記載された取付けねじの呼び径と軸位置。箱の生成には使わない。 */
-  readonly mountingThread?: { readonly diameter: number; readonly centerSpacing: number; readonly fromEnd: number };
+  readonly mountingThread?: {
+    readonly diameter: number;
+    readonly centerSpacing: number;
+    readonly fromEnd: number;
+    readonly fromSide?: number;
+  };
   /** 資料の 1 個の質量(g)。記入の無い行は null(質量を出さない)。 */
   readonly massG: number | null;
   /**
@@ -88,8 +95,11 @@ function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
   return {
     key: record.key, size: record.size, standardLabel: '製造元の寸法に合わせた物', materialLabel: label, ...density,
     dims: { width: record.width, depth: record.depth, height: record.height,
+      ...(record.heightMin === undefined ? {} : { heightMin: record.heightMin }),
       ...(mountingThread === undefined ? {} : { mountingThreadDiameter: mountingThread.diameter, holePitch: mountingThread.centerSpacing,
-        mountingThreadFromEnd: mountingThread.fromEnd }), ...(record.massG === null ? {} : { massG: record.massG }) },
+        mountingThreadFromEnd: mountingThread.fromEnd,
+        ...(mountingThread.fromSide === undefined ? {} : { mountingThreadFromSide: mountingThread.fromSide }) }),
+      ...(record.massG === null ? {} : { massG: record.massG }) },
     evidence: evidence(record.page, '部品の図(全体の寸法)と質量の記入', title), verification: 'manufacturer-catalog', verified: true,
     note: `形は簡略(${record.simplified.join('・')})。${mass}`, simplified: record.simplified,
     ...(listed === false ? { listed } : {}), ...(listedAs === undefined ? {} : { listedAs }), ...(formerSizes === undefined ? {} : { formerSizes }),

@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { sourceFileHash } from './desktopFileInventory.mjs';
+import { dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'node:path';
+import { sourceFileHash, sourceText } from './desktopFileInventory.mjs';
+import { W21_DESKTOP_ENTRIES, W21_DESKTOP_FORMAT } from '../lib/w21DesktopBuild.mjs';
+import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
+import { checkDelegatedFreshBuild, FRESH_BUILD_SOURCE_ROLES, readFreshBuildConfig } from './freshBuildEvidence.mjs';
 
+const CONFIG = 'e2e/playwright.config.ts';
+const W21_BROWSER_SPEC = 'occt-compile-reuse-solid.spec.ts';
+const W21_ELECTRON_SPEC = 'electron-occt-compile-reuse.spec.ts';
+const W21_ELECTRON_SOURCE = `e2e/tests/${W21_ELECTRON_SPEC}`;
 const HOSTS = ['functional', 'firefox', 'electron'];
 const SCENARIOS = ['input', 'ADD-23', 'ADD-17', 'hemisphere'];
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -262,6 +269,53 @@ function body(row, name) {
   return JSON.parse(Buffer.from(attachments[0].body, 'base64').toString('utf8'));
 }
 
+export function checkDesktopBuildObservation(value, binding, rows) {
+  const { ready, observed } = value ?? {};
+  requireValue(ready && observed, 'W21 desktop build timing evidence missing');
+  const { checkedAt: readyAt, ...built } = ready;
+  const { checkedAt: observedAt, ...measured } = observed;
+  const readyTime = Date.parse(readyAt), observedTime = Date.parse(observedAt);
+  requireValue(ready.format === W21_DESKTOP_FORMAT && ready.runId === binding.runId
+    && ready.manifestSha256 === binding.manifestSha256 && ready.report === binding.report
+    && equalRaw(built, measured) && Date.parse(binding.startedAt) <= readyTime
+    && value.reportSha256 === binding.reportSha256
+    && rows.every(({ result }) => {
+      const started = Date.parse(result.startTime);
+      return readyTime <= started && Number.isFinite(result.duration) && result.duration >= 0
+        && started + result.duration <= observedTime;
+    }),
+  'W21 desktop build is stale, modified, or bound to a different run, source or report');
+  requireValue(ready.outputs && !Array.isArray(ready.outputs)
+    && W21_DESKTOP_ENTRIES.every(path => Object.hasOwn(ready.outputs, path))
+    && Object.entries(ready.outputs).every(([path, sha256]) => {
+      offlineAssetUrl(path);
+      return /^(?:main|preload|renderer)\//u.test(path) && typeof sha256 === 'string' && /^[a-f0-9]{64}$/u.test(sha256);
+    })
+    && Number.isSafeInteger(ready.electron?.bytes) && ready.electron.bytes > 0
+    && typeof ready.electron.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(ready.electron.sha256),
+  'W21 actual main, preload, renderer or Electron executable fingerprint missing');
+}
+
+const measuredPath = checkout => win32.isAbsolute(checkout) && !posix.isAbsolute(checkout) ? win32 : posix;
+const measuredRecordPath = (checkout, record) => record.checkoutRelativePath === undefined
+  ? record.path : measuredPath(checkout).resolve(checkout, record.checkoutRelativePath);
+
+function checkW21Command(command, spec, project, checkout, reportPath) {
+  const { argv, environment } = command;
+  requireValue(command.kind === 'e2e' && command.checkout === checkout && typeof command.cwd === 'string' && measuredPath(checkout).resolve(command.cwd) === measuredPath(checkout).resolve(checkout)
+    && Array.isArray(argv) && Array.isArray(argv[0])
+    && same(argv[0].filter(value => typeof value === 'string' && value.endsWith('.spec.ts'))
+      .map(path => path.replaceAll('\\', '/').replace(/^e2e\/tests\//u, '')), [spec])
+    && command.dedicated?.measurement === 'w21' && command.dedicated.project === project
+    && environment?.PCAD_DEDICATED_MEASUREMENT === 'w21' && environment.PLAYWRIGHT_JSON_OUTPUT_FILE === reportPath,
+  'W21 exclusive Playwright command, dedicated environment or report binding differs');
+  requireValue(project === 'electron'
+    ? environment.PCAD_OCCT_TRANSPORT_TRACE === '1' && environment.PCAD_W21_WEB_ROOT === null
+    : typeof environment.PCAD_W21_WEB_ROOT === 'string' && /^dist\/[^/]+$/u.test(environment.PCAD_W21_WEB_ROOT),
+  'W21 command does not use the actual distribution or native transport');
+  return argv[0];
+}
+
 /** Descriptor is a caller's path/digest index, never a successful acceptance receipt. */
 export async function loadDedicatedPerformanceEvidence(root, path, expectedSha256, sourceInputs) {
   const readInside = async name => {
@@ -276,7 +330,8 @@ export async function loadDedicatedPerformanceEvidence(root, path, expectedSha25
   for (const [id, ref] of Object.entries(index.records)) {
     const value = await readInside(ref.path);
     requireValue(digest(value) === ref.sha256, `Raw digest mismatch: ${id}`);
-    records[id] = { ...ref, path: resolve(root, ref.path), bytes: value };
+    const file = resolve(root, ref.path);
+    records[id] = { ...ref, path: file, checkoutRelativePath: relative(root, file).split(sep).join('/'), bytes: value };
   }
   const manifest = JSON.parse(records[index.manifest].bytes.toString('utf8')), currentInputs = {};
   requireValue(manifest.schema_version === 1 && Array.isArray(manifest.files), 'Expected actual QA input manifest');
@@ -287,7 +342,18 @@ export async function loadDedicatedPerformanceEvidence(root, path, expectedSha25
     // checkout and inputs stored in Git with CRLF are compared on equal terms; differing content still differs.
     currentInputs[path] = sourceFileHash(await readInside(path));
   }
-  return { ...index, records, currentInputs };
+  const directory = dirname(resolve(root, path));
+  const recordByPath = new Map(Object.entries(records).map(([id, ref]) => [ref.path, id]));
+  const currentBuildSources = {};
+  for (const source of [CONFIG, W21_ELECTRON_SOURCE, ...Object.values(FRESH_BUILD_SOURCE_ROLES)]) {
+    if (!manifest.files.some(row => row.path === source)) continue;
+    const snap = recordByPath.get(resolve(directory, 'sources', source));
+    const local = sourceText((await readInside(source)).toString('utf8'));
+    // Older indexes and the owned runner's trial index may lack these copies.
+    // The unchanged checkout can supply bytes only through the same signed manifest.
+    currentBuildSources[source] = { snap, local, sha256: digest(local) };
+  }
+  return { ...index, records, currentInputs, currentBuildSources };
 }
 
 export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) {
@@ -315,14 +381,29 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
     };
     const sourceRecord = (id, path) => {
       const ref = evidence.records[id];
+      const rows = manifest.files.filter(row => row.path === path);
       requireValue(ref?.bytes && digest(ref.bytes) === ref.sha256
-        && manifest.files.some(row => row.path === path && row.copy_sha256 === ref.sha256), `Unbound executed test source: ${path}`);
+        && rows.length === 1 && rows[0].copy_sha256 === ref.sha256, `Unbound executed test source: ${path}`);
       return Buffer.from(ref.bytes).toString('utf8');
     };
-    const freshBuild = cell => {
-      const config = sourceRecord(cell.config, 'e2e/playwright.config.ts');
-      requireValue(config.includes('pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview')
-        && /reuseExistingServer:\s*false/u.test(config), 'Canonical fresh build/preview chain missing');
+    const buildSource = path => {
+      const current = evidence.currentBuildSources?.[path];
+      const rows = manifest.files.filter(row => row.path === path);
+      requireValue(typeof current?.local === 'string' && rows.length === 1 && rows[0].copy_sha256 === current.sha256
+        && digest(current.local) === current.sha256, `Current executed build source differs: ${path}`);
+      if (current.snap) requireValue(sourceRecord(current.snap, path) === current.local, `Executed build source copy differs: ${path}`);
+      return current.local;
+    };
+    const freshBuild = (config, argv, project) => {
+      if (config.mode === 'legacy') return;
+      return checkDelegatedFreshBuild(role => buildSource(FRESH_BUILD_SOURCE_ROLES[role]), config, argv, project, manifest.checkout);
+    };
+    const buildConfig = id => {
+      const text = sourceRecord(id, CONFIG), config = readFreshBuildConfig(text);
+      if (config.mode === 'delegated' || evidence.currentBuildSources) {
+        requireValue(buildSource(CONFIG) === text, 'Executed Playwright config differs from current inputs');
+      }
+      return config;
     };
     if (kind === 'w21-dedicated') {
       const cells = evidence.w21 ?? [];
@@ -330,26 +411,62 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
       // The original twenty-percent condition is judged after every other W21 qualification, so that a ratio-only
       // shortfall can be reported with all six measured medians (an explicit release exception may only cover that).
       const seen = new Set(), ratios = [];
+      let webBuildSha256, webDistribution;
       for (const cell of cells) {
-        terminal(cell);
+        const command = terminal(cell);
         const rows = readDedicatedPlaywrightTests(get(cell.report));
         requireValue(rows.length === 10 && HOSTS.includes(cell.project) && !seen.has(cell.project), 'W21 incomplete/duplicate host');
         seen.add(cell.project);
         const sharedFlow = sourceRecord(cell.flow, 'e2e/tests/occtCompileReuseFlow.ts');
         requireValue(sharedFlow.includes('await compareInSecondWorker(page, info, mode, app)')
           && sharedFlow.includes('.toBeCloseTo(expected, 6)'), 'W21 original real geometry assertion source missing');
+        const configId = cell.config ?? evidence.currentBuildSources?.[CONFIG]?.snap
+          ?? cells.find(item => item.project === 'electron')?.config;
+        const config = buildConfig(configId);
+        const reportPath = measuredRecordPath(manifest.checkout, evidence.records[cell.report]);
+        let needsDesktopBuild = false;
+        if (config.mode === 'delegated') {
+          const spec = cell.project === 'electron' ? W21_ELECTRON_SPEC : W21_BROWSER_SPEC;
+          const argv = checkW21Command(command, spec, cell.project, manifest.checkout, reportPath);
+          needsDesktopBuild = freshBuild(config, argv, cell.project);
+          const expectedSteps = needsDesktopBuild ? ['playwright', 'desktop-build-after'] : ['playwright'];
+          const { steps } = get(cell.result);
+          requireValue(same(command.stepNames, expectedSteps) && command.argv.length === expectedSteps.length
+            && Array.isArray(steps) && same(steps.map(step => step.name), expectedSteps) && steps.every(step => step.exitCode === 0),
+          'W21 exclusive Playwright or desktop build verification step did not finish successfully');
+          if (needsDesktopBuild) {
+            requireValue(Array.isArray(command.argv[1]), 'W21 post-run build check arguments are missing');
+            const [node, script, ...extra] = command.argv[1], path = measuredPath(manifest.checkout);
+            requireValue(node === argv[0] && typeof script === 'string'
+              && path.resolve(script) === path.resolve(manifest.checkout, FRESH_BUILD_SOURCE_ROLES.desktopBuild) && extra.length === 0,
+            'W21 post-run build check did not use the ordinary collector from the measured checkout');
+          }
+        }
         let build;
         if (cell.project === 'electron') {
           const launch = get(cell.launch), after = get(cell.inputsAfter);
-          freshBuild(cell);
+          if (config.mode === 'delegated') {
+            requireValue(same(launch.argv, command.argv[0]) && equalRaw(launch.environment, command.environment)
+              && /^[a-f0-9]{64}$/u.test(launch.runnerSha256) && launch.runnerSha256 === command.runnerSha256,
+            'W21 actual Electron launch differs from the exclusive Playwright command');
+          }
           requireValue(launch.cwd === manifest.checkout && launch.manifestSha256 === manifestRef.sha256
             && launch.argv.includes('test:e2e') && launch.argv.includes('electron-occt-compile-reuse.spec.ts')
-            && launch.argv.includes('--project=electron') && launch.playwrightJson === evidence.records[cell.report].path
+            && launch.argv.includes('--project=electron') && launch.playwrightJson === reportPath
             && after.allManifestInputsUnchanged === true && after.manifestSha256 === manifestRef.sha256
             && after.commandExitCode === 0 && after.playwrightExitCode === 0
             && after.playwrightJson === launch.playwrightJson
             && after.playwrightJsonSha256 === evidence.records[cell.report].sha256,
           'W21 actual Electron launch/current build/report binding failed');
+          if (needsDesktopBuild) {
+            const { PCAD_W21_RUN_ID: runId, PCAD_W21_MANIFEST_SHA256: manifestSha256 } = command.environment;
+            requireValue(typeof runId === 'string' && /^[a-zA-Z0-9_-]+$/u.test(runId) && launch.runId === runId
+              && manifestSha256 === manifestRef.sha256, 'W21 desktop receipt run or manifest differs from the launch');
+            const spec = sourceRecord(cell.spec, W21_ELECTRON_SOURCE);
+            requireValue(spec === buildSource(W21_ELECTRON_SOURCE), 'Executed W21 Electron spec differs from current inputs');
+            checkDesktopBuildObservation(after.desktopBuild, { runId, manifestSha256, report: launch.playwrightJson,
+              reportSha256: after.playwrightJsonSha256, startedAt: command.w21StartedAt }, rows);
+          }
           const helper = sourceRecord(cell.electronHelper, 'e2e/tests/electronAppFlow.ts');
           const flow = sourceRecord(cell.flow, 'e2e/tests/occtCompileReuseFlow.ts');
           sourceRecord(cell.spec, 'e2e/tests/electron-occt-compile-reuse.spec.ts');
@@ -359,7 +476,16 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
         } else {
           sourceRecord(cell.spec, 'e2e/tests/occt-compile-reuse-solid.spec.ts');
           build = get(cell.build);
+          const buildRef = evidence.records[cell.build];
           requireValue(build.format === 'pointercad-web-build/1' && same(build.inputs, sourceInputs.web), 'W21 executed Web build inputs differ');
+          requireValue(webBuildSha256 === undefined || webBuildSha256 === buildRef.sha256, 'W21 browsers did not observe the same Web distribution');
+          webBuildSha256 = buildRef.sha256;
+          if (config.mode === 'delegated') {
+            requireValue(typeof build.outputs?.['index.html'] === 'string' && /^[a-f0-9]{64}$/u.test(build.outputs['index.html']),
+              'W21 Web build does not contain the real entry output');
+            const served = measuredPath(manifest.checkout).resolve(manifest.checkout, command.environment.PCAD_W21_WEB_ROOT, 'web-build.json');
+            requireValue(served === measuredRecordPath(manifest.checkout, buildRef), 'W21 Web probe and exclusive command name different distributions');
+          }
         }
         for (const network of ['online', 'offline']) {
           const group = rows.filter(row => row.project === cell.project && row.titles.some(title => title === `W21 actual ${cell.project === 'electron' ? 'app:// ' : ''}OCCT ${network}`));
@@ -379,6 +505,14 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
               const distribution = body(row, 'actual-distribution-identity');
               requireValue(distribution.buildSha256 === evidence.records[cell.build].sha256
                 && Object.entries(build.outputs).every(([path, sha256]) => distribution.files.some(file => file.path === path && file.sha256 === sha256)), 'W21 served distribution differs from source-bound build');
+              if (config.mode === 'delegated') {
+                const { manifestSha256, buildId, files } = distribution;
+                const identity = { manifestSha256, buildId, files };
+                requireValue(/^[a-f0-9]{64}$/u.test(manifestSha256) && /^[a-f0-9]{64}$/u.test(buildId)
+                  && files.some(file => file.path === 'offline-assets.json' && file.sha256 === manifestSha256)
+                  && (!webDistribution || equalRaw(webDistribution, identity)), 'W21 browsers did not measure the same offline distribution bytes');
+                webDistribution = identity;
+              }
             }
             const measured = body(row, `${mode}-occt-observation`), window = body(row, `${mode}-two-worker-window`);
             const index = Number(/^cold\/warm pair ([1-5])\/5:/u.exec(row.title)?.[1]);
@@ -402,7 +536,7 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
         return { status: 'fail', summary: 'Dedicated raw evidence refused', problems: ['W21 original twenty-percent condition failed'],
           w21Ratios, ratioOnly: true };
       }
-      return { status: 'pass', summary: 'All thirty original W21 pairs match current inputs, actual distribution or canonical Electron build, and original median criterion', w21Ratios };
+      return { status: 'pass', summary: 'All thirty original W21 pairs match current inputs, the measured distributions, and the original median criterion', w21Ratios };
     }
     const pairs = evidence.w22 ?? [], seen = new Set();
     if (pairs.length !== 12) return { status: 'pending', summary: 'W22 requires all twelve normal/slow pairs' };
@@ -413,11 +547,11 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
       requireValue(HOSTS.includes(pair.project) && SCENARIOS.includes(pair.scenario) && !seen.has(key)
         && pair.manifestSha256 === manifestRef.sha256, 'W22 duplicate/foreign/incomplete cell');
       seen.add(key);
-      const samples = [];
+      const samples = [], config = buildConfig(cell.config);
       for (const condition of ['normal', 'slow']) {
         const refs = cell[condition], run = get(refs.run), launch = get(refs.launch), attachment = get(refs.attachment);
         const unchanged = get(refs.inputsAfter);
-        freshBuild(cell);
+        freshBuild(config, launch.argv, pair.project);
         requireValue(unchanged.allManifestInputsUnchanged === true && launch.cwd === manifest.checkout
           && launch.argv.includes('test:e2e') && launch.argv.includes(`--project=${pair.project}`)
           && launch.environment.VITE_PCAD_E2E === '1', 'Executed generation/owned launch binding incomplete');

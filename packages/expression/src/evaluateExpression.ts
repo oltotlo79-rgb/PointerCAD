@@ -1,4 +1,4 @@
-import { expressionError, ExpressionFailure, type ExpressionError } from './errors.js';
+import { expressionError, ExpressionFailure, internalExpressionError, type ExpressionError } from './errors.js';
 import { evaluateNode, ExpressionDecimal } from './evaluate.js';
 import { parse } from './parse.js';
 import type { StoredMathExpression } from './math/mathInputContract.js';
@@ -26,6 +26,8 @@ export type ExpressionResult =
   | { readonly ok: false; readonly error: ExpressionError };
 
 export interface EvaluateOptions {
+  /** Host-owned reporting for unexpected failures. */
+  readonly reportInternalError?: (cause: unknown) => void;
   /** 式間の十進精度を最終公開まで保つ。 */
   readonly exactVariables?: ReadonlyMap<string, string>;
   /** 変数表(FR-206)。P1 の UI は渡さない(= 空として扱う)。 */
@@ -78,7 +80,7 @@ export function evaluateExpression(
     }
     // 想定していない例外(decimal.js の内部エラー等)も外へ出さない。1文字打つごとに
     // 呼ばれる入力欄が例外で壊れるより、理由つきの失敗として赤で出すほうが安全(NFR-RE-1)。
-    return { ok: false, error: expressionError('notFinite', '') };
+    return { ok: false, error: internalExpressionError(error, options.reportInternalError) };
   }
 }
 

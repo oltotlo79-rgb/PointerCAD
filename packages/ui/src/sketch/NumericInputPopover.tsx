@@ -9,6 +9,7 @@ import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
@@ -615,7 +616,8 @@ export function NumericInputPopover({
         ? <PlanarHoleBasisInfo /> : picksHoleEdges(state) ? <EdgeDistanceHoleInfo key={`${state.toolId}:${state.step}`} /> : null}
       {evaluation.carriedError === undefined ? null : (
         <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
-          role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>
+          role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedErrorText === undefined ? evaluation.carriedError.message : failureMessage(evaluation.carriedErrorText)}
+        </p>
       )}
       {state.previousStage === undefined ? null : (
         <button title={t('controlGuide.button.numericPrevious')} type="button" className="pcad-button"

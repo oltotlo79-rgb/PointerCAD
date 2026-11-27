@@ -1,3 +1,4 @@
+import { drawingSaveInputFailure } from '../file/saveWriteFailure.js';
 import { createDocumentElementId } from '@pointercad/model/document-identity';
 import {
   emptyPcadAttachments, readDocumentBundle, readDrawingBundle, readPcadFile, type SaveDocumentInput,
@@ -65,6 +66,7 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
     save: (bytes: Uint8Array, kind: SavePointKind, signal: AbortSignal) => Promise<T>): Promise<T> {
     const operation = begin('create', signal);
     let stage = 'create-snapshot';
+    let encodingDrawing = false;
     try {
       const state = useAppStore.getState();
       const kind = activeDocument(state).kind;
@@ -86,6 +88,7 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
       }
       if (!operation.current()) cancelled();
       stage = 'create-encode';
+      encodingDrawing = kind === 'drawing';
       const bytes = await state.saveDocumentEncoder(snapshot, { signal: operation.signal });
       if (!operation.current()) cancelled();
       stage = 'create-repository';
@@ -94,7 +97,12 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
       return point;
     } catch (cause) {
       if (!operation.current() || (cause instanceof SavePointError && cause.reason !== 'unavailable')) throw cause;
-      throw withSavePointFailureDetail(stage, cause);
+      const failure = withSavePointFailureDetail(stage, cause);
+      if (encodingDrawing && stage === 'create-encode') {
+        if (drawingSaveInputFailure(cause) !== undefined) Object.defineProperty(failure, 'cause', { value: cause });
+        else if (import.meta.env.DEV) console.error('PointerCAD drawing save point', cause);
+      }
+      throw failure;
     } finally { operation.finish(); }
   }
   return {

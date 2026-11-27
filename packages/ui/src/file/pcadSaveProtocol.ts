@@ -1,5 +1,5 @@
 import type { SaveDocumentInput, SaveEncodingStage } from '@pointercad/io';
-import { IO_LIMITS, isPcadWriteDiagnostic, PcadWriteError, type PcadWriteDiagnostic, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
+import { IO_LIMITS, isPcadWriteDiagnostic, PcadWriteError, pcadWriteDiagnosticOf, type PcadWriteDiagnostic, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
   type ThreeMfDataErrorCode, type ThreeMfExportLimitError, type ThreeMfMeshInput } from '@pointercad/io';
 import { isNamedSavePoint, type CreatedSavePointListing, type NamedSavePoint, type SavePointErrorCode, type SavePointKind } from '../history/namedSavePoints.js';
 import { isSaveResultIssue, type SaveResultIssueReport } from './saveResultIssue.js';
@@ -23,9 +23,13 @@ export type PcadSaveReply =
 
 export function pcadSaveFailureReply(id: string, error: unknown): Extract<PcadSaveReply, { kind: 'failure' }> {
   const message = error instanceof Error ? error.message : String(error);
+  const diagnostic = pcadWriteDiagnosticOf(error);
+  const fallback: Extract<PcadSaveReply, { kind: 'failure' }> = diagnostic === undefined
+    ? { id, kind: 'failure', message }
+    : { id, kind: 'failure', message, diagnostic };
   return error instanceof PcadWriteError
     ? { id, kind: 'failure', message, diagnostic: error.diagnostic }
-    : { id, kind: 'failure', message };
+    : fallback;
 }
 
 /** 成功の中身は 1 つの並びか、空でない部分の並びのどちらか一方だけ。 */

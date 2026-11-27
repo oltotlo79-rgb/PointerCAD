@@ -1,5 +1,5 @@
 import type { Node } from './ast.js';
-import { expressionError, ExpressionFailure } from './errors.js';
+import { expressionError, ExpressionFailure, withExpressionErrorDetails } from './errors.js';
 import { toLengthUnit } from './lengthUnits.js';
 import { tokenize, type Token } from './tokenize.js';
 
@@ -19,14 +19,13 @@ function unexpectedTrailingFailure(
   const error = expressionError('unexpectedTrailing', trailing.text, trailing.position);
   if (previous?.type === 'number' && trailing.type === 'identifier') {
     // 字句の正規化では文字数が変わらないので、元の入力から切り出せる。
-    return new ExpressionFailure({
-      ...error,
+    return new ExpressionFailure(withExpressionErrorDetails(error, {
       hint: {
         key: 'explicitMultiplication',
         numberText: source.slice(previous.position, previous.position + previous.text.length),
         name: source.slice(trailing.position, trailing.position + trailing.text.length),
       },
-    });
+    }));
   }
   return new ExpressionFailure(error);
 }

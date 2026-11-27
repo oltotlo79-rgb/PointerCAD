@@ -7,7 +7,7 @@ import { absoluteCoordinate, createEmptySketchDocument, createPointFeature } fro
 import { createFeatureFolder, moveFeatureFolderMember } from '../history/featureFolders.js';
 import { setFeatureNote } from '../history/featureNotes.js';
 import type { PartDocument, PrimitiveFeature } from '../part/types.js';
-import { compareDocuments, DocumentComparisonLimit } from './compareDocuments.js';
+import { compareDocuments, DocumentComparisonDuplicateIdentifier, DocumentComparisonLimit } from './compareDocuments.js';
 
 const options = { relationship: 'versions' as const, beforeAttachmentsDigest: 'same', afterAttachmentsDigest: 'same' };
 const e = expressionValueFromNumber;
@@ -95,7 +95,7 @@ describe('二文書の定義は種類・所属と原式を保って比較する'
     expect(() => compareDocuments(part(), part(), { ...options, maxWork: Number.NaN })).toThrow(DocumentComparisonLimit);
   });
   it('同じ種類・所属のIDが重複している入力を黙って上書きしない', () => {
-    expect(() => compareDocuments(part(['same', 'same']), part(), options)).toThrow('識別子が重複');
+    expect(() => compareDocuments(part(['same', 'same']), part(), options)).toThrow(DocumentComparisonDuplicateIdentifier);
   });
   it('slot issuance alone is not an authored definition change, but a changed solid remains visible', () => {
     const before = part(), after = { ...before, patternSlotHighWater: { 'pattern-1': 7 } };

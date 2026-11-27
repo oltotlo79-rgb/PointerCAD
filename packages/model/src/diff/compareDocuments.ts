@@ -35,7 +35,15 @@ export interface DocumentDefinitionComparison {
   readonly geometryCompared: false;
 }
 export class DocumentComparisonLimit extends Error {
-  constructor() { super('比較できる文書の大きさを超えています。'); this.name = 'DocumentComparisonLimit'; }
+  readonly code = 'comparisonLimit';
+
+  constructor() { super('comparisonLimit'); this.name = 'DocumentComparisonLimit'; }
+}
+
+export class DocumentComparisonDuplicateIdentifier extends Error {
+  readonly code = 'document-comparison-duplicate-identifier';
+
+  constructor() { super('document-comparison-duplicate-identifier'); this.name = 'DocumentComparisonDuplicateIdentifier'; }
 }
 
 // 追加項目を無言で比較対象から落とさない。新しい保存欄は型検査で分類を要求する。
@@ -84,7 +92,7 @@ function entries(document: PartDocument, attachmentsDigest: string, tick: () => 
   for (const folder of document.featureFolders ?? []) add('folder', folder.id, folder.name, folder);
   for (const problem of document.unresolvedMathProblems ?? []) add('math-problem', problem.id, problem.name, problem);
   const keys = new Set(result.map(entry => entry.key));
-  if (keys.size !== result.length) throw new Error('比較対象の識別子が重複しています。');
+  if (keys.size !== result.length) throw new DocumentComparisonDuplicateIdentifier();
   return result;
 }
 

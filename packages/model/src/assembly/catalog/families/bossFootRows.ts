@@ -5,7 +5,7 @@
 import type { FootBaseRecord } from './framePartCatalog.js';
 
 export const BOSS_FOOT_RECORDS: readonly FootBaseRecord[] = [
-  { key: 'base-75x75x10-boss25-aluminum', size: 'ベースの板 75×75×10（ボス φ25・取付け穴は作っていない・アルミ）', slot: 0, material: 'aluminum', page: 75, kind: 'ベースの板',
-    width: 75, depth: 75, thickness: 10, holes: [], adjusterThreadDiameter: 12, bosses: [{ x: 43, y: 43, diameter: 25, bottom: -5, top: 15 }], massG: 120,
-    simplified: ['取付け穴は作っていない', 'アジャスターのめねじ'] },
+  { key: 'base-75x75x10-boss25-aluminum', size: 'ベースの板 75×75×10（ボス φ25・取付け穴は作っていない・アルミ）', slot: 0, material: 'aluminum', materialText: 'アルミダイカスト',
+    page: 75, kind: 'ベースの板', width: 75, depth: 75, thickness: 10, holes: [], adjusterThreadDiameter: 12,
+    bosses: [{ x: 43, y: 43, diameter: 25, bottom: -5, top: 15 }], massG: 120, simplified: ['取付け穴は作っていない', 'アジャスターのめねじ'] },
 ];

@@ -1,4 +1,5 @@
 import { MathInputProblem } from '@pointercad/expression/math/contracts';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 /** Only expected mathematical input failures become editable UI errors; programming faults still surface. */
 export function tryMathComposition<T>(calculate: () => T):
@@ -6,6 +7,6 @@ export function tryMathComposition<T>(calculate: () => T):
   try { return { ok: true, value: calculate() }; }
   catch (error) {
     if (!(error instanceof MathInputProblem)) throw error;
-    return { ok: false, message: error.message };
+    return { ok: false, message: error.diagnostic === undefined ? error.message : failureMessage(error.diagnostic) };
   }
 }

@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 /**
  * コマンドラインの欄が打った 1 行を、道具の切替・欄への流し込み・段の確定へつなぐ
@@ -21,6 +22,7 @@ import { isFreeWorkPlaneId, liveBodyIds, replaceSketch, type CoordinateInput } f
 
 import type { ToolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { executeToolbarCommand } from '../commands/toolbarCommandExecution.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { applyNumericTransition, commitSketchStep, drawingPlane } from '../sketch/commitToStore.js';
 import {
@@ -403,7 +405,9 @@ function commitStep(filled: NumericInputState): CommandLineSubmission {
   // 値そのものが読めない・範囲外(NFR-UX-5)。最初に間違っている欄の理由をそのまま返す。
   const evaluation = evaluateNumericInput(filled, variables, display);
   const first = evaluation.results[evaluation.firstErrorIndex];
-  return failed(first?.error?.message ?? t('commandLine.error.tooFewValues'));
+  if (first?.error != null) return failed(expressionErrorMessage(first.error));
+  return failed(evaluation.carriedErrorText === undefined ? t('commandLine.error.tooFewValues')
+    : failureMessage(evaluation.carriedErrorText));
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +424,7 @@ export function submitCommandLine(text: string): CommandLineSubmission {
   const outcome = parseCommandLine(text, commandLineContext());
   switch (outcome.kind) {
     case 'error':
-      return failed(outcome.message, outcome.suggestions);
+      return failed(outcome.expressionError === undefined ? outcome.message : expressionErrorMessage(outcome.expressionError), outcome.suggestions);
     case 'tool':
       return activateCommandTool(outcome.tool);
     case 'command':
@@ -476,8 +480,10 @@ function tableCommit(
   });
   if (transition.kind === 'committed') return transition.commit;
   if (transition.kind === 'blocked') {
-    const { firstErrorIndex, results } = transition.evaluation;
-    return results[firstErrorIndex]?.error?.message ?? t('commandLine.error.tooFewValues');
+    const { firstErrorIndex, results, carriedErrorText } = transition.evaluation;
+    const error = results[firstErrorIndex]?.error;
+    if (error != null) return expressionErrorMessage(error);
+    return carriedErrorText === undefined ? t('commandLine.error.tooFewValues') : failureMessage(carriedErrorText);
   }
   return t('commandLine.error.notCoordinateStep');
 }

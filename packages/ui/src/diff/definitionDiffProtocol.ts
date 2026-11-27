@@ -1,4 +1,5 @@
 import { isObject as record } from '../valueGuards.js';
+import type { ReadPcadFileError, ReadPcadFileErrorCode } from '@pointercad/io';
 import type { DocumentDefinitionComparison, DocumentDefinitionChange, DocumentRelationship, DefinitionDifference } from '@pointercad/model';
 
 export const DEFINITION_DIFF_MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -8,13 +9,41 @@ export type DefinitionDiffRequest = { readonly kind: 'inspect'; readonly bytes: 
   | { readonly kind: 'compare'; readonly before: Uint8Array; readonly after: Uint8Array; readonly relationship: DocumentRelationship;
     /** 省略は部品。保存点の比較が組立・図面を指す。 */
     readonly documentKind?: DefinitionDiffDocumentKind };
+const failureCodes = {
+  invalidRequest: true, fileLimit: true, partRequired: true,
+  duplicateIdentifier: true, comparisonLimit: true, internal: true,
+} as const;
+const readErrorCodes = {
+  notZip: true, archiveExpansionLimit: true, missingDocument: true, subAssemblyCycle: true,
+  subAssemblyDepth: true, invalidJson: true, notPcad: true, unsupportedKind: true,
+  unsupportedOldVersion: true, unsupportedNewVersion: true, versionMismatch: true,
+  missingField: true, invalidField: true,
+} satisfies Record<ReadPcadFileErrorCode, true>;
+const archiveDiagnostics = {
+  embeddedDocument: true, partAttachmentInvalid: true, partAttachmentMissing: true,
+  partAttachmentDigestMissing: true, partAttachmentDigestMismatch: true,
+} satisfies Record<NonNullable<ReadPcadFileError['diagnostic']>, true>;
+
+export type DefinitionDiffFailure = { readonly code: keyof typeof failureCodes }
+  | ({ readonly code: 'documentRead' } & Pick<ReadPcadFileError, 'diagnostic'> & { readonly reason: ReadPcadFileErrorCode });
+
+function isDefinitionDiffFailure(value: unknown): value is DefinitionDiffFailure {
+  if (!record(value) || !Object.hasOwn(value, 'code') || typeof value.code !== 'string') return false;
+  const fields = Object.keys(value);
+  if (value.code !== 'documentRead') return fields.length === 1 && Object.hasOwn(failureCodes, value.code);
+  if (!Object.hasOwn(value, 'reason') || typeof value.reason !== 'string' || !Object.hasOwn(readErrorCodes, value.reason)) return false;
+  if (fields.length === 2) return value.diagnostic === undefined;
+  return fields.length === 3 && Object.hasOwn(value, 'diagnostic')
+    && typeof value.diagnostic === 'string' && Object.hasOwn(archiveDiagnostics, value.diagnostic);
+}
+
 export type DefinitionDiffReply = { readonly kind: 'inspected'; readonly name: string }
   | { readonly kind: 'compared'; readonly result: DocumentDefinitionComparison }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { readonly kind: 'failed'; readonly failure: DefinitionDiffFailure };
 
-export function isDefinitionDiffRequest(value: unknown): value is DefinitionDiffRequest {
+export function isDefinitionDiffRequestShape(value: unknown): value is DefinitionDiffRequest {
   if (!record(value)) return false;
-  const bytes = (entry: unknown): boolean => entry instanceof Uint8Array && entry.byteLength <= DEFINITION_DIFF_MAX_FILE_BYTES;
+  const bytes = (entry: unknown): boolean => entry instanceof Uint8Array;
   return value.kind === 'inspect' ? bytes(value.bytes) : value.kind === 'compare' && bytes(value.before) && bytes(value.after)
     && (value.relationship === 'versions' || value.relationship === 'unrelated')
     && (value.documentKind === undefined || value.documentKind === 'part' || value.documentKind === 'assembly' || value.documentKind === 'drawing');
@@ -40,7 +69,7 @@ function change(value: unknown): value is DocumentDefinitionChange {
 export function isDefinitionDiffReply(value: unknown): value is DefinitionDiffReply {
   if (!record(value)) return false;
   if (value.kind === 'inspected') return text(value.name);
-  if (value.kind === 'failed') return typeof value.message === 'string' && value.message.length <= 4_096;
+  if (value.kind === 'failed') return !Object.hasOwn(value, 'message') && isDefinitionDiffFailure(value.failure);
   if (value.kind !== 'compared' || !record(value.result)) return false;
   const result = value.result;
   if (!(result.geometryCompared === false && (result.relationship === 'versions' || result.relationship === 'unrelated')

@@ -1,4 +1,4 @@
-import { admitThreeMf, checkThreeMfDeadline, concatZipParts, PcadWriteError, threeMfDeadline,
+import { admitThreeMf, checkThreeMfDeadline, concatZipParts, pcadWriteErrorFromDiagnostic, threeMfDeadline,
   ThreeMfDataError, ThreeMfExportLimitError,
   type SaveDocumentEncoder, type SaveDocumentInput, type SaveDocumentPartsEncoder, type SaveEncodingControl,
   type ThreeMfMeshInput } from '@pointercad/io';
@@ -28,7 +28,7 @@ function pcadWriteReplyError(reply: Extract<PcadSaveReply, { kind: 'failure' }>)
   const { diagnostic, message } = reply;
   if (diagnostic === undefined) return new PcadSaveWorkerError('rejected', message);
   return new PcadSaveWorkerError('rejected', message, diagnostic.code === 'internal',
-    { cause: new PcadWriteError(diagnostic, message) });
+    { cause: pcadWriteErrorFromDiagnostic(diagnostic, message) });
 }
 
 function browserWorker(): PcadSaveWorkerPort {

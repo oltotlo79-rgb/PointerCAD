@@ -1,3 +1,4 @@
+import { expressionErrorMessage } from '../sketch/expressionErrorText.js';
 import { useId } from 'react';
 import { magnitudeAtLeast, DENSITY_MATERIALS, formatMass, type AppearanceSpec } from '@pointercad/model';
 import { AppearanceMenu } from '../appearance/AppearanceMenu.js';
@@ -209,7 +210,7 @@ export function MassPropertiesSection({
               hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
             }
           >
-            {!evaluated.ok ? evaluated.error.message : density === null
+            {!evaluated.ok ? expressionErrorMessage(evaluated.error) : density === null
               ? t('propertyPanel.massDensityPositive') : `= ${evaluated.value.display}`}
           </p>
         </div>

@@ -99,6 +99,14 @@ describe('検索の並びと照合', () => {
   });
 });
 
+it('distinguishes steel conditions for the same nominal pipe size in search', () => {
+  const targets = search('SGP 15A').entries.filter(({ target }) => target.kind === 'steel'
+    && target.choiceKey.startsWith('steel:SGP:steelPipe:15A'));
+  expect(targets).toHaveLength(2);
+  expect(targets[0]?.detail).toContain(t('assembly.steel.blackPipe'));
+  expect(targets[1]?.detail).toContain(t('assembly.steel.whitePipe'));
+});
+
 describe('選び直した後の窓の値', () => {
   const current: Parameters<typeof pickerJumpState>[1] = { category: 'hexNut', choiceKey: 'hexNut:x', lengthSource: '45', dimensionSeries: 'annexJA' };
 
@@ -145,6 +153,8 @@ describe('最近使った物の 1 件(K-07b)', () => {
     const annex = m10Bolt('annexJA');
     if (annex === undefined) throw new Error('M10 の六角ボルトの行がありません。');
     const target = standardPlacedTarget('hexBolt', annex.key, 'annexJA', { material: 'SS400', shape: null }, '45');
+    expect(standardPlacedTarget('hexBolt', annex.key, 'annexJA', { material: 'SS400', shape: null }, '45', 'fine'))
+      .toMatchObject({ kind: 'standard', choiceKey: annex.key, lengthSource: '45', threadSeries: 'fine' });
     const part = recentPartOf(target);
     const row = search('六角ボルト M10').entries[0];
     expect(part).toEqual({ key: row?.key, label: row?.label, detail: row?.detail, target });

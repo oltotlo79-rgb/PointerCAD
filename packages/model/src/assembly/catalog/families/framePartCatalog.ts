@@ -214,7 +214,7 @@ export interface FootBaseRecord {
   readonly size: string;
   readonly slot: number;
   readonly material: 'steel' | 'stainless' | 'aluminum' | 'mixed';
-  /** 部位ごとに材料の違う行('mixed')だけ: 資料の材質の文字。 */
+  /** 資料の材質の表記。単一材料の場合は材質の密度を維持する。 */
   readonly materialText?: string;
   readonly page: number;
   readonly kind: string;
@@ -418,14 +418,23 @@ function capDimensions(row: CatalogItemRow): FrameCapDimensions | null {
     armWidth: record.armWidth ?? NaN, cornerRadius: record.cornerRadius, ...(record.largeRadius === undefined ? {} : { largeRadius: record.largeRadius }) };
 }
 
+function frameCapRow(record: FrameCapRecord): CatalogItemRow {
+  const lock = record.key === 's10-40x40-lock';
+  const details = lock ? { ...record, simplified: [...record.simplified, '付属のロックボルト'] } : record;
+  return {
+    ...baseRow(details, { slot: record.slot, width: record.width, height: record.height,
+      thickness: record.thickness, ...(record.armWidth === null ? {} : { armWidth: record.armWidth }),
+      ...(record.largeRadius === undefined ? { cornerRadius: record.cornerRadius } : { largeRadius: record.largeRadius }),
+      ...(lock ? { capLockBoltDiameter: 5, capLockBoltLength: 16 } : {}), massG: record.massG }, '資料の 1 個の値'),
+    ...(record.fitsFrameKeys === undefined ? {} : { fitsFrameKeys: record.fitsFrameKeys }),
+  };
+}
+
 export const FRAME_CAP_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-frame-cap', 'catalog.frame.kind.cap', 'frameCap'),
   options: [],
   stock: 'count',
-  rows: CAP_RECORDS.map((record) => ({ ...baseRow(record, { slot: record.slot, width: record.width, height: record.height,
-    thickness: record.thickness, ...(record.armWidth === null ? {} : { armWidth: record.armWidth }),
-    ...(record.largeRadius === undefined ? { cornerRadius: record.cornerRadius } : { largeRadius: record.largeRadius }), massG: record.massG }, '資料の 1 個の値'),
-    ...(record.fitsFrameKeys === undefined ? {} : { fitsFrameKeys: record.fitsFrameKeys }) })),
+  rows: CAP_RECORDS.map(frameCapRow),
   build: (row) => {
     const dims = capDimensions(row);
     const part = dims === null ? null : buildFrameCapPart(dims);
@@ -618,8 +627,15 @@ function baseDimensions(row: CatalogItemRow): FootBaseDimensions | null {
 function footBaseDrillingDimensions(record: FootBaseRecord): Readonly<Record<string, number>> {
   const { holes, bosses, adjusterThreadDiameter } = record;
   const boss = bosses?.length === 1 ? bosses[0] : undefined;
-  if (boss === undefined) return { holeCount: holes.length };
-  return { bossDiameter: boss.diameter, bossHeight: boss.top - boss.bottom, bossCenterX: boss.x, bossCenterY: boss.y,
+  if (boss === undefined) {
+    const diameter = holes[0]?.[2];
+    const uniformDiameter = diameter !== undefined && EXTRA_FOOT_BASE_RECORDS.includes(record)
+      && holes.every(([, , bore]) => bore === diameter);
+    return { holeCount: holes.length, ...(uniformDiameter ? { holeDiameter: diameter } : {}) };
+  }
+  return { bossDiameter: boss.diameter, bossHeight: boss.top - boss.bottom,
+    footBaseBossBelowPlate: 0 - boss.bottom, footBaseBossAbovePlate: boss.top - record.thickness,
+    bossCenterX: boss.x, bossCenterY: boss.y,
     ...(adjusterThreadDiameter === undefined ? {} : { adjusterThreadDiameter }),
     ...(holes.length === 0 ? {} : { holeCount: holes.length }) };
 }
@@ -630,6 +646,7 @@ function footBaseRow(record: FootBaseRecord): CatalogItemRow {
     ...baseRow(record, { width: record.width, depth: record.depth, thickness: record.thickness, ...footBaseDrillingDimensions(record),
       ...(bore === undefined ? {} : { counterboreDiameter: bore.diameter, counterboreDepth: bore.depth }),
       ...(record.massG === null ? {} : { massG: record.massG }) }, massTextOf(record.massG)),
+    ...(record.materialText === undefined ? {} : { materialLabel: record.materialText }),
     ...(FOOT_BASE_COUNTERBORES.has(record.key) ? { listed: false } : {}),
   };
 }

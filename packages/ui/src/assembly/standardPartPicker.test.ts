@@ -116,6 +116,18 @@ describe('standard-part picker choices', () => {
     }
   });
 
+  it.each(['hexBolt', 'socketHeadCapScrew', 'panHeadScrew'] as const)('%s uses and validates the entered length', (category) => {
+    const choice = defaultStandardPartChoice(category);
+    expect(choice.requiresLength).toBe(true);
+    const result = commitStandardPartChoice(category, choice.key, '2*23');
+    if (!result.ok) throw new Error('Expected valid fastener length');
+    expect(result.value.source.options.length).toBe('2*23');
+    expect(buildStandardPartFromSource(result.value.source)).not.toBeNull();
+    for (const invalid of ['0', '1/']) {
+      expect(commitStandardPartChoice(category, choice.key, invalid)).toEqual({ ok: false, reason: 'invalidLength' });
+    }
+  });
+
   it('persists main-standard and fine-thread selections', () => {
     const choice = standardPartChoices('hexBolt', 'main').find((item) => item.size === 'M8');
     expect(choice).toBeDefined();

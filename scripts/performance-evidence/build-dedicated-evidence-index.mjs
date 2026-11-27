@@ -37,6 +37,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 import { checkDedicatedPerformanceEvidence, loadDedicatedPerformanceEvidence } from '../release/dedicatedPerformanceEvidence.mjs';
 import { sourceFileHash } from '../release/desktopFileInventory.mjs';
+import { FRESH_BUILD_SOURCE_ROLES } from '../release/freshBuildEvidence.mjs';
 import { captureDesktopBuildSources, captureWebBuildSources } from '../vite/webBuildSources.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -131,13 +132,16 @@ export function assembleDedicatedEvidenceIndex(plan, readBytes, sourceCopies) {
   };
   const manifestId = add(plan.manifest), manifestSha256 = records[manifestId].sha256, manifest = json(manifestId);
   if (manifest.schema_version !== 1 || !Array.isArray(manifest.files) || manifest.files.length === 0) throw new Error('Expected a QA input manifest');
-  const source = role => {
-    const path = DEDICATED_SOURCE_ROLES[role], copy = sourceCopies[path];
+  const source = path => {
+    const copy = sourceCopies[path];
     if (copy === undefined) throw new Error(`Missing copy of the executed test source: ${path}`);
     const rows = manifest.files.filter(row => row.path === path);
     if (rows.length !== 1 || rows[0].copy_sha256 !== digest(copy.bytes)) throw new Error(`Executed test source changed after the manifest: ${path}`);
     return add(copy.path, copy.bytes);
   };
+  const copies = Object.values(FRESH_BUILD_SOURCE_ROLES).filter(path => manifest.files.some(row => row.path === path));
+  for (const path of copies) source(path);
+  const recorded = role => source(DEDICATED_SOURCE_ROLES[role]);
   const terminal = (label, cell) => {
     const command = json(add(cell.command)), result = json(add(cell.result));
     if (command.exclusive !== true) throw new Error(`${label}: the run is not exclusive (overlapping runs are not dedicated evidence): ${cell.command}`);
@@ -152,9 +156,9 @@ export function assembleDedicatedEvidenceIndex(plan, readBytes, sourceCopies) {
     const roles = W21_RUN_ROLES[project === 'electron' ? 'electron' : 'browser'];
     cellRoles(cell, roles, `W21 ${project}`, ['project']);
     terminal(`W21 ${project}`, cell);
-    const entry = { project, ...Object.fromEntries(roles.map(role => [role, add(cell[role])])), flow: source('flow') };
-    if (project === 'electron') Object.assign(entry, { config: source('config'), electronHelper: source('electronHelper'), spec: source('electronSpec') });
-    else entry.spec = source('browserSpec');
+    const entry = { project, ...Object.fromEntries(roles.map(role => [role, add(cell[role])])), flow: recorded('flow') };
+    if (project === 'electron') Object.assign(entry, { config: recorded('config'), electronHelper: recorded('electronHelper'), spec: recorded('electronSpec') });
+    else entry.spec = recorded('browserSpec');
     return entry;
   });
   if (w21.length !== DEDICATED_W21_HOSTS.length) throw new Error(`W21 needs ${DEDICATED_W21_HOSTS.length} hosts, got ${w21.length}`);
@@ -167,7 +171,7 @@ export function assembleDedicatedEvidenceIndex(plan, readBytes, sourceCopies) {
     }
     cells.add(key);
     terminal(`W22 ${key}`, cell);
-    const entry = { ...Object.fromEntries(W22_CELL_ROLES.map(role => [role, add(cell[role])])), config: source('config') };
+    const entry = { ...Object.fromEntries(W22_CELL_ROLES.map(role => [role, add(cell[role])])), config: recorded('config') };
     for (const condition of ['normal', 'slow']) {
       cellRoles(cell[condition], W22_RUN_ROLES, `W22 ${key} ${condition}`);
       entry[condition] = Object.fromEntries(W22_RUN_ROLES.map(role => [role, add(cell[condition][role])]));
@@ -249,12 +253,24 @@ export async function runBuildDedicatedEvidenceIndex(args, { root = repositoryRo
     const changed = changedManifestInputs(manifest, path => hashes.get(path) ?? null);
     const value = { manifestSha256: digest(manifestBytes), allManifestInputsUnchanged: changed.length === 0, changed };
     const report = option(rest, '--report', false), exitCode = option(rest, '--exit-code', false);
+    const w21Desktop = rest.includes('--w21-desktop-build');
+    if (w21Desktop && report === undefined) throw new DedicatedEvidenceUsageError('--w21-desktop-build needs --report');
     if ((report === undefined) !== (exitCode === undefined)) throw new DedicatedEvidenceUsageError('--report and --exit-code go together');
     if (report !== undefined) {
       if (!/^-?\d+$/u.test(exitCode)) throw new DedicatedEvidenceUsageError('--exit-code needs an integer');
       const { target } = readInside(root, report);
       Object.assign(value, { commandExitCode: Number(exitCode), playwrightExitCode: Number(exitCode), playwrightJson: target,
         playwrightJsonSha256: digest(await readFile(target)) });
+      if (w21Desktop) {
+        const candidate = resolve(dirname(target), 'w21-desktop-build-after.json');
+        const desktopBuild = JSON.parse(await readFile(readInside(root, candidate).target, 'utf8'));
+        if (desktopBuild.reportSha256 !== value.playwrightJsonSha256
+          || desktopBuild.ready?.manifestSha256 !== value.manifestSha256
+          || desktopBuild.ready?.report !== target) {
+          throw new Error('W21 desktop build differs from the run report or Source manifest');
+        }
+        value.desktopBuild = desktopBuild;
+      }
     }
     const written = await writeNew(root, option(rest, '--out'), jsonBytes(value));
     write(`実行の後の入力: ${written.local}（変わったファイル ${changed.length} 件）`);
@@ -274,7 +290,10 @@ export async function runBuildDedicatedEvidenceIndex(args, { root = repositoryRo
       cache.set(path, await readFile(target));
     }
     const sourceCopies = {};
-    for (const path of Object.values(DEDICATED_SOURCE_ROLES)) {
+    const manifest = JSON.parse(Buffer.from(readBytes(plan.manifest)).toString('utf8'));
+    const copies = [...Object.values(DEDICATED_SOURCE_ROLES),
+      ...Object.values(FRESH_BUILD_SOURCE_ROLES).filter(path => manifest.files?.some(row => row.path === path))];
+    for (const path of copies) {
       const copyPath = `${dirname(out.local)}/sources/${path}`.replace(/^\.\//u, '');
       sourceCopies[path] = { path: copyPath, bytes: sourceCopyBytes(await readFile(readInside(root, path).target)) };
     }

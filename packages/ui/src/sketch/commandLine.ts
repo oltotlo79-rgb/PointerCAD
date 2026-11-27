@@ -17,6 +17,7 @@
 
 import {
   evaluateExpression,
+  type ExpressionError,
   expressionValueFromNumber,
   type ExpressionValue,
 } from '@pointercad/expression';
@@ -199,7 +200,7 @@ export type CommandLineOutcome =
   | { readonly kind: 'field'; readonly fieldKey: string; readonly source: string }
   /** 段を確定する(空の Enter)。 */
   | { readonly kind: 'commit' }
-  | { readonly kind: 'error'; readonly message: string; readonly suggestions: readonly string[] };
+  | { readonly kind: 'error'; readonly message: string; readonly suggestions: readonly string[]; readonly expressionError?: ExpressionError };
 
 // ---------------------------------------------------------------------------
 // 全角の正規化。式の共通正規化に加え、構造判定用の @ ＜ ＝ も扱うため、
@@ -321,6 +322,10 @@ function errorSuggestions(lowerInput: string): readonly string[] {
   return suggestCommands(firstCharacter, 5).map(shortestWord);
 }
 
+function commandExpressionError(error: ExpressionError): CommandLineOutcome {
+  return { kind: 'error', message: error.message, suggestions: [], expressionError: error };
+}
+
 function errorOutcome(message: string, suggestions: readonly string[]): CommandLineOutcome {
   return { kind: 'error', message, suggestions };
 }
@@ -417,7 +422,7 @@ function parseAbsoluteOrRelative(
   for (const raw of rawParts) {
     const result = evaluateExpression(raw.trim(), context);
     if (!result.ok) {
-      return errorOutcome(result.error.message, []);
+      return commandExpressionError(result.error);
     }
     values.push(result.value);
   }
@@ -447,11 +452,11 @@ function parsePolar(body: string, angleIndex: number, hasAt: boolean, context: C
 
   const distanceResult = evaluateExpression(distanceSource, context);
   if (!distanceResult.ok) {
-    return errorOutcome(distanceResult.error.message, []);
+    return commandExpressionError(distanceResult.error);
   }
   const angleResult = evaluateExpression(angleSource, context);
   if (!angleResult.ok) {
-    return errorOutcome(angleResult.error.message, []);
+    return commandExpressionError(angleResult.error);
   }
 
   return {

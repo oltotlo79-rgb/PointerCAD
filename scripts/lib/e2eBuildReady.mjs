@@ -2,6 +2,8 @@
 // 印を出した後は、Playwright が片付け(teardown)で止めるまで待つ(途中で終わると「webServer が早く終わった」と見なされるため)。
 import process from 'node:process';
 import { setInterval } from 'node:timers';
+import { recordW21DesktopBuild } from './w21DesktopBuild.mjs';
 
+if (process.env.PCAD_DEDICATED_MEASUREMENT === 'w21') await recordW21DesktopBuild();
 process.stdout.write('PCAD_E2E_DESKTOP_BUILD_READY\n');
 setInterval(() => undefined, 60_000);

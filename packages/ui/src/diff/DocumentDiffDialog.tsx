@@ -6,6 +6,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { runDefinitionDiff } from './definitionDiffClient.js';
 import { createDefinitionDiffWorker } from './browserDefinitionDiffWorker.js';
 import { pickComparisonFile, type ComparisonFile, type DefinitionDiffExecutor } from './pickComparisonFile.js';
+import { definitionDiffFailureMessage } from './definitionDiffFailureMessage.js';
 import './documentDiff.css';
 import { MaterialDiffPanel } from './MaterialDiffPanel.js';
 
@@ -93,7 +94,7 @@ export function DocumentDiffDialog({ onClose, initial }: {
       const outcome = await execute({ kind: 'compare', before: before.bytes, after: after.bytes, relationship, documentKind }, operation.signal);
       if (controller.current !== operation || operation.signal.aborted) return;
       if (!outcome.ok) setMessage({ error: true, text: t(outcome.reason === 'timeout' ? 'documentDiff.timeout' : 'documentDiff.failed') });
-      else if (outcome.reply.kind === 'failed') setMessage({ error: true, text: outcome.reply.message });
+      else if (outcome.reply.kind === 'failed') setMessage({ error: true, text: definitionDiffFailureMessage(outcome.reply.failure) });
       else if (outcome.reply.kind === 'compared') setResult(outcome.reply.result);
       else setMessage({ error: true, text: t('documentDiff.failed') });
     } finally { if (controller.current === operation) { controller.current = null; if (!operation.signal.aborted) setBusy(null); } }

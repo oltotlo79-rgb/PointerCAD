@@ -24,7 +24,11 @@ const REQUIRED_VERSION = {
 } as const;
 
 export type PcadVersionField = keyof typeof REQUIRED_VERSION;
+export type PcadDrawingWriteCode = 'drawingNonFinite' | 'drawingTemplateInvalid';
+interface PcadDrawingWriteDiagnostic { readonly code: PcadDrawingWriteCode }
+
 export type PcadWriteDiagnostic =
+  | PcadDrawingWriteDiagnostic
   | { readonly code: 'requiresVersion'; readonly field: PcadVersionField; readonly requiredVersion: number;
       readonly actualVersion: number; readonly documentName: string }
   | { readonly code: 'internal'; readonly field: string; readonly location?: string };
@@ -45,6 +49,21 @@ export class PcadWriteError extends RangeError {
   }
 }
 
+const drawingWriteReasons = new WeakMap<Error, PcadDrawingWriteDiagnostic>();
+
+/** Drawing writers historically throw plain Errors. Keep their prototype and own properties. */
+export function pcadWriteErrorFromDiagnostic(diagnostic: PcadWriteDiagnostic, message: string): Error {
+  if (diagnostic.code === 'requiresVersion' || diagnostic.code === 'internal') return new PcadWriteError(diagnostic, message);
+  const error = new Error(message);
+  drawingWriteReasons.set(error, diagnostic);
+  return error;
+}
+
+export function pcadWriteDiagnosticOf(error: unknown): PcadWriteDiagnostic | undefined {
+  if (error instanceof PcadWriteError) return error.diagnostic;
+  return error instanceof Error ? drawingWriteReasons.get(error) : undefined;
+}
+
 export function pcadVersionError(field: PcadVersionField,
   document: { readonly schemaVersion: number; readonly name: string | null }, message: string): PcadWriteError {
   return new PcadWriteError({ code: 'requiresVersion', field, requiredVersion: REQUIRED_VERSION[field],
@@ -57,7 +76,11 @@ function isVersionField(value: unknown): value is PcadVersionField {
 
 /** Validate plain data received from the save Worker, before using it to select a message. */
 export function isPcadWriteDiagnostic(value: unknown): value is PcadWriteDiagnostic {
-  if (typeof value !== 'object' || value === null || !('code' in value) || !('field' in value)) return false;
+  if (typeof value !== 'object' || value === null || !('code' in value)) return false;
+  if (value.code === 'drawingNonFinite' || value.code === 'drawingTemplateInvalid') {
+    return Object.hasOwn(value, 'code') && Object.keys(value).length === 1;
+  }
+  if (!('field' in value)) return false;
   if (value.code === 'internal') return typeof value.field === 'string'
     && (!('location' in value) || typeof value.location === 'string');
   return value.code === 'requiresVersion' && isVersionField(value.field)

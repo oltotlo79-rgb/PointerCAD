@@ -26,7 +26,7 @@
 
 import { isThickenSide } from './surfaceBodyControls.js';
 import { commitDirectEdit, directEditRejection } from './directEditCommands.js';
-import { allocatePatternPointSlots, patternSlotHighWater } from '@pointercad/model';
+import { allocatePatternPointSlots, isPatternPointSlotError, patternSlotHighWater } from '@pointercad/model';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { selectedSweepGuide } from './sweepGuideChoices.js';
 import { SKETCH_PATH_KINDS } from './sketchPathKinds.js';
@@ -1006,15 +1006,21 @@ function commitPointPattern(context: MachiningContext): SolidCommandOutcome {
   }
   const points = selectedPointReferences(context.document, context.bodies, context.selection);
   const id = nextSolidId(context.document, 'pointPattern');
-  const feature: PatternFeature = {
-    id,
-    name: nextSolidName(context.document, 'pointPattern'),
-    suppressed: false,
-    kind: 'pattern',
-    sourceFeatureId,
-    placement: allocatePatternPointSlots(points, undefined, undefined, patternSlotHighWater(context.document, id)),
-  };
-  return appended(context.document, feature, id);
+  try {
+    const feature: PatternFeature = {
+      id,
+      name: nextSolidName(context.document, 'pointPattern'),
+      suppressed: false,
+      kind: 'pattern',
+      sourceFeatureId,
+      placement: allocatePatternPointSlots(points, undefined, undefined, patternSlotHighWater(context.document, id)),
+    };
+    return appended(context.document, feature, id);
+  } catch (error) {
+    if (!isPatternPointSlotError(error)) throw error;
+    console.error('PointerCAD point pattern identity', id, error);
+    return { ok: false, reasonKey: 'assembly.error.internal' };
+  }
 }
 
 /**

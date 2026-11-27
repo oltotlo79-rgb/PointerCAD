@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expressionValueFromNumber as num } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber as num } from '@pointercad/expression';
 import {
   absoluteCoordinate, buildResidualReport, CATALOG_ITEM_REJECTION_CODES, collectVariables,
   mathGeometryUnresolvedMessage, plainText, resolveSketch, SUB_ASSEMBLY_DEPTH_TEXT,
@@ -272,6 +272,9 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
 
 describe('文字式から係数再計算へ伝わる診断', () => {
   it('鍵の日本語と位置、入力値、上限を表示する', () => {
+    const legacy = evaluateExpression('Z+1');
+    const diagnostic = legacy.ok ? undefined : legacy.error.diagnostic;
+    expect(diagnostic === undefined ? null : failureMessage(diagnostic)).toBe('決まっていない名前です: 「Z」(1 文字目)');
     expect(failureMessage({ key: 'math.input.unsupportedFunction', parameters: { name: 'NoSuchFn', position: '1' } }))
       .toBe('関数「NoSuchFn」を確認してください。係数はcoef("名前")で挿入します（1文字目）。');
     expect(failureMessage({ key: 'math.input.decimalExponent', parameters: { value: '10001', limit: '10000' } }))

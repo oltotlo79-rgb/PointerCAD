@@ -1,3 +1,6 @@
+import { messageText } from '../i18n/failureMessage.js';
+import { drawingSaveInputFailure } from './saveWriteFailure.js';
+import { PcadSaveWorkerError } from './pcadSaveWorker.js';
 /**
  * 自動保存の見張りとクラッシュ復元。
  *
@@ -494,6 +497,13 @@ export function reportAutoSaveFailure(error?: unknown): void {
     ...(error instanceof Error ? { detail: error.message } : typeof error === 'string' ? { detail: error } : {}) });
 }
 
+function drawingAutoSaveDetail(error: unknown): unknown {
+  const failure = drawingSaveInputFailure(error);
+  if (failure !== undefined) return messageText(failure);
+  if (import.meta.env.DEV) console.error('PointerCAD drawing autosave', error);
+  return error instanceof PcadSaveWorkerError && error.internal ? undefined : error;
+}
+
 /** 次の自動保存が成功したら、自動保存由来の古い失敗だけを状態欄から消す。 */
 export function clearAutoSaveFailure(): void {
   const state = useAppStore.getState();
@@ -568,7 +578,12 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
         return (options.encodeSave ?? state.saveDocumentEncoder)(captureSaveSnapshot(input), { signal, onProgress: reportState });
       },
       onWriting: () => { reportState('writing'); },
-      onError: error => { if (!detached && currentRevision === revision) { reportAutoSaveFailure(error); reportState('failed', error); } },
+      onError: error => {
+        if (detached || currentRevision !== revision) return;
+        const detail = active.kind === 'drawing' ? drawingAutoSaveDetail(error) : error;
+        reportAutoSaveFailure(detail);
+        reportState('failed', detail);
+      },
       onSuccess: () => { if (!detached && currentRevision === revision) {
         clearAutoSaveFailure();
         reportState(encodingIdentity !== null && compareDocumentIdentity(encodingIdentity, useAppStore.getState()) === 'current' ? 'saved' : 'pending');

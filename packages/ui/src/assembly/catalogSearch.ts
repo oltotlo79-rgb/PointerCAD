@@ -4,7 +4,7 @@
  * 族の行は読み込んだ族の分だけ並ぶ(窓は検索の文字が入った時に全部の族を読む。`PickerSearch.tsx`)。選ぶ窓に出さない行(`listedRows`)は並べない。
  */
 import {
-  ALL_STEEL_PRODUCTS, PRODUCT_CATALOG_REGISTRY, type CatalogRegistry, type FastenerDimensionSeries, type SteelSectionCatalog,
+  ALL_STEEL_PRODUCTS, PRODUCT_CATALOG_REGISTRY, type CatalogRegistry, type FastenerDimensionSeries, type SteelSectionCatalog, type ThreadSeries,
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -12,7 +12,8 @@ import {
   catalogRowLabel, familyKindKey, familyMaterials, familyPickerCategory, listedRows, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import {
-  STANDARD_PART_CATEGORIES, standardPartChoices, standardPartUsesDimensionSeries, steelShapeLabelKey, STRUCTURAL_MATERIAL_CHOICES,
+  STANDARD_PART_CATEGORIES, standardPartChoices, standardPartUsesDimensionSeries, standardPartUsesThreadSeries,
+  STEEL_CONDITION_LABELS, steelShapeLabelKey, STRUCTURAL_MATERIAL_CHOICES,
   structuralPartChoices, type StandardPartCategory, type StructuralMaterialChoice,
 } from './standardPartPicker.js';
 
@@ -45,7 +46,8 @@ export interface CatalogFamilyStart {
  */
 export type PickerJumpTarget =
   | { readonly kind: 'standard'; readonly category: StandardPartCategory; readonly choiceKey: string;
-    readonly dimensionSeries: FastenerDimensionSeries | null; readonly lengthSource: string | null }
+    readonly dimensionSeries: FastenerDimensionSeries | null; readonly lengthSource: string | null;
+    readonly threadSeries?: ThreadSeries }
   | { readonly kind: 'steel'; readonly material: StructuralMaterialChoice; readonly shape: SteelSectionCatalog | null;
     readonly choiceKey: string; readonly lengthSource: string | null }
   | { readonly kind: 'family'; readonly group: FamilyPickerCategory; readonly start: CatalogFamilyStart };
@@ -99,7 +101,7 @@ function steelEntries(): PickerSearchEntry[] {
     const material = STRUCTURAL_MATERIAL_CHOICES.find((choice) => choice === row.materialGrade);
     if (material === undefined) return [];
     return [entry(`steel:${row.key}`, `${t(steelShapeLabelKey(row.catalog, row.materialGrade))} ${row.size}`,
-      `${row.materialGrade} · ${row.productStandard}`, row.size, [section, row.materialStandard],
+      `${row.materialGrade} · ${row.productStandard} · ${t(STEEL_CONDITION_LABELS[row.condition])}`, row.size, [section, row.materialStandard],
       { kind: 'steel', material, shape: row.catalog, choiceKey: `steel:${row.key}`, lengthSource: null })];
   });
   const legacy = structuralPartChoices('unspecified').map((choice) => entry(`legacy:${choice.key}`, `${section} ${choice.size}`,
@@ -206,9 +208,11 @@ export function recentPartOf(target: PickerJumpTarget): RecentPart | null {
  * 鋼材の断面は、鋼種を指定しない今までの行では持たない。
  */
 export function standardPlacedTarget(category: StandardPartCategory, choiceKey: string, dimensionSeries: FastenerDimensionSeries,
-  steel: { readonly material: StructuralMaterialChoice; readonly shape: SteelSectionCatalog | null }, lengthSource: string): PickerJumpTarget {
+  steel: { readonly material: StructuralMaterialChoice; readonly shape: SteelSectionCatalog | null },
+  lengthSource: string, threadSeries?: ThreadSeries): PickerJumpTarget {
   if (category === 'structuralSection') {
     return { kind: 'steel', material: steel.material, shape: steel.material === 'unspecified' ? null : steel.shape, choiceKey, lengthSource };
   }
-  return { kind: 'standard', category, choiceKey, dimensionSeries: standardPartUsesDimensionSeries(category) ? dimensionSeries : null, lengthSource };
+  return { kind: 'standard', category, choiceKey, dimensionSeries: standardPartUsesDimensionSeries(category) ? dimensionSeries : null,
+    lengthSource, ...(threadSeries !== undefined && standardPartUsesThreadSeries(category) ? { threadSeries } : {}) };
 }

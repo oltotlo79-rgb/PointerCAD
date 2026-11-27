@@ -4,9 +4,9 @@ import { platform } from 'node:os';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, frameClockStages, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type RawFrame, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, frameClockStages, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxAncestry, type LinuxProcSource, type ResourceProcessSample, type RawFrame, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames, windowsRootContextScript } from './readResidentSampler.js';
-import { windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
+import { readLinuxSaveMemory, windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
 import { windowsSavePointOwnerScript } from './namedSavePointsFlow.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
@@ -756,4 +756,47 @@ test('complete actual Z/RSS0 discovery stat is measured once and only its verifi
   expect(readResidentFrames([frame, { ...next, linuxDiscoveryComplete: false }], 10, 0).errors.join(' ')).toContain('disappeared');
   expect(readResidentFrames([frame, { ...next, processes: [] }], 10, 0).errors.join(' ')).toContain('root PID');
   expect(readResidentFrames([frame, { ...next, processes: [root, { ...terminal, created: '243' }] }], 10, 0).errors.join(' ')).toContain('reused');
+});
+
+test('Linux save uses the actual terminal row for one frame and discovers the surviving tree again', async () => {
+  // Ubuntu Electron save run 45905783865, repeat 0: this PID was Z with RSS 0 when discovered.
+  const stat = "5166 (electron) Z 5123 5120 5120 0 -1 4228172 3157 0 0 0 1 1 0 0 20 0 1 0 30235 0 0 18446744073709551615 0 0 0 0 0 0 0 4098 65536 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
+  // Successful ancestry has no error property. Selected-process readings have error: null.
+  const root = { pid: 3919, parentPid: 0, created: '18247', name: 'worker' } satisfies LinuxAncestry;
+  const mainAncestry = { pid: 5120, parentPid: root.pid, created: '30222', name: 'electron' } satisfies LinuxAncestry;
+  const parentAncestry = { pid: 5123, parentPid: mainAncestry.pid, created: '30224', name: 'electron' } satisfies LinuxAncestry;
+  const main: ResourceProcessSample = { ...mainAncestry,
+    workingSetBytes: 247697408, privateBytes: 68796416, cpuMilliseconds: 0, error: null };
+  const parent: ResourceProcessSample = { ...parentAncestry,
+    workingSetBytes: 93859840, privateBytes: 10510336, cpuMilliseconds: 0, error: null };
+  const entry = await linuxAncestry(5166, async () => stat, () => 1000);
+  let reaped = false;
+  const source: LinuxProcSource = {
+    list: () => Promise.resolve(reaped ? ['3919', '5120', '5123'] : ['3919', '5120', '5123', '5166']),
+    ancestry: pid => Promise.resolve(pid === 5166 ? entry : pid === parentAncestry.pid ? parentAncestry : pid === mainAncestry.pid ? mainAncestry : root),
+    process: pid => {
+      if (pid === main.pid) return Promise.resolve(main);
+      if (pid === parent.pid) return Promise.resolve(parent);
+      throw new Error(`unexpected status read of PID ${String(pid)}`);
+    },
+    now: () => reaped ? 1100 : 1000,
+    ticksPerSecond: () => Promise.resolve(100),
+  };
+  const first = await readLinuxSaveMemory(root.pid, null, source);
+  expect(first.problems).toEqual([]);
+  expect(first).toMatchObject({ complete: true, expectedPids: [5120, 5123, 5166], observedPids: [5120, 5123, 5166],
+    workingSetBytes: 341557248, privateBytes: 79306752 });
+  expect(first.linux?.processes.find(row => row.pid === 5166)).toMatchObject({ created: '30235', workingSetBytes: 0,
+    privateBytes: 0, linuxTerminal: { rawStat: stat } });
+  reaped = true;
+  const next = await readLinuxSaveMemory(root.pid, root.created, source);
+  expect(next).toMatchObject({ complete: true, expectedPids: [5120, 5123], observedPids: [5120, 5123],
+    workingSetBytes: 341557248, privateBytes: 79306752, problems: [] });
+  expect(await readLinuxSaveMemory(root.pid, '999', source))
+    .toMatchObject({ complete: false, workingSetBytes: null, privateBytes: null, problems: ['process discovery failed: Linux save worker identity changed'] });
+  const missing = await readLinuxSaveMemory(root.pid, root.created, { ...source, process: pid => Promise.resolve(pid === parent.pid
+    ? { ...parent, workingSetBytes: null, privateBytes: null, error: 'ENOENT after discovery' } : main) });
+  expect(missing).toMatchObject({ complete: false, expectedPids: [5120, 5123], observedPids: [5120, 5123],
+    workingSetBytes: null, privateBytes: null });
+  expect(missing.problems).toContain('5123: read failed: ENOENT after discovery');
 });

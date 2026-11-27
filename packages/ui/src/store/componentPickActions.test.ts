@@ -96,7 +96,8 @@ describe('部品を押して欄へ入れる頼み', () => {
 
   it('置く点(G1): 選ぶ窓が開いている時だけ頼め、押した点に部品の原点が来るように置いて頼みを閉じる。置く物が無い時は頼まない', () => {
     useAppStore.getState().openAssembly(createAssemblyDocument('組立'), EMPTY_PART_LIBRARY);
-    const { category, choiceKey, lengthSource, dimensionSeries, threadSeries } = DEFAULT_STANDARD_PART_PICKER;
+    const { category, choiceKey, dimensionSeries, threadSeries } = DEFAULT_STANDARD_PART_PICKER;
+    const lengthSource = '2*23';
     const bolt = { kind: 'standardPart' as const, category: 'hexBolt' as const, choiceKey, lengthSource, dimensionSeries, threadSeries,
       accessory: undefined, recent: standardPlacedTarget('hexBolt', choiceKey, dimensionSeries, { material: 'SS400', shape: null }, lengthSource) };
     expect(category).toBe('hexBolt');
@@ -111,6 +112,7 @@ describe('部品を押して欄へ入れる頼み', () => {
     expect(useAppStore.getState().assemblyComponentPick).toBeNull();
     const placed = useAppStore.getState().assembly?.components ?? [];
     expect(placed).toHaveLength(1);
+    expect(placed[0]?.source).toMatchObject({ kind: 'standardPart', catalog: 'hexBolt', options: { length: lengthSource } });
     expect(placed[0]?.placement.position.map((value) => value.value)).toEqual([20, -40, 0]);
     expect(useAppStore.getState().standardPartPickerOpen).toBe(true);
   });
@@ -119,7 +121,6 @@ describe('部品を押して欄へ入れる頼み', () => {
     useAppStore.getState().openAssembly(createAssemblyDocument('組立'), EMPTY_PART_LIBRARY);
     useAppStore.setState({ standardPartPickerOpen: true });
     const { choiceKey, dimensionSeries, threadSeries } = DEFAULT_STANDARD_PART_PICKER;
-    // 六角ボルトは長さの欄の式を確かめない(requiresLength が無い)ので、置けない指定は表に無い呼びで作る。
     const broken = { kind: 'standardPart' as const, category: 'hexBolt' as const, choiceKey: '表に無い呼び', lengthSource: '30', dimensionSeries,
       threadSeries, accessory: undefined, recent: standardPlacedTarget('hexBolt', choiceKey, dimensionSeries, { material: 'SS400', shape: null }, '30') };
     useAppStore.getState().toggleComponentPick('placementPoint', [], broken);

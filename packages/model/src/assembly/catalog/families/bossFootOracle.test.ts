@@ -57,6 +57,7 @@ describe('資料 1 のボス付きのベースの板(取付け穴は作らず印
         .toEqual([dimension(text, '左外面〜右外面'), dimension(text, '上外面〜下外面'), thickness]);
       expect(record.bosses, record.key).toEqual([{ x: dimension(text, '左外面〜中央ねじ中心'), y: dimension(text, '中央ねじ中心〜下外面'),
         diameter: bossDiameter(text), bottom: -out, top: length - out }]);
+      expect(record.materialText, record.key).toBe(cells['材質']);
       expect([record.page, record.material, record.massG], record.key).toEqual([Number(cells['PDF頁']),
         (cells['材質'] ?? '').includes('アルミ') ? 'aluminum' : '', Number(/^([0-9]+(?:\.[0-9]+)?)g$/u.exec(cells['質量_g'] ?? '')?.[1])]);
     }

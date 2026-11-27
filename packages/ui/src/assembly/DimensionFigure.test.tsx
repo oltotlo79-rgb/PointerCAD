@@ -6,11 +6,12 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
+import { PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
 import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { DimensionFigure } from './DimensionFigure.js';
-import { standardFigurePart, type DimensionFigurePart } from './dimensionTable.js';
+import { familyFigurePart, standardFigurePart, type DimensionFigurePart } from './dimensionTable.js';
 import { cachedPartOutline } from './partOutline.js';
 import { standardPartChoices } from './standardPartPicker.js';
 
@@ -42,6 +43,21 @@ function toggle(part: DimensionFigurePart, open: boolean): void {
 afterEach(() => { toggle(boltPart(), false); });
 
 describe('寸法の図と表', () => {
+  it('キャスターの止めに、足を上げた位置の高さを mm で表示する', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['cap-foot-box']);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded('cap-foot-box');
+    const stop = family?.rows.find((row) => row.key === 'caster-lock-105x118x97.5-fe');
+    const bracket = family?.rows.find((row) => row.key === 'anchor-bracket-105.4x38x150-al');
+    if (family === undefined || stop === undefined || bracket === undefined) throw new Error('足回りの部品がない');
+    const figure = familyFigurePart(family, stop, {});
+    expect(figure.rows.filter((row) => row.key === 'height' || row.key === 'heightMin')
+      .map((row) => [row.key, t(row.label), row.value, row.unit]))
+      .toEqual([['height', '高さ', 97.5, 'mm'], ['heightMin', '高さ（最小）', 82.5, 'mm']]);
+    expect(renderToStaticMarkup(<DimensionFigure part={figure} />))
+      .toContain('<th scope="row">高さ（最小）</th><td class="pcad-dimension-figure__number" title="82.5">82.5</td><td>mm</td>');
+    expect(familyFigurePart(family, bracket, {}).rows.some((row) => row.key === 'heightMin')).toBe(false);
+  });
+
   it('閉じた塊と見出し(説明つき)で始まり、中に線図(幅と高さの名前)と寸法の表を持つ', () => {
     const part = boltPart();
     const html = renderToStaticMarkup(<DimensionFigure part={part} />);

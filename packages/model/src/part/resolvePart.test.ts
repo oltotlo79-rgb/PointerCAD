@@ -3433,7 +3433,7 @@ describe('resolvePart パターン', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(plainTextValue(result.errors[0].text)).toContain('奇数');
+    expect(result.errors[0].text).toEqual({ key: 'machiningError.patternSymmetricNeedsOdd', parameters: {} });
   });
 
   it('円形パターン(Z軸・全周・個数4)の穴は回転角 π/2, π, 3π/2', () => {
@@ -6645,13 +6645,17 @@ describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
   it('点が引けなければ断る', () => {
     const { document } = pointPatternDocument(3, { missing: true });
     const result = resolvePart(document);
-    expect(result.errors.some((error) => plainTextValue(error.text)?.includes('並べる点'))).toBe(true);
+    expect(result.errors).toContainEqual({
+      featureId: 'pattern-1', code: 'missingProfile', text: { key: 'partError.pattern.pointMissing', parameters: {} },
+    });
   });
 
   it('点が 1 つも選ばれていなければ断る', () => {
     const { document } = pointPatternDocument(0);
     const result = resolvePart(document);
-    expect(result.errors.some((error) => plainTextValue(error.text)?.includes('並べる点'))).toBe(true);
+    expect(result.errors).toContainEqual({
+      featureId: 'pattern-1', code: 'missingProfile', text: { key: 'partError.pattern.pointsEmpty', parameters: {} },
+    });
   });
 
   it('resolvePatternTransforms は点の解決を渡さなければ断る(既定は「引けない」)', () => {

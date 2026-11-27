@@ -2,6 +2,7 @@ import { bindMathCompositionNames, collectMathCoefficients, collectVariableNames
 import { MathInputProblem, type StoredMathExpression } from '@pointercad/expression/math/contracts';
 import { mathGeometryDerivedParameters, type PartDocument } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 interface PendingFieldContext {
   readonly document: PartDocument;
@@ -47,9 +48,15 @@ export function pendingVariablesFor(variables: ReadonlyMap<string, number> | und
 }
 
 
+function reportExpressionInternalError(cause: unknown): void {
+  console.error('PointerCAD expression evaluation', cause);
+}
+
 /** 単位を整えた式の共通評価。UI の evaluateFieldSource とその場入力から使う。 */
 export function evaluatePendingExpression(source: string, options: EvaluateOptions, pending: ReadonlySet<string>): ExpressionResult {
-  return referencesPendingVariable(source, pending) ? pendingFieldResult() : evaluateExpression(source, options);
+  if (referencesPendingVariable(source, pending)) return pendingFieldResult();
+  return evaluateExpression(source, { ...options,
+    reportInternalError: options.reportInternalError ?? reportExpressionInternalError });
 }
 
 
@@ -67,26 +74,43 @@ function freeze(value: unknown): void {
   Object.freeze(value); for (const child of Object.values(value)) freeze(child);
 }
 
+type NumericMathAcceptanceKey = 'assembly.error.internal' | 'mathGeometry.status.pending'
+  | 'numericInput.error.mathCoefficientReview';
+const acceptanceFailures = new WeakMap<Error, NumericMathAcceptanceKey>();
+
+function acceptanceError(key: NumericMathAcceptanceKey, message: string): Error {
+  const error = new Error(message);
+  acceptanceFailures.set(error, key);
+  return error;
+}
+
+export function numericMathAcceptanceMessage(error: unknown): string | undefined {
+  const key = error instanceof Error ? acceptanceFailures.get(error) : undefined;
+  if (key === undefined) return undefined;
+  if (key === 'assembly.error.internal') console.error('PointerCAD numeric math acceptance', error);
+  return failureMessage({ key, parameters: {} });
+}
+
 /** Only the dialog's verified finite-real result enters this transient registry. Files never do. */
 export function acceptNumericMath(value: ExpressionValue, prepared: PartDocument,
   coefficients: readonly CoefficientValue[]): ExpressionValue {
   if (value.mathDefinition === undefined || value.source !== value.mathDefinition.source || !Number.isFinite(value.value)) {
-    throw new Error('数式の評価結果を確認してください。');
+    throw acceptanceError('assembly.error.internal', '数式の評価結果を確認してください。');
   }
   const context = pendingFieldContext();
   if (context !== undefined && prepared.id === context.document.id && context.pendingVariables.size > 0) {
     // 数式ダイアログの prepared は識別番号を補った文書。別文書の同名係数へ待機を混ぜない。
     const derived = mathGeometryDerivedParameters(prepared.parameters);
     const pending = new Set([...context.pendingVariables].filter(name => derived.has(name)));
-    if (referencesPendingVariable(value.source, pending, value.mathDefinition)) throw new Error(pendingFieldResult().error.message);
+    if (referencesPendingVariable(value.source, pending, value.mathDefinition)) throw acceptanceError('mathGeometry.status.pending', pendingFieldResult().error.message);
   }
   const copy = structuredClone(value);
   const definition = copy.mathDefinition;
-  if (definition === undefined) throw new Error('数式の定義がありません。');
+  if (definition === undefined) throw acceptanceError('assembly.error.internal', '数式の定義がありません。');
   const references = collectMathCoefficients(definition.expression);
   const used = references.map(reference => {
     const coefficient = coefficients.find(item => item.id === reference.id && item.label === reference.label);
-    if (coefficient === undefined) throw new Error('数式の係数を再確認してください。');
+    if (coefficient === undefined) throw acceptanceError('numericInput.error.mathCoefficientReview', '数式の係数を再確認してください。');
     return { ...coefficient };
   });
   const scope: MathInputScope = { value: copy, documentId: prepared.id,
@@ -104,7 +128,7 @@ export function evaluateNumericMath(value: ExpressionValue, variables: ReadonlyM
   if (scope === undefined || scope.value.source !== value.source || scope.value.value !== value.value
       || scope.coefficients.some(item => exactVariables?.get(item.label) !== item.decimal || variables.get(item.label) !== Number(item.decimal))) {
     return { ok: false, error: { code: 'unknownVariable', position: -1,
-      message: '数式の係数が変わりました。「数式で入力」で確認してから決定してください。' } };
+      message: t('numericInput.error.mathCoefficientsChanged') } };
   }
   return { ok: true, value: scope.value };
 }
@@ -151,6 +175,6 @@ export function prepareNumericMathCommit(current: PartDocument, inputs: unknown)
     parameters = parameters.map((parameter, index) => ({ ...parameter, mathId: scope.parameters[index].mathId }));
     serial = Math.max(serial, scope.serial);
   }
-  if (invalid) return { ok: false, message: '数式の参照先が変わりました。「数式で入力」で確認してから決定してください。' };
+  if (invalid) return { ok: false, message: t('numericInput.error.mathReferencesChanged') };
   return { ok: true, document: used.size === 0 ? current : { ...current, parameters, mathParameterSerial: serial } };
 }
